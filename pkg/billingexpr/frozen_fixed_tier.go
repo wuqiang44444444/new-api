@@ -91,6 +91,9 @@ func selectFrozenFixedTier(node ast.Node, key frozenFixedTierKey, shared map[str
 		}
 		left, l := selectFrozenFixedTier(n.Exp1, key, shared)
 		right, r := selectFrozenFixedTier(n.Exp2, key, shared)
+		if l == 1 && r == 1 && left.String() == right.String() && equivalentFrozenTierPaths(n, shared) {
+			return left, 1
+		}
 		if l+r != 1 {
 			return nil, l + r
 		}
@@ -103,6 +106,14 @@ func selectFrozenFixedTier(node ast.Node, key frozenFixedTierKey, shared map[str
 			condition = &ast.CallNode{
 				Callee:    &ast.IdentifierNode{Value: frozenTierConditionFunction},
 				Arguments: []ast.Node{condition, &ast.StringNode{Value: predicate}, &ast.BoolNode{Value: l == 1}},
+			}
+		}
+		if literal, ok := condition.(*ast.BoolNode); ok {
+			if literal.Value && l == 1 {
+				return left, 1
+			}
+			if !literal.Value && r == 1 {
+				return right, 1
 			}
 		}
 		// The other branch cannot satisfy the final tier and unit checks.
@@ -154,6 +165,21 @@ func selectFrozenFixedTier(node ast.Node, key frozenFixedTierKey, shared map[str
 	return nil, 0
 }
 
+// Equal candidate expressions can discard their selector only when it
+// depends solely on unrecorded request inputs and contains no recorded rules.
+func equivalentFrozenTierPaths(node ast.Node, shared map[string]bool) bool {
+	return ast.Find(node, func(part ast.Node) bool {
+		condition, ok := part.(*ast.ConditionalNode)
+		if !ok {
+			return false
+		}
+		if _, literal := condition.Cond.(*ast.BoolNode); literal {
+			return false
+		}
+		return shared[condition.Cond.String()] || !usesRequestProbe(condition.Cond) || usesFrozenPricingInput(condition.Cond)
+	}) == nil
+}
+
 // Substitute an unknown request-only boolean in favor of the selected branch.
 // The resulting condition is necessary for that branch: known inputs can
 // still rule it out. Mixed atoms without a boolean split cannot be proved.
@@ -182,7 +208,14 @@ func frozenFixedTierCondition(node ast.Node, want bool) (ast.Node, bool) {
 			return n, ok
 		}
 	}
-	if ast.Find(node, func(part ast.Node) bool {
+	if usesFrozenPricingInput(node) {
+		return nil, false
+	}
+	return &ast.BoolNode{Value: want}, true
+}
+
+func usesFrozenPricingInput(node ast.Node) bool {
+	return ast.Find(node, func(part ast.Node) bool {
 		id, ok := part.(*ast.IdentifierNode)
 		if !ok {
 			return false
@@ -193,10 +226,7 @@ func frozenFixedTierCondition(node ast.Node, want bool) (ast.Node, bool) {
 			return true
 		}
 		return false
-	}) != nil {
-		return nil, false
-	}
-	return &ast.BoolNode{Value: want}, true
+	}) != nil
 }
 
 func isFrozenPricingCall(call *ast.CallNode, name string, arity int) bool {

@@ -72,6 +72,13 @@ func scanUpstreamBillingFacts(ctx context.Context, filter UpstreamBillingDetailF
 		}
 	}
 	var cursor int64
+	if policy.ReadOnlySource {
+		var err error
+		cursor, err = dailyReportFirstLogCursor(ctx, query, upper, 5*time.Second)
+		if err != nil {
+			return err
+		}
+	}
 	for cursor < upper {
 		if err := ctx.Err(); err != nil {
 			return err

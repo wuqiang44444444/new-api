@@ -239,10 +239,10 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	var logContent []*common.Message
 
 	if len(request.Size) > 0 {
-		logContent = append(logContent, common.NewMessage("Size {{size}}", map[string]any{"size": request.Size}))
+		logContent = append(logContent, common.NewMessage(common.ImageSizeLogMessage, map[string]any{"size": request.Size}))
 	}
 	if len(quality) > 0 {
-		logContent = append(logContent, common.NewMessage("Quality {{quality}}", map[string]any{"quality": quality}))
+		logContent = append(logContent, common.NewMessage(common.ImageQualityLogMessage, map[string]any{"quality": quality}))
 	}
 	if imageN > 0 {
 		logContent = append(logContent, common.NewMessage("Image count {{count}}", map[string]any{"count": imageN}))

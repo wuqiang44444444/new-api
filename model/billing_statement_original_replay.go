@@ -15,7 +15,7 @@ import (
 
 // CustomerOriginalReplayVersion identifies the rules used to construct a
 // customer billing projection from frozen evidence.
-const CustomerOriginalReplayVersion = 10
+const CustomerOriginalReplayVersion = 12
 
 // Native historical logs used the gateway's fixed quota denomination.
 const historicalCustomerQuotaPerUnit = 500_000
@@ -273,6 +273,13 @@ func frozenExpressionAmounts(facts customerExportFacts, parsed parsedBillingReco
 
 func historicalCustomerTokenParams(log billingReconciliationLog, facts customerExportFacts, used, normalization map[string]bool) (billingexpr.TokenParams, bool) {
 	var params billingexpr.TokenParams
+	usesTokens := false
+	for _, key := range []string{"p", "c", "len", "cr", "cc", "cc1h", "img", "img_cr", "img_o", "ai", "ao"} {
+		usesTokens = usesTokens || used[key]
+	}
+	if !usesTokens {
+		return params, true
+	}
 	if raw := facts.raw("billing_tokens"); len(raw) != 0 {
 		var frozen map[string]json.RawMessage
 		if common.Unmarshal(raw, &frozen) != nil {

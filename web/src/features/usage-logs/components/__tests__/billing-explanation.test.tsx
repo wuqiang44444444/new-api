@@ -63,6 +63,33 @@ it('shows the frozen usage times price equation supplied by the server', () => {
   )
 })
 
+it('shows per-image pricing on published bill items without the source expression', () => {
+  show(
+    {
+      billing_facts: { billing_mode: 'per_image', billable_image_count: 1 },
+      billing_explanation: {
+        lines: [
+          {
+            label: 'Image Generation',
+            quantity: 1,
+            unit: 'image',
+            unit_price_usd: 0.01667,
+            subtotal_usd: 0.01667,
+          },
+        ],
+      },
+    },
+    2,
+    8335
+  )
+  expect(screen.getByText('Billing Mode').nextElementSibling).toHaveTextContent(
+    'Per image'
+  )
+  expect(
+    screen.getByText('Image Generation').nextElementSibling
+  ).toHaveTextContent(/1 image × .*\/image = /)
+})
+
 it('shows text and image component amounts without adding informational image tokens again', () => {
   const currency = useSystemConfigStore.getState().config.currency
   try {

@@ -2,6 +2,8 @@ package controller
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -12,6 +14,10 @@ import (
 )
 
 func respondLogCursorPage(c *gin.Context, admin bool) bool {
+	return respondUsageLogPage(c, admin, "")
+}
+
+func respondUsageLogPage(c *gin.Context, admin bool, mode model.UsageLogTotalMode) bool {
 	cursor := c.Query("page_cursor")
 	ref := c.Query("log_ref")
 	snapshot := c.Query("page_snapshot")
@@ -52,8 +58,10 @@ func respondLogCursorPage(c *gin.Context, admin bool) bool {
 	page := common.GetPageQuery(c)
 	filter := logFilterFromQuery(c, admin)
 	if snapshot != "" {
-		data, err := model.GetNumberedUsageLogPage(ctx, userID, filter, snapshot, page.GetPage(), page.GetPageSize(), maxRange, role)
-		if err != nil {
+		data, err := model.GetUsageLogPage(ctx, userID, filter, snapshot, page.GetPage(), page.GetPageSize(), maxRange, role, mode)
+		if errors.Is(err, model.ErrUsageLogSnapshotExpired) {
+			common.ApiErrorStatus(c, http.StatusOK, common.NewMessage("Invalid log pagination"), gin.H{"code": "log_snapshot_expired"})
+		} else if err != nil {
 			common.ApiError(c, err)
 		} else {
 			common.ApiSuccess(c, data)
@@ -85,6 +93,10 @@ func logReadScope(c *gin.Context, admin bool) (int, int64, bool) {
 }
 
 func respondLogRangeStatistics(c *gin.Context, admin bool) bool {
+	return respondUsageLogRangeStatistics(c, admin, false)
+}
+
+func respondUsageLogRangeStatistics(c *gin.Context, admin bool, resolvedRange bool) bool {
 	if c.Query("range_count") != "true" {
 		return false
 	}
@@ -94,7 +106,7 @@ func respondLogRangeStatistics(c *gin.Context, admin bool) bool {
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)
 	defer cancel()
-	result, err := model.GetLogRangeStatistics(ctx, userID, logFilterFromQuery(c, admin), maxRange)
+	result, err := model.GetLogRangeStatistics(ctx, userID, logFilterFromQuery(c, admin), maxRange, resolvedRange)
 	if err != nil {
 		common.ApiError(c, err)
 		return true

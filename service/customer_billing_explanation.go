@@ -60,10 +60,21 @@ func customerBillingLines(log *model.Log, other map[string]any, row model.Custom
 	if row.RequestCount == 0 {
 		return lines
 	}
+	// Published statement rows carry the verified components in their frozen
+	// customer projection. The source expression is absent on that read path.
+	if row.BillingMode == model.BillingReconciliationModePerImage && row.ExplanationStatus == "available" {
+		if err := common.UnmarshalJsonStr(row.BillingLineItems, &lines); err != nil {
+			return nil
+		}
+		return lines
+	}
 	if encoded, ok := other["expr_b64"].(string); ok && encoded != "" {
 		expression, err := base64.StdEncoding.DecodeString(encoded)
 		if err != nil {
 			return lines
+		}
+		if row.BillingMode == model.BillingReconciliationModePerImage && other["billing_unit"] == string(billingexpr.BillingUnitRequest) {
+			return customerFixedImageBillingLines(other, row, quotaPerUnit)
 		}
 		// 历史账单按日志冻结汇率展开；未记录汇率的旧日志明确不可展开。
 		frozenRate := frozenLogExchangeRate(other)
@@ -287,6 +298,29 @@ func customerBillingLines(log *model.Log, other map[string]any, row model.Custom
 	}
 	lines = append(lines, dimensions...)
 	return reconciledCustomerBillingLines(lines, row, quotaPerUnit)
+}
+
+// The statement projection already verifies the original charge and selects the
+// settled image meter. Publish a single line only if both amounts reconcile to it.
+func customerFixedImageBillingLines(other map[string]any, row model.CustomerExportRow, quotaPerUnit float64) []customerBillingLine {
+	price, hasPrice := customerBillingNumber(other, "fixed_price")
+	if !hasPrice || row.BillableImageCount == nil || !row.OriginalExact || row.HasAuxiliaryCharge || row.FinalRatio == nil ||
+		quotaPerUnit <= 0 || math.IsNaN(quotaPerUnit) || math.IsInf(quotaPerUnit, 0) ||
+		math.IsNaN(*row.FinalRatio) || math.IsInf(*row.FinalRatio, 0) {
+		return nil
+	}
+	original, err := decimal.NewFromString(row.RecordedOriginal)
+	if err != nil {
+		return nil
+	}
+	count := *row.BillableImageCount
+	subtotal := decimal.NewFromFloat(price).Mul(decimal.NewFromInt(count))
+	quota := subtotal.Mul(decimal.NewFromFloat(quotaPerUnit))
+	if !quota.Round(0).Equal(original) ||
+		!quota.Mul(decimal.NewFromFloat(*row.FinalRatio)).Round(0).Equal(decimal.NewFromInt(row.Quota)) {
+		return nil
+	}
+	return []customerBillingLine{{"Image Generation", float64(count), "image", price, subtotal.InexactFloat64()}}
 }
 
 // Historical logs do not freeze every other multiplier. Only publish a

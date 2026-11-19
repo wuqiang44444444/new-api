@@ -537,7 +537,7 @@ export const meta = {
     en: "Seedance Link southbound protocol adapters",
     zh: "Seedance Link 南向协议适配",
   },
-  version: "1.6.2",
+  version: "1.6.4",
   author: { name: "yuan-gateway" },
   seedanceProtocols: [
     "vidu_modelark_v3",
@@ -1285,9 +1285,29 @@ function parseOfficialAssetResponse(input) {
   }
 }
 
+// Host admission checks this export on the pinned artifact. Older artifacts
+// may forward draft but do not reliably preserve the observation marker.
+export const modelArkDraftV3 = true;
+
+function draftFinalVideoBody(input, spec) {
+  const request = input.request;
+  const reference = request.content?.[0]?.draft_task;
+  if (!reference) return null;
+  const source = input.originTasks?.[0];
+  if (!source || input.originTasks.length !== 1 || source.task_id !== reference.id || !source.upstream_task_id)
+    throw new Error("draft task reference was not authorized");
+  if (spec && spec.resolutions?.length && !spec.resolutions.includes(request.resolution))
+    throw new Error("resolution is not supported by the selected customer model");
+  return {
+    model: input.providerModel,
+    resolution: request.resolution,
+    content: [{ type: "draft_task", draft_task: { id: source.upstream_task_id } }],
+  };
+}
+
 function buildOfficialVideoCreate(input) {
   return {
-    body: { ...input.request, model: input.providerModel },
+    body: draftFinalVideoBody(input) || { ...input.request, model: input.providerModel },
     probe: {},
     createPath: "/api/v3/contents/generations/tasks",
     queryPath: "/api/v3/contents/generations/tasks/{task_id}",
@@ -1381,7 +1401,7 @@ function strictOptionalInteger(object, key) {
 }
 function buildArkVideoCreate(input) {
   return {
-    body: { ...input.request, model: input.providerModel },
+    body: draftFinalVideoBody(input) || { ...input.request, model: input.providerModel },
     probe: {},
     createPath: "/v1/ark/media/generations",
     queryPath: "/v1/ark/media/tasks/{task_id}",
@@ -1416,6 +1436,7 @@ function parseArkVideoTask(input) {
   if (["failure", "error", "cancelled", "canceled", "expired"].includes(status)) status = "failed";
   if (!["pending", "queued", "processing", "running", "succeeded", "failed"].includes(status)) return { violation: "unsupported task status" };
   const result = { id: firstResponseString(data, "id", "task_id"), status };
+  if (typeof data.draft === "boolean") result.draft = data.draft;
   const video = firstResponseString(data.content, "video_url") || firstResponseString(data.output, "video_url") || firstResponseString(data, "video_url");
   if (status === "succeeded" && !video) return { violation: "succeeded task has no result URL" };
   if (video) result.content = { video_url: video };
@@ -1434,7 +1455,7 @@ function usageScanRoot(root) {
   return root && typeof root === "object" ? { usage_scan_root: root } : {};
 }
 
-function validateMediaModelRequest(request, spec, fullModelArk) {
+function validateMediaModelRequest(request, spec, fullModelArk, allowDraft = false) {
   if (!spec) throw new Error("the selected customer model is not supported by its configured video adapter");
   if (!fullModelArk) {
     if ((request.return_last_frame != null && !spec.allowReturnLastFrame) || (request.priority != null && !spec.allowPriority))
@@ -1442,7 +1463,7 @@ function validateMediaModelRequest(request, spec, fullModelArk) {
   }
   if (!fullModelArk)
     for (const key of ["callback_url", "service_tier", "execution_expires_after", "draft", "tools", "safety_identifier", "frames"])
-      if (request[key] != null) throw new Error("request contains a parameter unsupported by the selected customer model");
+      if (request[key] != null && (key !== "draft" || !allowDraft)) throw new Error("request contains a parameter unsupported by the selected customer model");
   const duration = request.duration == null ? 5 : request.duration;
   if (duration === -1 && !spec.intelligentDuration) throw new Error("intelligent duration is not supported by the selected customer model");
   if (duration !== -1 && (duration < spec.minDuration || duration > spec.maxDuration))
@@ -1481,6 +1502,10 @@ function validateMediaModelRequest(request, spec, fullModelArk) {
 }
 function buildMoxingVideoCreate(input) {
   const spec = MOXING_MODEL_METADATA[input.providerModel];
+  if (spec) {
+    const final = draftFinalVideoBody(input, spec);
+    if (final) return { body: final, probe: {}, createPath: "/v1/media/generations", queryPath: "/v1/media/tasks/{task_id}" };
+  }
   validateMediaModelRequest(input.request, spec, true);
   const body = { ...input.request, model: input.providerModel };
   if (body.generate_audio == null) body.generate_audio = spec.defaultGenerateAudio;
@@ -1587,6 +1612,7 @@ function parseRelayVideoTask(input) {
     model = firstResponseString(data, "model");
   if (model) result.model = model;
   if (status === "succeeded" && !video) return { violation: "succeeded task has no result URL" };
+  if (typeof data.draft === "boolean") result.draft = data.draft;
   if (video) result.content = { video_url: video };
   if (status === "succeeded") Object.assign(result, usageScanRoot(root));
   if (status === "failed")
@@ -1860,7 +1886,14 @@ function parseCMCCAssetResponse(input) {
 
 function buildFunCloudVideoCreate(input) {
   const spec = FUNCLOUD_MODEL_METADATA[input.providerModel];
-  validateMediaModelRequest(input.northRequest || input.request, spec, false);
+  if (spec) {
+    const final = draftFinalVideoBody(input, spec);
+    if (final) {
+      final.real_person_mode = true;
+      return { body: final, probe: {}, createPath: "/api/v3/contents/generations/tasks", queryPath: "/api/v3/contents/generations/tasks/{task_id}" };
+    }
+  }
+  validateMediaModelRequest(input.northRequest || input.request, spec, false, true);
   const body = { ...input.request, model: input.providerModel };
   if (body.duration == null) body.duration = spec.defaultDuration;
   if (!body.resolution) body.resolution = "720p";
@@ -1884,6 +1917,7 @@ function parseFunCloudVideoTask(input) {
   const result = { id, status };
   for (const key of ["model", "created_at", "updated_at", "duration", "resolution", "ratio", "seed", "generate_audio", "frames", "framespersecond"])
     if (key in root) result[key] = root[key];
+  if (typeof root.draft === "boolean") result.draft = root.draft;
   if (status === "succeeded") {
     const video = firstResponseString(root.content, "video_url");
     if (!video) return { violation: "invalid video result URL" };
@@ -2081,9 +2115,11 @@ function parseFunCloudAssetResponse(input) {
 function buildViduVideoCreate(input) {
   const spec = VIDU_MODEL_METADATA[input.providerModel];
   if (!spec) throw new Error("unsupported video model for the selected adapter");
+  const final = draftFinalVideoBody(input, spec);
+  if (final) return { body: final, probe: {}, createPath: "/api/v3/contents/generations/tasks", queryPath: "/api/v3/contents/generations/tasks/{task_id}" };
   const body = { ...input.request, model: input.providerModel };
   const request = { ...(input.northRequest || input.request) };
-  const fields = ["model", "content", "duration", "resolution", "ratio", "generate_audio", "watermark", ...spec.modelArkFields];
+  const fields = ["model", "content", "duration", "resolution", "ratio", "generate_audio", "watermark", "draft", ...spec.modelArkFields];
   for (const key of Object.keys(request))
     if (!fields.includes(key)) throw new Error("request contains a parameter not published for this video protocol");
   if (request.resolution != null) request.resolution = request.resolution.toLowerCase();

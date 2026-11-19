@@ -231,16 +231,13 @@ type LogRangeStatistics struct {
 	Total int64 `json:"total"`
 }
 
-func GetLogRangeStatistics(ctx context.Context, userID int, filter LogFilter, maxRange int64) (LogRangeStatistics, error) {
+func GetLogRangeStatistics(ctx context.Context, userID int, filter LogFilter, maxRange int64, resolvedRange bool) (LogRangeStatistics, error) {
 	var result LogRangeStatistics
 	now := time.Now().Unix()
-	if filter.EndTimestamp == 0 {
-		filter.EndTimestamp = now
+	if !resolvedRange {
+		filter.StartTimestamp, filter.EndTimestamp = usageLogReadRange(filter, now, maxRange, false)
 	}
-	if filter.StartTimestamp == 0 {
-		filter.StartTimestamp = filter.EndTimestamp - 3600
-	}
-	if filter.StartTimestamp > filter.EndTimestamp || (maxRange > 0 && filter.StartTimestamp < min(now, filter.EndTimestamp)-maxRange) {
+	if filter.EndTimestamp <= 0 || filter.StartTimestamp > filter.EndTimestamp || (maxRange > 0 && filter.StartTimestamp < min(now, filter.EndTimestamp)-maxRange) {
 		return result, common.NewMessage("Invalid time range")
 	}
 	query, err := filter.apply(LOG_DB.WithContext(ctx).Model(&Log{}))

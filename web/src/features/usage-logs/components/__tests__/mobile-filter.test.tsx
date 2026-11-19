@@ -66,7 +66,10 @@ function Fixture() {
   })
   return (
     <UsageLogsProvider>
-      <CommonLogsFilterBar table={table} />
+      <CommonLogsFilterBar
+        table={table}
+        statisticsWindow={{ start: 100, end: 200 }}
+      />
     </UsageLogsProvider>
   )
 }

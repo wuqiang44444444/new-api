@@ -101,3 +101,79 @@ func TestCustomerImageExplanationSeparatesOutputOnlyWhenPriced(t *testing.T) {
 	assert.Contains(t, lines, customerBillingLine{"Output", 20, "token", 10, 0.0002})
 	assert.Contains(t, lines, customerBillingLine{"Image Out", 100, "token", 30, 0.003})
 }
+
+func TestCustomerFixedImageExplanationUsesSettledImageCount(t *testing.T) {
+	const expression = `(param("quality") == "low" ? tier("low", fixed(0.01667)) : tier("high", fixed(0.10))) * image_count`
+	tests := []struct {
+		name, path string
+		change     func(map[string]any)
+		quota      int
+		want       []customerBillingLine
+	}{
+		{"generation", "/v1/images/generations", nil, 8335, []customerBillingLine{{"Image Generation", 1, "image", 0.01667, 0.01667}}},
+		{"edit with discount and two billable images", "/v1/images/edits", func(other map[string]any) {
+			other["image_count"] = 2
+			other["completed_image_count"] = 3
+			other["contract_applicable"] = true
+			other["contract_discount"] = 0.5
+		}, 8335, []customerBillingLine{{"Image Generation", 2, "image", 0.01667, 0.03334}}},
+		{"delivered count cannot replace missing billing count", "/v1/images/edits", func(other map[string]any) {
+			delete(other, "image_count")
+			other["completed_image_count"] = 1
+		}, 8335, nil},
+		{"wrong frozen price", "/v1/images/generations", func(other map[string]any) {
+			other["fixed_price"] = 0.01668
+		}, 8335, nil},
+		{"unproven contract", "/v1/images/generations", func(other map[string]any) {
+			delete(other, "contract_applicable")
+		}, 8335, nil},
+		{"charge does not reconcile", "/v1/images/generations", nil, 8336, nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			originalQuotaUnit := common.QuotaPerUnit
+			common.QuotaPerUnit = 500000
+			t.Cleanup(func() { common.QuotaPerUnit = originalQuotaUnit })
+			other := map[string]any{
+				"request_path": tc.path, "billing_mode": "tiered_expr", "billing_unit": "request",
+				"expr_b64": base64.StdEncoding.EncodeToString([]byte(expression)), "matched_tier": "low",
+				"fixed_price": 0.01667, "image_count": 1, "group_ratio": 1, "contract_applicable": false,
+			}
+			if tc.change != nil {
+				tc.change(other)
+			}
+			raw, err := common.Marshal(other)
+			require.NoError(t, err)
+			log := &model.Log{UserId: 7, TokenId: 4, Type: model.LogTypeConsume, Quota: tc.quota, PromptTokens: 1049, CompletionTokens: 196, Other: string(raw)}
+			AttachLogsBillingDisplay([]*model.Log{log})
+			var response struct {
+				Explanation struct {
+					Lines []customerBillingLine `json:"lines"`
+				} `json:"billing_explanation"`
+			}
+			require.NoError(t, common.UnmarshalJsonStr(log.Other, &response))
+			assert.Equal(t, tc.quota, log.Quota)
+			assert.Equal(t, 1049, log.PromptTokens)
+			assert.Equal(t, 196, log.CompletionTokens)
+			if tc.want == nil {
+				assert.Empty(t, response.Explanation.Lines)
+			} else {
+				assert.Equal(t, tc.want, response.Explanation.Lines)
+			}
+
+			// The published report retains safe line items without the source
+			// expression or the raw pricing fields.
+			row := model.CustomerBillingLogRow(log)
+			attachCustomerExportBillingExplanation(log, &row, common.QuotaPerUnit)
+			statement, err := common.Marshal(map[string]any{"billing_facts": row})
+			require.NoError(t, err)
+			statementLog := *log
+			statementLog.Other = string(statement)
+			AttachLogsBillingDisplay([]*model.Log{&statementLog})
+			archived := response
+			archived.Explanation.Lines = nil
+			require.NoError(t, common.UnmarshalJsonStr(statementLog.Other, &archived))
+			assert.Equal(t, response.Explanation.Lines, archived.Explanation.Lines)
+		})
+	}
+}

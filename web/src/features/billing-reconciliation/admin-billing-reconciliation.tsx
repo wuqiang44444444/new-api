@@ -23,6 +23,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
+import { BillingReportDiagnostics } from './components/billing-report-diagnostics'
 import { CustomerStatementView } from './components/customer-statement'
 import { CustomerStatementsListView } from './components/customer-statements-list'
 import { UpstreamReconciliationView } from './components/upstream-reconciliation'
@@ -121,6 +122,7 @@ export function AdminBillingReconciliation(
       )}
       <SectionPageLayout.Content>
         <div className='flex h-full min-h-0 flex-col gap-3'>
+          <BillingReportDiagnostics period={period} />
           <Tabs
             className='min-h-0 flex-1'
             value={section}

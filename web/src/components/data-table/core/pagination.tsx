@@ -37,12 +37,22 @@ import {
 } from '@/components/ui/select'
 import { cn, getPageNumbers } from '@/lib/utils'
 
+export type PendingPageTotal = {
+  hasMore: boolean
+  busy: boolean
+  failed: boolean
+  onRefresh?: () => void
+  onRequest: (destination?: number | 'last') => void
+}
+
 type DataTablePaginationProps<TData> = {
   table: Table<TData>
   compact?: boolean
   pageSizes?: readonly number[]
   showPageCount?: boolean
   allowPageJump?: boolean
+  pendingTotal?: PendingPageTotal
+  onLastPage?: () => void
 }
 
 const PAGE_SIZE_OPTIONS = [10, 20, 30, 40, 50, 100] as const
@@ -52,6 +62,8 @@ export function DataTablePagination<TData>({
   pageSizes = PAGE_SIZE_OPTIONS,
   showPageCount = false,
   allowPageJump = false,
+  pendingTotal,
+  onLastPage,
 }: DataTablePaginationProps<TData>) {
   const { t } = useTranslation()
   const pagination = table.getState().pagination
@@ -59,7 +71,9 @@ export function DataTablePagination<TData>({
   const pageSize = pagination.pageSize
   const totalPages = table.getPageCount()
   const totalRows = table.getRowCount()
-  const pageNumbers = getPageNumbers(currentPage, totalPages)
+  const pageNumbers = pendingTotal
+    ? []
+    : getPageNumbers(currentPage, totalPages)
   const pageItems = pageNumbers.map((page, index) => ({
     page,
     key: page === '...' ? `gap-after-${pageNumbers[index - 1]}` : String(page),
@@ -116,12 +130,35 @@ export function DataTablePagination<TData>({
           showPageCount ? 'flex-wrap justify-end' : 'shrink-0'
         )}
       >
-        <div className='flex shrink-0 items-baseline gap-1.5 text-xs font-medium whitespace-nowrap sm:text-sm'>
-          <span className='text-muted-foreground/80'>{t('Total:')}</span>
-          <span className='text-foreground tabular-nums'>
-            {totalRows.toLocaleString()}
-          </span>
-        </div>
+        {pendingTotal ? (
+          <div
+            className='flex shrink-0 items-center gap-2'
+            aria-busy={pendingTotal.busy}
+          >
+            <Button
+              variant='outline'
+              size='sm'
+              disabled={pendingTotal.busy}
+              onClick={
+                pendingTotal.onRefresh ?? (() => pendingTotal.onRequest())
+              }
+            >
+              {pendingTotal.onRefresh ? t('Refresh') : t('View total')}
+            </Button>
+            {pendingTotal.failed && (
+              <span role='alert' className='text-destructive text-xs'>
+                {t('Failed to load total')}
+              </span>
+            )}
+          </div>
+        ) : (
+          <div className='flex shrink-0 items-baseline gap-1.5 text-xs font-medium whitespace-nowrap sm:text-sm'>
+            <span className='text-muted-foreground/80'>{t('Total:')}</span>
+            <span className='text-foreground tabular-nums'>
+              {totalRows.toLocaleString()}
+            </span>
+          </div>
+        )}
 
         <div className='flex shrink-0 items-center gap-1.5 @lg/pagination:gap-2'>
           <span
@@ -165,10 +202,12 @@ export function DataTablePagination<TData>({
             className='text-muted-foreground text-xs whitespace-nowrap'
             aria-live='polite'
           >
-            {t('Page {{page}} of {{total}}', {
-              page: currentPage,
-              total: Math.max(1, totalPages),
-            })}
+            {pendingTotal
+              ? t('Page {{page}}', { page: currentPage })
+              : t('Page {{page}} of {{total}}', {
+                  page: currentPage,
+                  total: Math.max(1, totalPages),
+                })}
           </span>
         )}
         <div className='flex min-w-0 shrink-0 items-center gap-1 @lg/pagination:gap-1.5 @xl/pagination:gap-2'>
@@ -223,7 +262,7 @@ export function DataTablePagination<TData>({
             variant='outline'
             className='text-muted-foreground hover:text-foreground disabled:text-muted-foreground/50 size-8 p-0'
             onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
+            disabled={!(pendingTotal?.hasMore ?? table.getCanNextPage())}
           >
             <span className='sr-only'>{t('Go to next page')}</span>
             <ChevronRightIcon className='h-4 w-4' />
@@ -234,22 +273,30 @@ export function DataTablePagination<TData>({
               'text-muted-foreground hover:text-foreground disabled:text-muted-foreground/50 size-8 p-0',
               !allowPageJump && '@max-lg/pagination:hidden'
             )}
-            onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-            disabled={!table.getCanNextPage()}
+            onClick={() => {
+              if (pendingTotal?.onRefresh) pendingTotal.onRefresh()
+              else if (onLastPage) onLastPage()
+              else if (pendingTotal) pendingTotal.onRequest('last')
+              else table.setPageIndex(table.getPageCount() - 1)
+            }}
+            disabled={
+              pendingTotal ? pendingTotal.busy : !table.getCanNextPage()
+            }
           >
             <span className='sr-only'>{t('Go to last page')}</span>
             <DoubleArrowRightIcon className='h-4 w-4' />
           </Button>
         </div>
-        {allowPageJump && totalPages > 1 && (
+        {allowPageJump && (pendingTotal || totalPages > 1) && (
           <form
             className='flex shrink-0 items-center gap-1'
             onSubmit={(event) => {
               event.preventDefault()
               const page = Number(new FormData(event.currentTarget).get('page'))
-              if (Number.isInteger(page) && page >= 1 && page <= totalPages) {
-                table.setPageIndex(page - 1)
-              }
+              if (!Number.isSafeInteger(page) || page < 1) return
+              if (pendingTotal?.onRefresh) pendingTotal.onRefresh()
+              else if (pendingTotal) pendingTotal.onRequest(page)
+              else if (page <= totalPages) table.setPageIndex(page - 1)
             }}
           >
             <Input
@@ -258,13 +305,18 @@ export function DataTablePagination<TData>({
               type='number'
               inputMode='numeric'
               min={1}
-              max={totalPages}
+              max={pendingTotal ? undefined : totalPages}
               required
               aria-label={t('Page number')}
               defaultValue={currentPage}
               className='h-8 w-20 tabular-nums'
             />
-            <Button type='submit' variant='outline' size='sm'>
+            <Button
+              type='submit'
+              variant='outline'
+              size='sm'
+              disabled={pendingTotal?.busy}
+            >
               {t('Go to page')}
             </Button>
           </form>

@@ -176,6 +176,10 @@ type TaskPrivateData struct {
 	ModelArkUsage  *modelarkusage.Display   `json:"modelark_usage,omitempty"`
 	// ImageTask 是显式图片执行协议（image_openai_v1）的受保护快照。
 	ImageTask *TaskImageExecutionData `json:"image_task,omitempty"`
+
+	VideoDraftRequested  bool   `json:"video_draft_requested,omitempty"`
+	VideoDraftSourceID   string `json:"video_draft_source_id,omitempty"`
+	VideoDraftCreatePath string `json:"video_draft_create_path,omitempty"`
 }
 
 type TaskExecutionSnapshot struct {
@@ -295,6 +299,7 @@ func InitTask(platform constant.TaskPlatform, relayInfo *commonRelay.RelayInfo) 
 		if linkVideoTask {
 			freezeTaskVideoUpstream(&privateData, relayInfo.ChannelMeta)
 			privateData.AppID = relayInfo.TaskRelayInfo.AppID
+			freezeTaskVideoDraft(&privateData, relayInfo)
 		}
 		if relayInfo.UpstreamModelName != "" {
 			properties.UpstreamModelName = relayInfo.UpstreamModelName

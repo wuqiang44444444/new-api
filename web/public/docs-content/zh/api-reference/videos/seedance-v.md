@@ -62,6 +62,7 @@ curl "{{SITE_BASE_URL}}/v1/models/{{MODEL_ID_PLACEHOLDER}}" \
 | `execution_expires_after` | 整数 3600–259200 秒 | 172800 秒 |
 | `tools` | 对象数组，目前每项只允许 `{"type":"web_search"}` | 不设置 |
 | `safety_identifier` | 最多 64 个字符 | 不设置 |
+| `draft` | 布尔值，`true` 请求样片 | `false` |
 
 当前元数据有三组参数范围；部署方可以使用任意客户名，不能通过名称匹配此表：
 
@@ -72,9 +73,14 @@ curl "{{SITE_BASE_URL}}/v1/models/{{MODEL_ID_PLACEHOLDER}}" \
 | 30 秒 | `480p`、`720p`、`1080p` | 30 / 10 / 10 |
 
 `-1` 不是固定输出秒数；实际输出与费用按任务结果和模型价格处理。
-`seed`、`camera_fixed`、`frames`、`draft`、`output_format`、`priority`、`service_tier`
+`seed`、`camera_fixed`、`frames`、`output_format`、`priority`、`service_tier`
 均未发布，显式发送会被拒绝。不要因为其它 ModelArk 模型支持就附加这些字段。
 回调不替代本站任务查询与资金进度；不能仅凭收到回调判定本站已结算。
+
+## 样片模式
+
+使用 `draft: true` 请求 480p 样片。成功后，使用同一客户模型和本站样片任务 ID 请求成片，
+例如指定 `1080p`。请求格式及计费规则见 [ModelArk V3 样片模式](api-reference/videos/modelark#样片模式)。
 
 ## 媒体与组合限制
 

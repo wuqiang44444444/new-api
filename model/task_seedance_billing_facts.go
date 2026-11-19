@@ -147,7 +147,13 @@ func (t *Task) updateSeedanceObservation(fromStatus TaskStatus) (bool, error) {
 		saved.Data = t.Data
 		// Keep accepted normalized usage in the public payload as well as the
 		// billing evidence; other result fields may be refreshed independently.
-		if stored.PrivateData.AsyncBilling.ActualUsageReported {
+		preserveDraftResult := stored.Status == TaskStatusSuccess && stored.IsVideoDraftOperation()
+		if preserveDraftResult {
+			saved.Data, err = mergeDraftUsageObservation(stored.Data, t.Data, !stored.PrivateData.AsyncBilling.ActualUsageReported && next.ActualUsageReported)
+			if err != nil {
+				return err
+			}
+		} else if stored.PrivateData.AsyncBilling.ActualUsageReported {
 			var previous, current map[string]any
 			if len(stored.Data) > 0 {
 				if err := common.Unmarshal(stored.Data, &previous); err != nil {
@@ -172,7 +178,9 @@ func (t *Task) updateSeedanceObservation(fromStatus TaskStatus) (bool, error) {
 				return err
 			}
 		}
-		saved.PrivateData.ResultURL = t.PrivateData.ResultURL
+		if !preserveDraftResult {
+			saved.PrivateData.ResultURL = t.PrivateData.ResultURL
+		}
 		saved.PrivateData.PollFailures = t.PrivateData.PollFailures
 		saved.PrivateData.AsyncBilling = next
 		if stored.ClientProtocol == TaskClientProtocolModelArkV3 {

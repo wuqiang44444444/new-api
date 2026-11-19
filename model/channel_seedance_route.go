@@ -23,7 +23,7 @@ func GetEnabledSeedanceChannel(group, customerModel string, channelID int) (*Cha
 	query := DB.Where("type = ? AND status = ?", constant.ChannelTypeSeedanceLink, common.ChannelStatusEnabled)
 	query = ApplyChannelGroupFilter(query, group)
 	if channelID > 0 {
-		query = query.Where("channels.id = ?", channelID)
+		query = query.Where("id = ?", channelID)
 	}
 	if err := query.Order("id").Find(&channels).Error; err != nil {
 		return nil, err

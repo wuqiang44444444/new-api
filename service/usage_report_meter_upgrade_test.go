@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -51,28 +52,30 @@ func TestDailyReportWorkerAutomaticallyRebuildsOldUsageMeterVersions(t *testing.
 
 	customer, rebuilding, err := model.GetPublishedUsageCustomer(ctx, period, 7, "")
 	require.NoError(t, err)
-	assert.Equal(t, refs, rebuilding.References)
+	assert.Empty(t, rebuilding.References)
 	assert.Equal(t, []string{period.Date}, rebuilding.RebuildingDays)
-	assert.EqualValues(t, 1, customer.Total.TotalCalls)
-	assert.EqualValues(t, 300, customer.Total.NetQuota)
+	assert.Zero(t, customer.Total.TotalCalls)
+	assert.Zero(t, customer.Total.NetQuota)
 	rankQuery := model.UsageReportRankQuery{Kind: "model", Metric: "tokens", Page: 1, Size: 10}
 	before, err := model.GetPublishedUsageRanks(ctx, period, rankQuery)
 	require.NoError(t, err)
-	require.Len(t, before.Items, 1)
-	assert.EqualValues(t, 1, before.Items[0].Calls)
+	assert.Empty(t, before.Items)
 	assert.Equal(t, rebuilding.RebuildingDays, before.RebuildingDays)
 	_, _, err = model.GetPublishedUsageCustomer(model.WithUsageReportReferences(ctx, refs), period, 7, "")
-	require.NoError(t, err)
+	require.Error(t, err)
 	_, err = model.FreezeUsageReportExport(ctx, period, refs)
+	require.Error(t, err)
+	require.NoError(t, model.DeferDailyReportDate(ctx, old.Unix(), model.DailyReportUsage, errors.New("temporary failure")))
+	require.NoError(t, db.Table("daily_report_retries").Where("start = ? AND kind = ?", old.Unix(), model.DailyReportUsage).Update("coverage_issue", true).Error)
+	_, pending, err := model.GetPublishedUsageCustomer(ctx, period, 7, "")
 	require.NoError(t, err)
-	require.NoError(t, db.Table("daily_report_retries").Create(map[string]any{
-		"start": old.Unix(), "kind": model.DailyReportUsage, "coverage_issue": true, "retry_at": now.Unix() + 60,
-	}).Error)
-	_, unavailable, err := model.GetPublishedUsageCustomer(ctx, period, 7, "")
-	require.NoError(t, err)
-	assert.Empty(t, unavailable.RebuildingDays)
-	assert.Equal(t, []string{period.Date}, unavailable.SourceUnavailableDays)
+	assert.Equal(t, []string{period.Date}, pending.RebuildingDays)
+	assert.Empty(t, pending.SourceUnavailableDays)
 	require.NoError(t, db.Exec("DELETE FROM daily_report_retries WHERE start = ?", old.Unix()).Error)
+	require.NoError(t, db.Table("daily_report_retries").Create(map[string]any{
+		"start": old.Unix(), "kind": model.DailyReportBilling, "coverage_issue": true,
+		"release_version": model.CustomerOriginalReplayVersion, "retry_at": now.Unix() + 60,
+	}).Error)
 
 	require.NoError(t, runDailyReport(ctx, task, runner, func(ctx context.Context) error { return ctx.Err() }, false))
 

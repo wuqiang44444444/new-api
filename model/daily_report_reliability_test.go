@@ -116,6 +116,13 @@ func TestDailyReportPublishesRefundDayWhenOlderUsageCoverageWasLost(t *testing.T
 	assert.EqualValues(t, 100, usage.Total.NetQuota)
 	assert.Equal(t, []UsageReportDayReference{{Start: start, Generation: old.Generation}}, meta.References)
 	assert.Equal(t, []string{oldDate}, meta.IncompleteDays)
+	diagnostic, err := BillingReportDiagnosticDays(ctx, start, start+billingReportDaySeconds)
+	require.NoError(t, err)
+	require.Len(t, diagnostic, 1)
+	require.NotNil(t, diagnostic[0].PublishedRows)
+	require.NotNil(t, diagnostic[0].CandidateRows)
+	assert.EqualValues(t, 1, *diagnostic[0].PublishedRows)
+	assert.Zero(t, *diagnostic[0].CandidateRows)
 	billCtx, _, err := ResolveBillingReport(ctx, refundDay, refundDay+billingReportDaySeconds-1, "")
 	require.NoError(t, err)
 	for userID, want := range map[int]int64{7: -30, 8: 50} {
@@ -126,6 +133,21 @@ func TestDailyReportPublishesRefundDayWhenOlderUsageCoverageWasLost(t *testing.T
 	scopes, err = DailyReportScopes(ctx, refundDay, today, now.Unix(), false)
 	require.NoError(t, err)
 	assert.NotContains(t, scopes, DailyReportScope{Start: start, Kind: DailyReportUsage})
+}
+
+func TestUsageOnlyUpgradeDoesNotWaitForSameDayBillingRetry(t *testing.T) {
+	db, start, _ := setupBillingReportTest(t)
+	ctx := context.Background()
+	date := time.Unix(start, 0).In(UsageAnalyticsZone()).Format(time.DateOnly)
+	require.NoError(t, BuildUsageReportDay(ctx, date, "billing-test", "runner", nil))
+	task := Task{TaskID: "same-day", UserId: 7, FinishTime: start + 10, Status: TaskStatusSuccess}
+	require.NoError(t, db.Create(&task).Error)
+	now := common.GetTimestamp()
+	require.NoError(t, db.Create(&TaskBillingDelivery{TaskRowID: task.ID, Event: "customer_refund", BeforeQuota: 100, AfterQuota: 70, CreatedAt: start + 20, DeliveredAt: now + 1}).Error)
+	require.NoError(t, DeferDailyReportDate(ctx, start, DailyReportBilling, errDailyReportCoverageDecreased))
+	scopes, err := DailyReportScopes(ctx, start, start+4*billingReportDaySeconds, now, true)
+	require.NoError(t, err)
+	assert.Equal(t, []DailyReportScope{{Start: start, Kind: DailyReportUsage}}, scopes)
 }
 
 func TestDailyReportPruneKeepsPinnedUsageAndRejectsNewReadsBeforeDeletion(t *testing.T) {

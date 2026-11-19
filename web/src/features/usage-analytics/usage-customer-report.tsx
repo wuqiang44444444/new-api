@@ -31,6 +31,22 @@ export function UsageCustomerReport({
           showCoverage={false}
         />
       )}
+      {tokenId === undefined && !!report.pending_refunds?.length && (
+        <ReportCard>
+          <details>
+            <summary className='cursor-pointer text-sm font-medium'>
+              {t('Pending refund')} · {report.pending_refunds.length}
+            </summary>
+            <ul className='mt-2 space-y-1 text-sm'>
+              {report.pending_refunds.map((row) => (
+                <li key={row.task_id}>
+                  {t('Task ID')} {row.task_id}
+                </li>
+              ))}
+            </ul>
+          </details>
+        </ReportCard>
+      )}
       {hasPublishedData && (
         <>
           {hasUsage && <PersonalUsageOverview metrics={view.total} />}
@@ -43,22 +59,6 @@ export function UsageCustomerReport({
               days={view.day_totals}
               incompleteDays={report.incomplete_days}
             />
-          )}
-          {tokenId === undefined && !!report.pending_refunds?.length && (
-            <ReportCard>
-              <details>
-                <summary className='cursor-pointer text-sm font-medium'>
-                  {t('Pending refund')} · {report.pending_refunds.length}
-                </summary>
-                <ul className='mt-2 space-y-1 text-sm'>
-                  {report.pending_refunds.map((row) => (
-                    <li key={row.task_id}>
-                      {t('Task ID')} {row.task_id}
-                    </li>
-                  ))}
-                </ul>
-              </details>
-            </ReportCard>
           )}
           {hasUsage && personalView && <UsageModelRanking view={view} />}
           {!hasUsage &&

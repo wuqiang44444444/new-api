@@ -286,7 +286,7 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
 | 字段                      | 类型    | 结构必填 | 公共结构约束                                                                                    |
 | ------------------------- | ------- | -------- | ----------------------------------------------------------------------------------------------- |
 | `model`                   | string  | 是       | 客户模型名；必须可用于当前 Key                                                                  |
-| `content`                 | array   | 是       | 至少一项；每项只能表达一种文本或媒体内容                                                        |
+| `content`                 | array   | 是       | 至少一项；填写文本、媒体，或单独引用一个已成功的样片                                            |
 | `duration`                | integer | 否       | `-1` 表示智能时长，或 `1`～`3600`；具体模型通常有更窄范围，`0` 无效                             |
 | `callback_url`            | string  | 否       | 回调 URI；只有模型合同公开该字段时可用，未声明时使用 GET 轮询，不假设平台提供统一回调或重试保证 |
 | `resolution`              | string  | 否       | 输出分辨率；枚举与必填性以模型合同为准                                                          |
@@ -297,7 +297,7 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
 | `watermark`               | boolean | 否       | 是否添加水印；仅模型公开时可用                                                                  |
 | `return_last_frame`       | boolean | 否       | 是否返回末帧；成功任务可能据此提供 `last_frame_url`                                             |
 | `execution_expires_after` | integer | 否       | 执行有效期，范围 `3600`～`259200` 秒                                                            |
-| `draft`                   | boolean | 否       | 草稿模式；仅模型公开时可用                                                                      |
+| `draft`                   | boolean | 否       | 样片模式，默认 `false`；详见下方示例                                                            |
 | `tools`                   | array   | 否       | 工具数组；每项当前只允许 `type`，可用类型由模型合同决定                                         |
 | `safety_identifier`       | string  | 否       | 调用方安全标识；仅模型公开时可用                                                                |
 | `priority`                | integer | 否       | `0`～`9`；仅模型公开时可用                                                                      |
@@ -317,12 +317,13 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
 
 ### `content` 内容项
 
-| `type`      | 必填子字段      | `role`                                           | 说明                                       |
-| ----------- | --------------- | ------------------------------------------------ | ------------------------------------------ |
-| `text`      | `text`          | 不允许                                           | 文本不能为空；一项中不能同时带任何媒体字段 |
-| `image_url` | `image_url.url` | `first_frame`、`last_frame` 或 `reference_image` | 图片首帧、末帧或参考图                     |
-| `video_url` | `video_url.url` | `reference_video`                                | 参考视频                                   |
-| `audio_url` | `audio_url.url` | `reference_audio`                                | 参考音频                                   |
+| `type`       | 必填子字段      | `role`                                           | 说明                                       |
+| ------------ | --------------- | ------------------------------------------------ | ------------------------------------------ |
+| `text`       | `text`          | 不允许                                           | 文本不能为空；一项中不能同时带任何媒体字段 |
+| `image_url`  | `image_url.url` | `first_frame`、`last_frame` 或 `reference_image` | 图片首帧、末帧或参考图                     |
+| `video_url`  | `video_url.url` | `reference_video`                                | 参考视频                                   |
+| `audio_url`  | `audio_url.url` | `reference_audio`                                | 参考音频                                   |
+| `draft_task` | `draft_task.id` | 不允许                                           | 本站样片任务 ID；必须是唯一内容项          |
 
 每个媒体项必须且只能带与 `type` 对应的 URL 对象，并且必须提供有效 `role`：
 
@@ -343,6 +344,37 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
 具体模型允许哪些 `type + role`、每种内容的数量以及组合规则，以
 `api.video.creation.content_types` 与上述场景说明为准。部分组合由上游异步校验，不能仅凭每种媒体
 分别受支持就认定其组合有效。
+
+### 样片模式
+
+先向同一创建接口提交 `draft: true`。此时省略 `resolution` 使用 `480p`，覆盖普通生成的默认分辨率。
+省略 `draft` 或传 `false` 时沿用普通生成。显式填写时必须使用 JSON 布尔值。
+
+```json
+{
+  "model": "seedance-2-5-v",
+  "content": [{ "type": "text", "text": "晨光下，镜头缓慢掠过湖面。" }],
+  "duration": 4,
+  "resolution": "480p",
+  "draft": true
+}
+```
+
+轮询至 `status: "succeeded"` 且 `draft: true` 后，继续用同一 API Key 和同一客户模型提交成片。
+将第一次返回的本站 `id` 填入 `draft_task.id`，并显式指定目标分辨率。样片引用须是唯一内容项，
+提示词、素材、画幅和时长等沿用原任务。成片请求可省略 `draft` 或传 `false`。
+
+```json
+{
+  "model": "seedance-2-5-v",
+  "content": [{ "type": "draft_task", "draft_task": { "id": "task_replace_with_sample_id" } }],
+  "resolution": "1080p"
+}
+```
+
+样片和成片分别按各自的 Token 用量计费。使用样片时，模型须配置 Token 计价。若样片请求明确得到普通视频，
+或成片请求明确得到样片，该次任务返回 `provider_contract_failure` 并退还费用。状态为 `queued` 或 `running`
+时继续轮询原任务。成片查询中的 `draft_task_id` 是第一步的本站任务 ID。
 
 ### 参考音频的 URL、Base64 与文件
 
@@ -425,38 +457,38 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks/task-public-id" \
 
 ### 任务响应字段
 
-| 字段                          | 类型    | 说明                                                                 |
-| ----------------------------- | ------- | -------------------------------------------------------------------- |
-| `id`                          | string  | 平台任务 ID                                                          |
-| `model`                       | string  | 创建时使用的客户模型名                                               |
-| `status`                      | string  | `queued`、`running`、`succeeded`、`failed`、`cancelled` 或 `expired` |
+| 字段                          | 类型    | 说明                                                                                  |
+| ----------------------------- | ------- | ------------------------------------------------------------------------------------- |
+| `id`                          | string  | 平台任务 ID                                                                           |
+| `model`                       | string  | 创建时使用的客户模型名                                                                |
+| `status`                      | string  | `queued`、`running`、`succeeded`、`failed`、`cancelled` 或 `expired`                  |
 | `content.delivery_status`     | string  | 本站托管线路的主视频交付状态：`ready`、`preparing` 或 `unavailable`；范围外线路可省略 |
-| `content.video_url`           | string  | 本站托管线路就绪后返回 24 小时预签名 GET 地址；范围外线路沿用鉴权内容代理路径 |
-| `content.last_frame_url`      | string  | 末帧就绪时返回的签名 GET 地址                                   |
-| `seed`                        | integer | 实际或上游返回的随机种子；不存在时省略                               |
-| `resolution`                  | string  | 实际输出分辨率；不存在时省略                                         |
-| `duration`                    | integer | 实际时长；不存在时省略                                               |
-| `frames`                      | integer | 实际帧数；不存在时省略                                               |
-| `framespersecond`             | integer | 实际帧率；不存在时省略                                               |
-| `ratio`                       | string  | 实际画幅；不存在时省略                                               |
-| `generate_audio`              | boolean | 是否生成音频；保留显式 `false`                                       |
-| `draft`                       | boolean | 是否为草稿任务；保留显式 `false`                                     |
-| `draft_task_id`               | string  | 相关草稿任务 ID；模型返回时存在                                      |
-| `safety_identifier`           | string  | 创建时的公开安全标识；存在时返回                                     |
-| `priority`                    | integer | 创建时的优先级；保留显式 `0`                                         |
-| `service_tier`                | string  | 服务档位；未指定时通常为 `default`                                   |
-| `usage.total_seconds`        | number  | 已确认的输入与输出视频秒数之和，或已确认同口径的上游总秒数。音频单列 |
-| `usage.input_seconds`        | number  | 已确认的输入视频秒数 |
-| `usage.output_seconds`       | number  | 已确认的输出视频秒数 |
-| `usage.input_audio_seconds`  | number  | 已确认的输入音频秒数 |
-| `usage.input_image_count`    | integer | 已确认的输入图片数 |
-| `usage.prompt_tokens`        | integer | 来源明确的输入 Token 数 |
-| `usage.completion_tokens`    | integer | 归一后的完成 Token 数 |
-| `usage.total_tokens`         | integer | 归一后的总 Token 数 |
-| `usage.tool_usage.web_search` | integer | 已确认的搜索调用次数 |
-| `error.code`                  | string  | 失败、取消或过期时的公开错误码                                       |
-| `error.message`               | string  | 脱敏错误说明                                                         |
-| `created_at` / `updated_at`   | integer | Unix 秒时间戳                                                        |
+| `content.video_url`           | string  | 本站托管线路就绪后返回 24 小时预签名 GET 地址；范围外线路沿用鉴权内容代理路径         |
+| `content.last_frame_url`      | string  | 末帧就绪时返回的签名 GET 地址                                                         |
+| `seed`                        | integer | 实际或上游返回的随机种子；不存在时省略                                                |
+| `resolution`                  | string  | 实际输出分辨率；不存在时省略                                                          |
+| `duration`                    | integer | 实际时长；不存在时省略                                                                |
+| `frames`                      | integer | 实际帧数；不存在时省略                                                                |
+| `framespersecond`             | integer | 实际帧率；不存在时省略                                                                |
+| `ratio`                       | string  | 实际画幅；不存在时省略                                                                |
+| `generate_audio`              | boolean | 是否生成音频；保留显式 `false`                                                        |
+| `draft`                       | boolean | 是否为样片；可信结果返回时保留显式 `false`                                            |
+| `draft_task_id`               | string  | 成片引用的本站样片任务 ID                                                             |
+| `safety_identifier`           | string  | 创建时的公开安全标识；存在时返回                                                      |
+| `priority`                    | integer | 创建时的优先级；保留显式 `0`                                                          |
+| `service_tier`                | string  | 服务档位；未指定时通常为 `default`                                                    |
+| `usage.total_seconds`         | number  | 已确认的输入与输出视频秒数之和，或已确认同口径的上游总秒数。音频单列                  |
+| `usage.input_seconds`         | number  | 已确认的输入视频秒数                                                                  |
+| `usage.output_seconds`        | number  | 已确认的输出视频秒数                                                                  |
+| `usage.input_audio_seconds`   | number  | 已确认的输入音频秒数                                                                  |
+| `usage.input_image_count`     | integer | 已确认的输入图片数                                                                    |
+| `usage.prompt_tokens`         | integer | 来源明确的输入 Token 数                                                               |
+| `usage.completion_tokens`     | integer | 归一后的完成 Token 数                                                                 |
+| `usage.total_tokens`          | integer | 归一后的总 Token 数                                                                   |
+| `usage.tool_usage.web_search` | integer | 已确认的搜索调用次数                                                                  |
+| `error.code`                  | string  | 失败、取消或过期时的公开错误码                                                        |
+| `error.message`               | string  | 脱敏错误说明                                                                          |
+| `created_at` / `updated_at`   | integer | Unix 秒时间戳                                                                         |
 
 单查与列表的每个任务都返回上述 `usage` 字段。秒数允许小数。字段值为 `0` 可能表示已确认为零，
 也可能表示用量尚未确认。
@@ -627,16 +659,17 @@ ModelArk 错误信封：
 }
 ```
 
-| HTTP 状态     | 常见错误码                                                                        | 说明                                         |
-| ------------- | --------------------------------------------------------------------------------- | -------------------------------------------- |
-| `400`         | `invalid_request`、`unsupported_parameter`、`invalid_page_size`、`invalid_status` | 请求结构、字段、分页或过滤条件错误           |
-| `400`         | `invalid_video_parameter`                                                         | 参数或素材引用不符合当前模型合同             |
-| `401` / `403` | 鉴权或权限错误                                                                    | 检查 API Key、模型可用状态和分组             |
-| `404`         | `task_not_found`                                                                  | 当前应用范围内没有该 ModelArk 任务           |
-| `409`         | 取消或删除冲突码                                                                  | 当前任务状态不允许该操作                     |
-| `413`         | `request_body_too_large`                                                          | 请求正文或内联媒体超过上限，减少大小后再提交 |
-| `429`         | 限流或额度错误                                                                    | 根据错误码区分并退避                         |
-| `503`         | `internal_error`                                                                  | 也用于托管对象或签名不可用，此类错误发生在预扣和提交前       |
-| `503`         | `create_outcome_unknown`、`upstream_unavailable`、`cancellation_unknown`          | 不要重发创建；查询或联系管理员核查           |
+| HTTP 状态     | 常见错误码                                                                        | 说明                                                   |
+| ------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `400`         | `invalid_request`、`unsupported_parameter`、`invalid_page_size`、`invalid_status` | 请求结构、字段、分页或过滤条件错误                     |
+| `400`         | `invalid_video_parameter`                                                         | 参数或素材引用不符合当前模型合同                       |
+| `400`         | `invalid_draft_task`                                                              | 无法使用所引用的样片；检查任务状态、模型、Key 和有效期 |
+| `401` / `403` | 鉴权或权限错误                                                                    | 检查 API Key、模型可用状态和分组                       |
+| `404`         | `task_not_found`                                                                  | 当前应用范围内没有该 ModelArk 任务                     |
+| `409`         | 取消或删除冲突码                                                                  | 当前任务状态不允许该操作                               |
+| `413`         | `request_body_too_large`                                                          | 请求正文或内联媒体超过上限，减少大小后再提交           |
+| `429`         | 限流或额度错误                                                                    | 根据错误码区分并退避                                   |
+| `503`         | `internal_error`                                                                  | 也用于托管对象或签名不可用，此类错误发生在预扣和提交前 |
+| `503`         | `create_outcome_unknown`、`upstream_unavailable`、`cancellation_unknown`          | 不要重发创建；查询或联系管理员核查                     |
 
 请求记录相关的 `evidence_*` 错误及重试边界见[错误与重试](concepts/errors#请求记录相关错误)。

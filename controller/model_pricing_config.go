@@ -79,5 +79,5 @@ func UpdateModelPricingConfig(c *gin.Context) {
 		names = append(names, change.ModelName)
 	}
 	recordManageAudit(c, "model.pricing.update", map[string]any{"models": names})
-	common.ApiSuccess(c, gin.H{"updated_models": names})
+	writeModelPricingUpdateSuccess(c, names, request.Changes)
 }

@@ -41,6 +41,9 @@ func RestoreBillingReportGeneration(ctx context.Context, date, expected, restore
 			}
 			return err
 		}
+		if current.OriginalReplayVersion != CustomerOriginalReplayVersion || previous.OriginalReplayVersion != current.OriginalReplayVersion {
+			return common.NewMessage("Billing report rollback requires the current replay version")
+		}
 		if previous.Rows != current.Rows || (previous.Incomplete && !current.Incomplete) {
 			return common.NewMessage("Previous billing report does not cover the published source")
 		}

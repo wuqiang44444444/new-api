@@ -47,6 +47,7 @@ import {
 } from '@/stores/system-config-store'
 
 import { previewModelPricing } from '../api'
+import { pricingFromDraft, pricingRow } from '../pricing'
 
 const clients: QueryClient[] = []
 
@@ -942,16 +943,33 @@ it('switches currency using the keyboard without changing the saved configuratio
 })
 
 it('shows the estimated token cost in the selected currency while token quantities stay unchanged', async () => {
+  vi.spyOn(api, 'post').mockImplementation(async (_url, request) => {
+    const { items } = request as {
+      items: Array<{ key: string; sample: { normalized_usage: { p: number } } }>
+    }
+    return {
+      data: {
+        success: true,
+        data: items.map(({ key, sample }) => ({
+          key,
+          evaluation: {
+            billing_unit: 'token',
+            raw_cost_usd: (sample.normalized_usage.p * 2) / 1_000_000,
+          },
+        })),
+      },
+    }
+  })
   renderEditor({
     billingMode: 'tiered_expr',
     billingExpr: 'tier("base", p * 2 + c * 4)',
   })
   const tokens = screen.getByRole('spinbutton', { name: 'Input tokens' })
   fireEvent.change(tokens, { target: { value: '1000000' } })
-  expect(screen.getByText('Estimated cost: $2')).toBeVisible()
+  expect(await screen.findByText('Estimated cost: $2')).toBeVisible()
   await selectCurrency('Site currency (CNY)')
   expect(tokens).toHaveValue(1000000)
-  expect(screen.getByText('Estimated cost: ¥14')).toBeVisible()
+  expect(await screen.findByText('Estimated cost: ¥14')).toBeVisible()
 })
 
 it('keeps an empty per-request amount empty when currencies change', async () => {
@@ -1034,4 +1052,45 @@ it('preserves time billing on direct save and blocks incomplete local conditions
     billingExpr: expression.replace('>= 9', '>= 10'),
     requestRuleExpr,
   })
+})
+
+it('keeps a request multiplier on a per-image formula across save and reopen', async () => {
+  const name = 'priced-image'
+  const base = 'tier("image", fixed(0.20)) * image_count'
+  const rule = '(param("quality") == "high" ? 2 : 1)'
+  const stored = `(${base}) * ${rule}`
+  const configured = {
+    'billing_setting.billing_mode': 'tiered_expr' as const,
+    'billing_setting.billing_expr': stored,
+  }
+  vi.spyOn(api, 'post').mockResolvedValue({ data: { success: true, data: {} } })
+  const editor = renderEditor(pricingRow(name, configured))
+  for (let pass = 0; pass < 2; pass++) {
+    expect(
+      screen.queryByRole('button', { name: 'Size tiers per image' })
+    ).toBeNull()
+    const editedBase = base.replace('0.20', '0.30')
+    if (pass === 0) {
+      const formula = screen.getByRole('textbox', {
+        name: 'Billing expression',
+      })
+      expect(formula).toHaveValue(stored)
+      fireEvent.change(formula, {
+        target: { value: stored.replace('0.20', '0.30') },
+      })
+    }
+    const draft = await commit(editor.ref)
+    if (!draft) throw new Error('Expected the price editor to commit the draft')
+    expect(draft.requestRuleExpr).toBe(rule)
+    const values = pricingFromDraft(draft)
+    const saved = values['billing_setting.billing_expr'] as string
+    expect(saved).toBe(`(${editedBase}) * ${rule}`)
+    expect(
+      evaluateBillingExpression(saved, {
+        imageCount: 1,
+        request: { body: { quality: 'high' } },
+      })
+    ).toMatchObject({ status: 'success', cost: 600000 })
+    editor.reload(pricingRow(name, values))
+  }
 })

@@ -96,7 +96,10 @@ func BuildBillingReportDay(ctx context.Context, start int64, taskID, runnerID st
 			return err
 		}
 		writeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		err := db.WithContext(writeCtx).Create(&writes).Error
+		err := attachPreviousBillingOriginals(db.WithContext(writeCtx), prior.Generation, writes)
+		if err == nil {
+			err = db.WithContext(writeCtx).Create(&writes).Error
+		}
 		cancel()
 		writes = writes[:0]
 		return err
@@ -130,6 +133,7 @@ func BuildBillingReportDay(ctx context.Context, start int64, taskID, runnerID st
 		return nil
 	}
 
+	priceDrafts := make(map[string]string)
 	var sourceRevision int64
 	policy := BillingStatementReadPolicy{UpperLogID: &upper, ReadOnlySource: true, BeforeBatch: gate, BatchTimeout: 5 * time.Second,
 		ObserveLogRevision: func(revision int64) { sourceRevision += revision }}
@@ -160,6 +164,8 @@ func BuildBillingReportDay(ctx context.Context, start int64, taskID, runnerID st
 			TokenID: log.TokenId, LogType: log.Type, CreatedAt: log.CreatedAt, RequestID: log.RequestId, UpstreamRequestID: log.UpstreamRequestId,
 			CustomerModel: parsed.customerModel, ProviderModel: strings.TrimSpace(parsed.providerModel), BillingMode: parsed.billingMode,
 			TokenName: log.TokenName, GroupName: log.Group, URLKey: p.URLKey, Username: log.Username}
+		line.PriceIssue = historicalImagePriceIssue(log, parsed, priceDrafts)
+		line.ReplayIssue = parsed.originalReplayReason
 		if line.ProviderModel == "" {
 			line.ProviderModel, line.ModelFallback = fact.ModelName, true
 		}
@@ -235,21 +241,8 @@ func BuildBillingReportDay(ctx context.Context, start int64, taskID, runnerID st
 			return err
 		}
 	}
-	for id, c := range customers {
-		summary, err := common.Marshal(billingReportCustomerOverview{projectBillingReportPrice(&c.overview), c.lastActivityAt})
-		if err != nil {
-			return err
-		}
-		leaves, err := common.Marshal(billingReportCustomerDetails{projectBillingReportDimension(c.key), projectBillingReportDimension(c.channel)})
-		if err != nil {
-			return err
-		}
-		payload, err := writeDailyReportPayload(ctx, db, gate, generation.ID, reportBillingCustomerPayload, id, leaves)
-		if err != nil {
-			return err
-		}
-		row := billingReportCustomerDay{Generation: generation.ID, UserID: id, Summary: BillingStatementJSON(summary), Leaves: payload}
-		if err := writeBillingReportProjection(ctx, db, gate, len(summary)+len(payload), &row); err != nil {
+	for id, customer := range customers {
+		if err := writeBillingReportCustomerDay(ctx, db, gate, generation.ID, id, customer); err != nil {
 			return err
 		}
 	}
@@ -259,6 +252,9 @@ func BuildBillingReportDay(ctx context.Context, start int64, taskID, runnerID st
 	coverage := dailyReportLogScanCoverage(ctx, generation.Rows, sourceRevision)
 	stage := dailyReportStage{OriginalReplayVersion: generation.OriginalReplayVersion, Start: start, Kind: DailyReportBilling, Generation: generation.ID,
 		Previous: prior.Generation, AsOf: now, UpperLogID: upper, SourceRows: coverage.Rows, SourceRevision: coverage.Revision, Dependencies: dependencies, Incomplete: generation.Incomplete}
+	if prior.Generation == "" && generation.Incomplete && coverage.Rows == 0 {
+		stage.HistoricalSource = dailyReportSourceMissing
+	}
 	return saveDailyReportStage(ctx, db, stage, taskID, runnerID)
 }
 

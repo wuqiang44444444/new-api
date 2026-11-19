@@ -82,6 +82,64 @@ func useLogExportDatabases(t *testing.T, mainDB *gorm.DB, logDB *gorm.DB, mainTy
 	})
 }
 
+func TestLogDeferredPaginationUsesDedicatedEndpoint(t *testing.T) {
+	db, _ := newAuditTestDatabase(t, "sqlite", "")
+	useLogExportDatabases(t, db, db, common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
+	require.NoError(t, db.AutoMigrate(&model.Log{}))
+	now := time.Now().Unix()
+	require.NoError(t, db.Create(&[]model.Log{
+		{UserId: 1, CreatedAt: now - 60, RequestId: "first"},
+		{UserId: 1, CreatedAt: now - 120, RequestId: "second"},
+	}).Error)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Set("id", 1)
+	ctx.Set("role", common.RoleCommonUser)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/log/self/console/page?page_size=1&page_snapshot=start&page_total=defer", nil)
+	GetSelfUsageLogConsolePage(ctx)
+	require.Equal(t, http.StatusOK, recorder.Code)
+
+	var response struct {
+		Success bool
+		Data    model.NumberedUsageLogPage
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success)
+	assert.True(t, response.Data.TotalPending)
+	assert.True(t, response.Data.HasMore)
+	assert.EqualValues(t, 3600, response.Data.RangeEnd-response.Data.RangeStart)
+}
+
+func TestUsageLogConsoleStatisticsUsesListWindowAndRequestFilter(t *testing.T) {
+	db, _ := newAuditTestDatabase(t, "sqlite", "")
+	useLogExportDatabases(t, db, db, common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
+	require.NoError(t, db.AutoMigrate(&model.Log{}))
+	require.NoError(t, db.Create(&[]model.Log{
+		{UserId: 1, CreatedAt: 150, RequestId: "match", Type: model.LogTypeConsume, Quota: 10},
+		{UserId: 1, CreatedAt: 250, RequestId: "match", Type: model.LogTypeConsume, Quota: 20},
+		{UserId: 1, CreatedAt: 150, RequestId: "other", Type: model.LogTypeConsume, Quota: 30},
+		{UserId: 2, CreatedAt: 150, RequestId: "match", Type: model.LogTypeConsume, Quota: 40},
+	}).Error)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Set("id", 1)
+	ctx.Set("role", common.RoleCommonUser)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/log/self/console/stat?range_count=true&resolved_log_range=true&request_id=match&start_timestamp=100&end_timestamp=200", nil)
+	GetSelfUsageLogConsoleStatistics(ctx)
+	require.Equal(t, http.StatusOK, recorder.Code)
+
+	var response struct {
+		Success bool
+		Data    model.LogRangeStatistics
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success)
+	assert.EqualValues(t, 1, response.Data.Total)
+	assert.Equal(t, 10, response.Data.Quota)
+}
+
 func TestLogExportDatabaseMatrix(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	previousMaster := common.IsMasterNode

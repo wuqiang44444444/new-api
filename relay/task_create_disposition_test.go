@@ -37,6 +37,7 @@ func TestTaskCreateHTTPDispositionRequiresVerifiedRejection(t *testing.T) {
 		{"conflicting task id", dto.VideoUpstreamProtocolTokenSaveMediaTaskV1, 403, `{"task_id":"task-1","error":{"code":"group_model_permission_denied","message":"Denied"}}`, false},
 		{"conflicting nested task", dto.VideoUpstreamProtocolTokenSaveMediaTaskV1, 403, `{"data":{"task_id":"task-1"},"error":{"code":"group_model_permission_denied","message":"Denied"}}`, false},
 		{"ambiguous success", dto.VideoUpstreamProtocolTokenSaveMediaTaskV1, 200, `{"error":{"code":"group_model_permission_denied","message":"Denied"}}`, false},
+		{"FunCloud unexpected top-level code", dto.VideoUpstreamProtocolFunCloudModelArkV3, 403, `{"code":123,"error":{"code":"ContentPolicyViolation","message":"Denied"}}`, false},
 		{"FunCloud error", dto.VideoUpstreamProtocolFunCloudModelArkV3, 403, `{"error":{"code":"ContentPolicyViolation","message":"Denied"}}`, true},
 		{"FunCloud conflicting task", dto.VideoUpstreamProtocolFunCloudModelArkV3, 403, `{"data":{"id":"task-1"},"error":{"code":"ContentPolicyViolation","message":"Denied"}}`, false},
 	} {
@@ -61,5 +62,26 @@ func TestTaskCreateHTTPDispositionDoesNotClassifyNativeChannels(t *testing.T) {
 		ChannelOtherSettings: dto.ChannelOtherSettings{VideoUpstreamProtocol: dto.VideoUpstreamProtocolModelArkV3Volcengine},
 	}}} {
 		assert.Equal(t, relaycommon.TaskCreateOutcomeUnknown, taskCreateHTTPDisposition(info, http.StatusUnauthorized, body))
+	}
+}
+
+func TestMoxingDraftCreateRejectionDoesNotHideAnUpstreamTask(t *testing.T) {
+	info := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelType:          constant.ChannelTypeSeedanceLink,
+			ChannelOtherSettings: dto.ChannelOtherSettings{VideoUpstreamProtocol: dto.VideoUpstreamProtocolMoxingModelArkV1},
+		},
+		TaskRelayInfo: &relaycommon.TaskRelayInfo{VideoDraftRequested: true},
+	}
+	for _, tc := range []struct {
+		body string
+		want relaycommon.TaskCreateDisposition
+	}{
+		{`{"error":{"code":"invalid_request_error","message":"Invalid parameters"}}`, relaycommon.TaskCreateTerminalRejection},
+		{`{"task_id":"accepted-task","error":{"code":"invalid_request_error","message":"Invalid parameters"}}`, relaycommon.TaskCreateOutcomeUnknown},
+		{`{"error":{"code":"provider_error","message":"请求参数不合法，请检查后重试。"}}`, relaycommon.TaskCreateOutcomeUnknown},
+		{`{"error":{"code":400,"message":"Unexpected error"}}`, relaycommon.TaskCreateOutcomeUnknown},
+	} {
+		assert.Equal(t, tc.want, taskCreateHTTPDisposition(info, http.StatusBadRequest, []byte(tc.body)))
 	}
 }

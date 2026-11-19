@@ -40,7 +40,7 @@ func DailyReportScopes(ctx context.Context, start, today, now int64, usageOnly b
 	set := map[DailyReportScope]bool{{Start: start, Kind: DailyReportUsage}: true}
 	// A version-only rebuild can publish just the usage report unless it
 	// also contains a late delivery that requires a coordinated switch.
-	if !usageOnly || len(events) > 0 {
+	if !usageOnly {
 		set[DailyReportScope{Start: start, Kind: DailyReportBilling}] = true
 	}
 	for _, event := range events {

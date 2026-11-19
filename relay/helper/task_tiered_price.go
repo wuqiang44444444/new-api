@@ -92,11 +92,24 @@ func ModelPriceHelperTaskTiered(c *gin.Context, info *relaycommon.RelayInfo, ada
 		return types.PriceData{}, fmt.Errorf("model %s: %w", info.OriginModelName, err)
 	}
 
+	draft := info.TaskRelayInfo.IsVideoDraftOperation()
+	if draft {
+		if !taskUsageBilling || estimatedTokens <= 0 {
+			return types.PriceData{}, fmt.Errorf("draft operations require token pricing and a positive token budget")
+		}
+		if err := billingexpr.ValidateTaskTokenPrice(exprString, requestInput); err != nil {
+			return types.PriceData{}, err
+		}
+	}
+
 	groupRatioInfo := HandleGroupRatio(c, info)
 	requestInput.RecordCalculation = true
 	rawCost, trace, err := billingexpr.RunExprWithRequest(exprString, params, requestInput)
 	if err != nil {
 		return types.PriceData{}, fmt.Errorf("model %s task tiered expr run failed: %w", info.OriginModelName, err)
+	}
+	if draft && trace.BillingUnit != billingexpr.BillingUnitToken {
+		return types.PriceData{}, fmt.Errorf("draft operations require token pricing")
 	}
 	if rawCost < 0 {
 		return types.PriceData{}, fmt.Errorf("model %s task tiered expr returned negative cost", info.OriginModelName)

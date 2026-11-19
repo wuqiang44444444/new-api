@@ -72,6 +72,10 @@ import {
   isValidPricingCurrency,
   USD_PRICING_CURRENCY,
 } from '@/features/model-pricing/currency'
+import {
+  ImageSizePricingEditor,
+  type ImagePriceGridHandle,
+} from '@/features/model-pricing/image-size-pricing-editor'
 import { pricingFromDraft, pricingRow } from '@/features/model-pricing/pricing'
 import { PricingAmountInput } from '@/features/model-pricing/pricing-amount-input'
 import {
@@ -211,6 +215,8 @@ const ModelPricingEditorPanelContent = forwardRef<
   const { t } = useTranslation()
   const promptPriceId = useId()
   const formElementRef = useRef<HTMLFormElement>(null)
+  const imageGrid = useRef<ImagePriceGridHandle>(null)
+  const [imageGridDirty, setImageGridDirty] = useState(false)
   const currencyConfig = useSystemConfigStore((state) => state.config.currency)
   const preference = usePricingPreferencesStore((state) => state.currency)
   const siteCurrency = useMemo(
@@ -424,15 +430,17 @@ const ModelPricingEditorPanelContent = forwardRef<
 
   useEffect(() => {
     onDirtyChange?.(
-      form.formState.isDirty ||
+      imageGridDirty ||
+        form.formState.isDirty ||
         pricingMode !== initialPricingMode ||
         billingExpr !== initialBillingExpr ||
         requestRuleExpr !== (editData?.requestRuleExpr ?? '') ||
         !pluginExpressionsEqual(pluginExpressions, editData?.pluginBillingExpr) ||
- taskPreConsumeTokens !== (editData?.taskPreConsumeTokens ?? 0)
+        taskPreConsumeTokens !== (editData?.taskPreConsumeTokens ?? 0)
     )
   }, [
     onDirtyChange,
+    imageGridDirty,
     form.formState.isDirty,
     pricingMode,
     billingExpr,
@@ -805,7 +813,7 @@ const ModelPricingEditorPanelContent = forwardRef<
     ref,
     () => ({
       commitDraft: async () => {
-if(billingContractConflict) return null
+        if (billingContractConflict) return null
         if (
           formElementRef.current?.querySelector('[data-billing-invalid="true"]')
         ) {
@@ -820,10 +828,19 @@ if(billingContractConflict) return null
         }
         const isValid = await form.trigger()
         if (!isValid || !validatePricingValues()) return null
-        return buildSubmitData(form.getValues())
+        const draft = buildSubmitData(form.getValues())
+        const imageExpression =
+          pricingMode === 'tiered_expr'
+            ? await imageGrid.current?.commit()
+            : undefined
+        if (imageExpression === null) return null
+        if (imageExpression !== undefined) {
+          draft.billingExpr = imageExpression
+        }
+        return draft
       },
     }),
-    [form, validatePricingValues, buildSubmitData,billingContractConflict]
+    [form, validatePricingValues, buildSubmitData, billingContractConflict, pricingMode]
   )
 
   const expressionEditor = taskUsageSchema ? (
@@ -841,15 +858,23 @@ if(billingContractConflict) return null
       onRequestRuleExprChange={setRequestRuleExpr}
     />
   ) : (
-    <TieredPricingEditor
-      currency={currency}
+    <ImageSizePricingEditor
       key={editorReloadToken}
-      modelName={watchedValues.name}
-      billingExpr={billingExpr}
-      requestRuleExpr={requestRuleExpr}
-      onBillingExprChange={setBillingExpr}
-      onRequestRuleExprChange={setRequestRuleExpr}
-    />
+      expression={combineBillingExpr(billingExpr, requestRuleExpr)}
+      hasRequestRules={Boolean(requestRuleExpr.trim())}
+      onExpressionChange={setBillingExpr}
+      onDirtyChange={setImageGridDirty}
+      ref={imageGrid}
+    >
+      <TieredPricingEditor
+        currency={currency}
+        modelName={watchedValues.name}
+        billingExpr={billingExpr}
+        requestRuleExpr={requestRuleExpr}
+        onBillingExprChange={setBillingExpr}
+        onRequestRuleExprChange={setRequestRuleExpr}
+      />
+    </ImageSizePricingEditor>
   )
 
   const showActions = Boolean(onSave)

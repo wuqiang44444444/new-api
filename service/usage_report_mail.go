@@ -94,7 +94,7 @@ func queueUsageReportEmails(ctx context.Context, now time.Time) (bool, error) {
 		if account.Total.FailureCalls > 0 {
 			details = loadUsageMailErrors(ctx, ref.Start, period.EndTimestamp, cutoff, cutoffErr != nil, []int{account.UserID}, false)
 		}
-		opened, err := openUsageReportMail(ctx, model.PersonalUsageReportMail, ref.Start, account.UserID, usageReportMailBody(day, meta, account.Total, nil, details), to)
+		opened, err := openUsageReportMail(ctx, model.PersonalUsageReportMail, ref, account.UserID, usageReportMailBody(day, meta, account.Total, nil, details), to)
 		if err != nil {
 			return queued, errors.Join(platformErr, err)
 		}
@@ -130,7 +130,7 @@ func queueAdminUsageReportEmails(ctx context.Context, period model.UsageAnalytic
 			if total.FailureCalls > 0 {
 				details = loadUsageMailErrors(ctx, ref.Start, period.EndTimestamp, cutoff, coverageUnknown, nil, false)
 			}
-			platformQueued, platformErr = openUsageReportMail(ctx, model.PlatformUsageReportMail, ref.Start, 0, usageReportMailBody(period.Date, meta, total, &active, details), recipients)
+			platformQueued, platformErr = openUsageReportMail(ctx, model.PlatformUsageReportMail, ref, 0, usageReportMailBody(period.Date, meta, total, &active, details), recipients)
 		}
 	}
 	if prefs.Allows(model.MailCustomerStatus, eligible) && !slices.Contains(existing, model.CustomerStatusReportMail) {
@@ -141,7 +141,7 @@ func queueAdminUsageReportEmails(ctx context.Context, period model.UsageAnalytic
 			if customers.AccountsWithFailures > 0 {
 				details = loadUsageMailErrors(ctx, ref.Start, period.EndTimestamp, cutoff, coverageUnknown, nil, true)
 			}
-			customersQueued, customerErr = openUsageReportMail(ctx, model.CustomerStatusReportMail, ref.Start, 0, customerStatusReportMailBody(period.Date, meta, customers, now, details), recipients)
+			customersQueued, customerErr = openUsageReportMail(ctx, model.CustomerStatusReportMail, ref, 0, customerStatusReportMailBody(period.Date, meta, customers, now, details), recipients)
 		}
 	}
 	return platformQueued || customersQueued, errors.Join(platformErr, customerErr)
@@ -153,10 +153,10 @@ func usageReportMailKey(kind string, start int64, userID int) string {
 
 type renderedUsageReportMail struct{ subject, body string }
 
-func openUsageReportMail(ctx context.Context, kind string, start int64, userID int, mail renderedUsageReportMail, recipients []string) (bool, error) {
-	key := usageReportMailKey(kind, start, userID)
+func openUsageReportMail(ctx context.Context, kind string, ref model.UsageReportDayReference, userID int, mail renderedUsageReportMail, recipients []string) (bool, error) {
+	key := usageReportMailKey(kind, ref.Start, userID)
 	return model.OpenResourceAlert(ctx, model.ResourceAlertEpisode{
-		OpenKey: &key, Resource: kind, MailUserID: userID, OpenedAt: start, Subject: mail.subject, BodyHTML: mail.body,
+		OpenKey: &key, Resource: kind, MailUserID: userID, OpenedAt: ref.Start, UsageReportGeneration: ref.Generation, Subject: mail.subject, BodyHTML: mail.body,
 	}, recipients)
 }
 

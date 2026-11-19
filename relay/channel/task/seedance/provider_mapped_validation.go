@@ -20,7 +20,22 @@ func (a *TaskAdaptor) ValidateMappedRequest(c *gin.Context, info *relaycommon.Re
 		return service.TaskErrorWrapperLocal(errors.New("Seedance channels require the ModelArk V3 request contract"), "invalid_video_contract", http.StatusBadRequest)
 	}
 
+	if taskErr := a.prepareDraft(c, info, contract.ModelArk); taskErr != nil {
+		return taskErr
+	}
+
 	if SeedanceExtensionProtocolMigrated(a.protocol) {
+		if contract.ModelArk.DraftSourceID() != "" {
+			if _, err := a.ensureSeedanceCreateConversion(c, info); err != nil {
+				code := "invalid_video_parameter"
+				var contractErr *relaycommon.VideoContractError
+				if errors.As(err, &contractErr) {
+					code = contractErr.Code
+				}
+				return service.TaskErrorWrapperLocal(err, code, http.StatusBadRequest)
+			}
+			return nil
+		}
 		if taskErr := service.PrepareVideoReferenceAudio(c, info); taskErr != nil {
 			return taskErr
 		}

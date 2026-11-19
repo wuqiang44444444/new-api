@@ -43,8 +43,8 @@ describe('task log API routing', () => {
 })
 
 test.each([
-  [true, '/api/log/'],
-  [false, '/api/log/self'],
+  [true, '/api/log/console/page'],
+  [false, '/api/log/self/console/page'],
 ] as const)(
   'uses the canonical detail route for admin=%s',
   async (isAdmin, path) => {
@@ -55,8 +55,51 @@ test.each([
       return Promise.resolve({ data: { success: true, data: { id: 1 } } })
     }) as typeof api.get
 
-    await getUsageLogDetail('test-log-reference', isAdmin, signal)
+    await getUsageLogDetail('test-log-reference', isAdmin, signal, 1600000000)
 
     expect(requestedUrl).toBe(`${path}?log_ref=test-log-reference`)
   }
 )
+
+test('bounds a 404 fallback and refuses an ordinary list response', async () => {
+  const signal = new AbortController().signal
+  const requests: string[] = []
+  api.get = ((url, config) => {
+    requests.push(api.getUri({ ...config, url }))
+    return Promise.resolve(
+      requests.length === 1
+        ? { status: 404, data: {} }
+        : { status: 200, data: { success: true, data: { items: [{ id: 1 }] } } }
+    )
+  }) as typeof api.get
+
+  await expect(
+    getUsageLogDetail('test-log-reference', true, signal, 1600000000)
+  ).rejects.toThrow()
+  expect(requests).toEqual([
+    '/api/log/console/page?log_ref=test-log-reference',
+    '/api/log/?log_ref=test-log-reference&start_timestamp=1600000000&end_timestamp=1600000000&page_size=1',
+  ])
+})
+
+test('can read the same authorized detail from a snapshot-capable older instance', async () => {
+  const createdAt = 1600000000
+  const detail = {
+    id: 1,
+    user_id: 7,
+    created_at: createdAt,
+    type: 2,
+    content: 'detail',
+  }
+  api.get = ((url) =>
+    Promise.resolve(
+      url.endsWith('/console/page')
+        ? { status: 404, data: {} }
+        : { status: 200, data: { success: true, data: detail } }
+    )) as typeof api.get
+
+  const signal = new AbortController().signal
+  await expect(
+    getUsageLogDetail('test-log-reference', false, signal, createdAt)
+  ).resolves.toEqual(detail)
+})

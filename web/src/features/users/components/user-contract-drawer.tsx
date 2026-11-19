@@ -667,8 +667,8 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
           props.onOpenChange(nextOpen)
         }}
       >
-        <SheetContent className='w-[96vw] sm:max-w-[1080px]'>
-          <SheetHeader className='border-b'>
+        <SheetContent className='h-dvh w-[96vw] gap-0 sm:max-w-[1080px]'>
+          <SheetHeader className='shrink-0 border-b pr-12'>
             <SheetTitle>{t('Manage model contracts')}</SheetTitle>
             <SheetDescription>
               {props.user.username} · {t('User ID')} {props.user.id} ·{' '}
@@ -676,15 +676,68 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
             </SheetDescription>
           </SheetHeader>
 
-          <div className='flex flex-col gap-2 border-b px-4 py-3'>
-            <div className='flex items-center justify-between'>
-              <span className='text-muted-foreground text-xs font-medium'>
+          <div className='flex shrink-0 flex-col gap-2 border-b px-4 py-2'>
+            <div className='flex min-w-0 items-center justify-between gap-2'>
+              <span className='text-muted-foreground hidden text-xs font-medium md:[@media(min-height:48rem)]:block'>
                 {t('Contracts')}
               </span>
+              {contracts.length > 0 && (
+                <div className='min-w-0 flex-1 md:[@media(min-height:48rem)]:hidden'>
+                  <Select
+                    value={
+                      creating || !selectedContract
+                        ? null
+                        : String(selectedContract.id)
+                    }
+                    disabled={loading || saving}
+                    onValueChange={(value) => {
+                      const contract = contracts.find(
+                        (item) => String(item.id) === value
+                      )
+                      if (
+                        contract &&
+                        (creating || contract.id !== selectedId)
+                      ) {
+                        requestDiscard(() => selectContract(contract))
+                      }
+                    }}
+                  >
+                    <SelectTrigger
+                      aria-label={t('Current contract')}
+                      className='w-full min-w-0'
+                    >
+                      <SelectValue className='min-w-0'>
+                        <span className='truncate'>
+                          {t('Current contract')}
+                          {selectedContract && !creating
+                            ? ` · ${selectedContract.name}`
+                            : ''}
+                        </span>
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent alignItemWithTrigger={false}>
+                      <SelectGroup>
+                        {contracts.map((contract) => (
+                          <SelectItem
+                            key={contract.id}
+                            value={String(contract.id)}
+                            label={contract.name}
+                          >
+                            <span className='min-w-0 break-all whitespace-normal'>
+                              {contract.name}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <Button
                 type='button'
                 variant='outline'
                 size='sm'
+                className='ml-auto shrink-0'
                 disabled={loading || saving}
                 onClick={() => requestDiscard(startCreate)}
               >
@@ -697,19 +750,20 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
                 {loading ? t('Loading...') : t('No contract models')}
               </div>
             ) : (
-              <div className='grid gap-2 sm:grid-cols-2 lg:grid-cols-3'>
+              <div className='hidden max-h-[25dvh] grid-cols-2 gap-2 overflow-y-auto overscroll-contain p-1 lg:grid-cols-3 md:[@media(min-height:48rem)]:grid'>
                 {contracts.map((contract) => {
                   const selected = !creating && contract.id === selectedId
                   return (
                     <button
                       key={contract.id}
                       type='button'
+                      aria-pressed={selected}
                       onClick={() => {
                         if (selected) return
                         requestDiscard(() => selectContract(contract))
                       }}
                       className={cn(
-                        'flex flex-col items-start gap-1 rounded-md border p-2 text-left transition-colors',
+                        'flex min-w-0 flex-col items-start gap-1 rounded-md border p-2 text-left transition-colors',
                         selected
                           ? 'border-primary bg-primary/5'
                           : 'hover:bg-muted/40'
@@ -734,8 +788,11 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
             )}
           </div>
 
-          <Tabs defaultValue='configuration' className='min-h-0 flex-1 px-4'>
-            <TabsList>
+          <Tabs
+            defaultValue='configuration'
+            className='min-h-0 flex-1 px-4 pt-2'
+          >
+            <TabsList className='shrink-0'>
               <TabsTrigger value='configuration'>
                 {t('Configuration')}
               </TabsTrigger>
@@ -744,7 +801,7 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
 
             <TabsContent
               value='configuration'
-              className='min-h-0 overflow-y-auto pb-4'
+              className='min-h-0 overflow-y-auto overscroll-contain pb-4'
             >
               {loading ? (
                 <div className='text-muted-foreground py-12 text-center'>
@@ -929,7 +986,10 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
               )}
             </TabsContent>
 
-            <TabsContent value='audit' className='min-h-0 overflow-y-auto pb-4'>
+            <TabsContent
+              value='audit'
+              className='min-h-0 overflow-y-auto overscroll-contain pb-4'
+            >
               {creating || !selectedId ? (
                 <Empty className='border'>
                   <EmptyHeader>
@@ -951,8 +1011,8 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
             </TabsContent>
           </Tabs>
 
-          <SheetFooter className='border-t sm:flex-row sm:justify-between'>
-            <div className='flex gap-2'>
+          <SheetFooter className='shrink-0 flex-row flex-wrap justify-between border-t px-4 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]'>
+            <div className='flex min-w-0 flex-wrap gap-2'>
               <Button
                 type='button'
                 variant='outline'
@@ -996,6 +1056,7 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
             </div>
             <Button
               type='button'
+              className='ml-auto shrink-0'
               disabled={!dirty || saving || loading}
               onClick={() => save()}
             >

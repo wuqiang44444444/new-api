@@ -19,6 +19,10 @@ type VideoMediaURL struct {
 	URL string `json:"url"`
 }
 
+type ModelArkDraftTask struct {
+	ID string `json:"id"`
+}
+
 type ModelArkVideoContent struct {
 	Type     string         `json:"type"`
 	Text     *string        `json:"text,omitempty"`
@@ -26,6 +30,8 @@ type ModelArkVideoContent struct {
 	ImageURL *VideoMediaURL `json:"image_url,omitempty"`
 	VideoURL *VideoMediaURL `json:"video_url,omitempty"`
 	AudioURL *VideoMediaURL `json:"audio_url,omitempty"`
+
+	DraftTask *ModelArkDraftTask `json:"draft_task,omitempty"`
 }
 
 type ModelArkVideoCreateRequest struct {
@@ -48,6 +54,13 @@ type ModelArkVideoCreateRequest struct {
 	Frames                *int                   `json:"frames,omitempty"`
 	Seed                  *int                   `json:"seed,omitempty"`
 	CameraFixed           *bool                  `json:"camera_fixed,omitempty"`
+}
+
+func (r *ModelArkVideoCreateRequest) DraftSourceID() string {
+	if r == nil || len(r.Content) != 1 || r.Content[0].Type != "draft_task" || r.Content[0].DraftTask == nil {
+		return ""
+	}
+	return r.Content[0].DraftTask.ID
 }
 
 type ModelArkVideoTool struct {

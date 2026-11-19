@@ -97,6 +97,9 @@ func TestDailyUsageEmailsFromPublishedReportReachLocalInbox(t *testing.T) {
 
 	require.NoError(t, db.Create(&model.Option{Key: "error_report_setting.recipients", Value: "ops@example.com"}).Error)
 	require.True(t, queue(tick))
+	// The queued body remains bound to a readable generation of this meter version.
+	require.NoError(t, model.BuildUsageReportDay(ctx, start.Format(time.DateOnly), "export-fixture", "runner", nil))
+
 	require.NoError(t, deliverResourceAlerts(time.Now, common.SendEmailContext))
 	ops := requireLocalMail(t, inbox, "Platform daily usage report", "ops@example.com")
 	assert.Contains(t, ops.body, "/admin/usage?date=2026-10-01&amp;period=day")

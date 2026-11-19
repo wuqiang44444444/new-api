@@ -107,7 +107,6 @@ func (t *Task) ToModelArkVideoTask() *dto.ModelArkVideoTask {
 		FramesPerSecond  int    `json:"framespersecond"`
 		GenerateAudio    *bool  `json:"generate_audio"`
 		Draft            *bool  `json:"draft"`
-		DraftTaskID      string `json:"draft_task_id"`
 		SafetyIdentifier string `json:"safety_identifier"`
 		Priority         *int   `json:"priority"`
 		ServiceTier      string `json:"service_tier"`
@@ -132,7 +131,7 @@ func (t *Task) ToModelArkVideoTask() *dto.ModelArkVideoTask {
 	result.FramesPerSecond = upstream.FramesPerSecond
 	result.GenerateAudio = upstream.GenerateAudio
 	result.Draft = upstream.Draft
-	result.DraftTaskID = upstream.DraftTaskID
+	result.DraftTaskID = t.PrivateData.VideoDraftSourceID
 	result.SafetyIdentifier = upstream.SafetyIdentifier
 	result.Priority = upstream.Priority
 	if result.ServiceTier == "" {

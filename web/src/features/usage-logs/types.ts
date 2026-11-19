@@ -519,6 +519,7 @@ export interface TaskArtifactsResponse {
 
 export interface GetLogsParams {
   page_snapshot?: string
+  page_total?: 'defer' | 'count' | 'last'
   group_funds?: boolean
   fund_group?: string
   report_version?: string
@@ -552,8 +553,13 @@ export type BillingFundGroup = {
 export interface GetLogsResponse {
   success: boolean
   message?: string
+  code?: string
   data?: {
     page_snapshot?: string
+    has_more?: boolean
+    total_pending?: boolean
+    start_timestamp?: number
+    end_timestamp?: number
     detail_refs?: string[]
     fund_groups?: BillingFundGroup[]
     quota?: number
@@ -566,6 +572,7 @@ export interface GetLogsResponse {
 
 export interface GetLogStatsParams {
   range_count?: boolean
+  resolved_log_range?: boolean
   billing_statement?: boolean
   user_id?: number
   billing_mode?: string
@@ -623,6 +630,7 @@ export interface GetTaskLogsParams {
  */
 export interface FetchLogsConfig {
   pageSnapshot?: string
+  pageTotal?: GetLogsParams['page_total']
   groupFunds?: boolean
   fundGroup?: string
   signal?: AbortSignal

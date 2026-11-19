@@ -2,8 +2,11 @@ package model
 
 import (
 	"context"
+	"errors"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"gorm.io/gorm"
 )
 
 const (
@@ -13,7 +16,12 @@ const (
 
 // PublishedUsageMailDay shares the console's finalized-day and coverage rules.
 func PublishedUsageMailDay(ctx context.Context, period UsageAnalyticsPeriod) (PublishedUsageReport, error) {
-	_, meta, err := selectUsageReportDays(ctx, period, nil)
+	heads, meta, err := selectUsageReportDays(ctx, period, nil)
+	if err == nil && len(heads) == 1 && heads[0].HistoricalSource != "" {
+		// Frozen summaries describe an earlier meter. Leave the date's mail key
+		// available for a subsequent rebuild from primary evidence.
+		meta.References = nil
+	}
 	return meta, err
 }
 
@@ -76,4 +84,28 @@ func PublishedUsageMailTotals(ctx context.Context, day UsageReportDayReference) 
 		totals.merge(projection.accumulator())
 	}
 	return totals.finalize(), active, rows.Err()
+}
+
+// Check the generation that produced the outbox body. An old pending mail
+// must never be treated as a newly calculated body after a version change.
+func UsageReportMailVersionCurrent(ctx context.Context, episode ResourceAlertEpisode) (bool, error) {
+	if episode.UsageReportGeneration == "" {
+		return false, nil
+	}
+	var marker usageReportDayRow
+	err := DB.WithContext(ctx).Select("payload").Where(
+		"generation = ? AND user_id = -1 AND COALESCE(unavailable_at, 0) = 0", episode.UsageReportGeneration).Take(&marker).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var head usageReportDay
+	if err := common.UnmarshalJsonStr(string(marker.Payload), &head); err != nil {
+		return false, err
+	}
+	return head.Start == episode.OpenedAt && head.Generation == episode.UsageReportGeneration &&
+		head.MeterVersion == usageReportMeterVersion && head.HistoricalSource == "" &&
+		head.AsOf >= head.Start+billingReportDaySeconds+int64((3*time.Hour).Seconds()), nil
 }

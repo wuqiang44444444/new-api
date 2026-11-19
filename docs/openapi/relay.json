@@ -7905,6 +7905,57 @@
       "ModelArkVideoCreateRequest": {
         "type": "object",
         "additionalProperties": false,
+        "oneOf": [
+          {
+            "properties": {
+              "content": {
+                "items": {
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "text",
+                        "image_url",
+                        "video_url",
+                        "audio_url"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "required": [
+              "resolution"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "model": {
+                "type": "string"
+              },
+              "resolution": {
+                "type": "string"
+              },
+              "draft": {
+                "enum": [
+                  false
+                ]
+              },
+              "content": {
+                "maxItems": 1,
+                "items": {
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "draft_task"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ],
         "required": [
           "model",
           "content"
@@ -7917,7 +7968,7 @@
           "content": {
             "type": "array",
             "minItems": 1,
-            "description": "文本和媒体条目。按目标模型的生成参数选择媒体类型、角色、数量和组合。托管引用须属于当前账号且可用，可按模型规则与直接 URL 混用。",
+            "description": "文本和媒体条目，或单项样片引用。引用样片时只提交同一客户模型、单个 draft_task 与明确的 resolution，draft 可省略或传 false。按目标模型的生成参数选择媒体类型、角色、数量和组合。托管引用须属于当前账号且可用，可按模型规则与直接 URL 混用。",
             "items": {
               "type": "object",
               "additionalProperties": false,
@@ -7931,7 +7982,8 @@
                     "text",
                     "image_url",
                     "video_url",
-                    "audio_url"
+                    "audio_url",
+                    "draft_task"
                   ]
                 },
                 "text": {
@@ -7952,6 +8004,18 @@
                 },
                 "video_url": {
                   "$ref": "#/components/schemas/VideoMediaURL"
+                },
+                "draft_task": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["id"],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "同一 Key、同一客户模型的成功本站样片任务 ID。"
+                    }
+                  }
                 },
                 "audio_url": {
                   "allOf": [
@@ -7981,6 +8045,9 @@
                   },
                   "not": {
                     "anyOf": [
+                      {
+                        "required": ["draft_task"]
+                      },
                       {
                         "required": [
                           "image_url"
@@ -8027,6 +8094,9 @@
                   "not": {
                     "anyOf": [
                       {
+                        "required": ["draft_task"]
+                      },
+                      {
                         "required": [
                           "text"
                         ]
@@ -8064,6 +8134,9 @@
                   },
                   "not": {
                     "anyOf": [
+                      {
+                        "required": ["draft_task"]
+                      },
                       {
                         "required": [
                           "text"
@@ -8103,6 +8176,9 @@
                   "not": {
                     "anyOf": [
                       {
+                        "required": ["draft_task"]
+                      },
+                      {
                         "required": [
                           "text"
                         ]
@@ -8117,6 +8193,23 @@
                           "video_url"
                         ]
                       }
+                    ]
+                  }
+                },
+                {
+                  "required": ["type", "draft_task"],
+                  "properties": {
+                    "type": {
+                      "enum": ["draft_task"]
+                    }
+                  },
+                  "not": {
+                    "anyOf": [
+                      {"required": ["text"]},
+                      {"required": ["role"]},
+                      {"required": ["image_url"]},
+                      {"required": ["video_url"]},
+                      {"required": ["audio_url"]}
                     ]
                   }
                 }
@@ -8135,7 +8228,7 @@
           },
           "resolution": {
             "type": "string",
-            "description": "输出分辨率。穷举允许值与必填性由 api.video.creation.parameters 中对应项决定；enum 为硬限制，suggested_values 仅为非穷举推荐。未提供 enum 时，请按对应模型文档选择分辨率。"
+            "description": "输出分辨率。draft 为 true 且字段省略时使用 480p。成片必须显式填写。穷举允许值与必填性由 api.video.creation.parameters 中对应项决定；enum 为硬限制，suggested_values 仅为非穷举推荐。未提供 enum 时，请按对应模型文档选择分辨率。"
           },
           "ratio": {
             "type": "string",
@@ -8168,7 +8261,9 @@
             "maximum": 259200
           },
           "draft": {
-            "type": "boolean"
+            "type": "boolean",
+            "default": false,
+            "description": "样片模式。true 请求生成样片，未指定分辨率时使用 480p。false 或省略沿用普通生成。样片与成片按独立任务和各自 Token 用量计费。"
           },
           "tools": {
             "type": "array",
@@ -8283,7 +8378,8 @@
             "type": "boolean"
           },
           "draft_task_id": {
-            "type": "string"
+            "type": "string",
+            "description": "成片引用的本站样片任务 ID。"
           },
           "safety_identifier": {
             "type": "string"

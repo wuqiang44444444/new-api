@@ -64,7 +64,7 @@ func setupBillingReportTest(t *testing.T) (*gorm.DB, int64, int64) {
 		})
 		DB, LOG_DB, db = testDB, testDB, testDB
 		common.SetDatabaseTypes(kind, kind)
-		require.NoError(t, db.AutoMigrate(&User{}, &Channel{}, &Log{}, &Task{}, &TaskBillingDelivery{}))
+		require.NoError(t, db.AutoMigrate(&User{}, &Channel{}, &Log{}, &Task{}, &TaskBillingDelivery{}, &BatchJob{}))
 		require.NoError(t, migrateBillingReconciliationDB())
 	}
 	require.NoError(t, MigrateDailyReports(db))
@@ -534,7 +534,7 @@ func TestPinnedBillingReportRetainsCoverageIssues(t *testing.T) {
 	db, start, end := setupBillingReportTest(t)
 	ctx := context.Background()
 	require.NoError(t, BuildBillingReportDay(ctx, start, "billing-test", "runner", nil, nil))
-	require.NoError(t, db.Create(&dailyReportRetry{Start: start, Kind: DailyReportBilling, CoverageIssue: true}).Error)
+	require.NoError(t, db.Create(&dailyReportRetry{Start: start, Kind: DailyReportBilling, CoverageIssue: true, ReleaseVersion: CustomerOriginalReplayVersion}).Error)
 	_, latest, err := ResolveBillingReport(ctx, start, end, "")
 	require.NoError(t, err)
 	require.Equal(t, 1, latest.IncompleteDays)

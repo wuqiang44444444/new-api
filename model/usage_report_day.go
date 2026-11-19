@@ -12,7 +12,7 @@ import (
 const UsageReportTaskType = "usage_report_day"
 
 const (
-	usageReportMeterVersion = 7
+	usageReportMeterVersion = 10
 	// Version 4 was the first to distinguish frozen billing tokens from telemetry.
 	frozenBillingTokenMeterVersion = 4
 )
@@ -26,6 +26,10 @@ type usageReportDay struct {
 	Incomplete   bool
 	RankReady    bool
 	MeterVersion int
+
+	HistoricalSource           string `gorm:"size:24"`
+	HistoricalMeterVersion     int
+	HistoricalCoverageComplete bool
 }
 
 type usageReportDayRow struct {
@@ -74,6 +78,7 @@ type UsageReportDayReference struct {
 }
 
 type PublishedUsageReport struct {
+	refundOnlyGenerations []string
 	UsageReportRebuildStatus
 	References     []UsageReportDayReference     `json:"report_days"`
 	IncompleteDays []string                      `json:"incomplete_days,omitempty"`
@@ -153,15 +158,19 @@ func BuildUsageReportDay(ctx context.Context, day string, taskID string, runnerI
 		return err
 	}
 	// A correction preserves the published channel mapping for that day.
-	var prior usageReportDayRow
-	err = db.Table("usage_report_day_rows AS detail").Select("detail.generation, detail.payload").
-		Joins("JOIN usage_report_days AS head ON head.generation = detail.generation").
-		Where("head.start = ? AND detail.user_id = ?", period.StartTimestamp, 0).Take(&prior).Error
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	var prior struct {
+		Generation       string
+		DetailGeneration string
+		Payload          BillingStatementJSON
+	}
+	err = db.Table("usage_report_days AS head").Select("head.generation, detail.generation AS detail_generation, detail.payload").
+		Joins("LEFT JOIN usage_report_day_rows AS detail ON detail.generation = head.generation AND detail.user_id = 0").
+		Where("head.start = ?", period.StartTimestamp).Limit(1).Scan(&prior).Error
+	if err != nil {
 		return err
 	}
 	var priorData usageReportDayData
-	if prior.Generation != "" {
+	if prior.DetailGeneration != "" {
 		raw, err := dailyReportPayload(ctx, db, prior.Generation, reportUsagePayload, 0, prior.Payload)
 		if err != nil {
 			return err
@@ -246,6 +255,9 @@ func BuildUsageReportDay(ctx context.Context, day string, taskID string, runnerI
 	coverage := dailyReportLogScanCoverage(ctx, agg.scannedLogRows, agg.logRevision)
 	stage := dailyReportStage{OriginalReplayVersion: CustomerOriginalReplayVersion, UsageMeterVersion: usageReportMeterVersion, Start: period.StartTimestamp, Kind: DailyReportUsage, Generation: generation,
 		Previous: prior.Generation, AsOf: now, UpperLogID: upper, SourceRows: coverage.Rows, SourceRevision: coverage.Revision, Dependencies: dependencies, Incomplete: incomplete, RankReady: true}
+	if prior.Generation == "" && incomplete && coverage.Rows == 0 && len(agg.customer) == 0 && len(agg.upstream) == 0 {
+		stage.HistoricalSource = dailyReportSourceMissing
+	}
 	return saveDailyReportStage(ctx, db, stage, taskID, runnerID)
 }
 
@@ -324,11 +336,20 @@ func loadPublishedUsageReport(ctx context.Context, period UsageAnalyticsPeriod, 
 	if err != nil {
 		return nil, result, err
 	}
+	if agg.opts.WantCustomer && userID > 0 && len(result.refundOnlyGenerations) > 0 {
+		result.PendingRefunds, err = historicalPendingRefunds(ctx, userID, result.refundOnlyGenerations)
+		if err != nil {
+			return nil, result, err
+		}
+	}
 	for _, head := range heads {
 		index := usageDayIndex(period, head.Start)
 		query := DB.WithContext(ctx).Model(&usageReportDayRow{}).Where("generation = ?", head.Generation)
 		if overview {
-			query = query.Select("user_id, overview").Where("user_id > 0")
+			query = query.Where("user_id > 0")
+			if head.HistoricalSource == "" {
+				query = query.Select("user_id, overview")
+			}
 		} else {
 			query = query.Where("user_id = ?", userID)
 		}
@@ -337,10 +358,7 @@ func loadPublishedUsageReport(ctx context.Context, period UsageAnalyticsPeriod, 
 			return nil, result, err
 		}
 		for _, row := range rows {
-			if overview {
-				if len(row.Overview) == 0 {
-					continue
-				}
+			if overview && len(row.Overview) != 0 {
 				var metrics usageReportMetrics
 				if err := common.UnmarshalJsonStr(string(row.Overview), &metrics); err != nil {
 					return nil, result, err
@@ -348,16 +366,38 @@ func loadPublishedUsageReport(ctx context.Context, period UsageAnalyticsPeriod, 
 				agg.overview[usageOverviewKey{user: row.UserID, day: index}] = metrics.accumulator()
 				continue
 			}
+			if overview && head.HistoricalSource == "" {
+				continue
+			}
 			var data usageReportDayData
 			raw, err := dailyReportPayload(ctx, DB, row.Generation, reportUsagePayload, row.UserID, row.Payload)
 			if err != nil {
 				return nil, result, err
 			}
-			if err := common.UnmarshalJsonStr(raw, &data); err != nil {
-				return nil, result, err
+			if raw != "" || head.HistoricalSource == "" {
+				if err := common.UnmarshalJsonStr(raw, &data); err != nil {
+					return nil, result, err
+				}
+			}
+			if overview {
+				if len(data.Customers) != 0 {
+					totals := new(usageMetricsAcc)
+					for _, leaf := range data.Customers {
+						totals.merge(leaf.Metrics.accumulator())
+					}
+					agg.overview[usageOverviewKey{user: row.UserID, day: index}] = totals
+				}
+				continue
 			}
 			if agg.opts.WantCustomer {
 				result.PendingRefunds = append(result.PendingRefunds, data.PendingRefunds...)
+				if head.HistoricalSource != "" && len(data.Customers) == 0 && len(row.Overview) != 0 {
+					var metrics usageReportMetrics
+					if err := common.UnmarshalJsonStr(string(row.Overview), &metrics); err != nil {
+						return nil, result, err
+					}
+					agg.overview[usageOverviewKey{user: row.UserID, day: index}] = metrics.accumulator()
+				}
 			}
 			for _, leaf := range data.Customers {
 				if agg.opts.WantCustomer {
@@ -373,7 +413,11 @@ func loadPublishedUsageReport(ctx context.Context, period UsageAnalyticsPeriod, 
 				if upstream {
 					key := usageUpstreamKey{day: index, channel: leaf.Channel, model: leaf.Model, mode: leaf.Mode, fallback: leaf.Fallback, urlKey: leaf.URLKey, urlName: leaf.URLName, name: leaf.Name}
 					acc := leaf.Metrics.accumulator()
-					if head.MeterVersion < frozenBillingTokenMeterVersion {
+					meterVersion := head.MeterVersion
+					if head.HistoricalSource != "" {
+						meterVersion = head.HistoricalMeterVersion
+					}
+					if meterVersion < frozenBillingTokenMeterVersion {
 						acc.m.InputTokens, acc.m.OutputTokens = 0, 0
 						acc.m.CacheReadTokens, acc.m.CacheWriteTokens = 0, 0
 						acc.m.TokenDetails = nil
@@ -390,6 +434,12 @@ func loadPublishedUsageReport(ctx context.Context, period UsageAnalyticsPeriod, 
 			for month, coefficients := range data.Discounts {
 				agg.bundle.byMonth[month] = coefficients
 			}
+		}
+	}
+	if agg.opts.WantCustomer && userID > 0 {
+		result.PendingRefunds, err = reconcileHistoricalUsageRefunds(ctx, period, userID, heads, result)
+		if err != nil {
+			return nil, result, err
 		}
 	}
 	return agg, result, nil
@@ -412,6 +462,7 @@ func getPublishedUsageCustomer(ctx context.Context, period UsageAnalyticsPeriod,
 	agg, meta, err := loadPublishedUsageReport(ctx, period, userID, false, false)
 	if err == nil {
 		if modelName != "" {
+			clear(agg.overview) // Historic overview has no model attribution.
 			for key := range agg.customer {
 				if key.model != modelName {
 					delete(agg.customer, key)

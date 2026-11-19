@@ -29,6 +29,7 @@ import { toast } from 'sonner'
 import { afterEach, expect, it, vi } from 'vitest'
 
 import { saveModelPricing } from '@/features/model-pricing/api'
+import { updateSystemOption } from '@/features/system-settings/api'
 import { useUpdateOption } from '@/features/system-settings/hooks/use-update-option'
 import { handleServerError } from '@/lib/handle-server-error'
 import { api } from '@/lib/http-client'
@@ -75,6 +76,34 @@ it('reports the pricing rejection once when the request error reaches multiple h
     handleServerError(error)
   })
   expect(notify.mock.calls.map(([message]) => message)).toEqual([message])
+})
+
+it('surfaces advisory warnings after each pricing save succeeds', async () => {
+  const notify = vi.spyOn(toast, 'warning').mockReturnValue('warning')
+  const info = vi.spyOn(toast, 'info').mockReturnValue('info')
+  const pricing_warnings = {
+    literalOnly: [{ code: 'check_pixel_size_prices' }],
+    image: [{ code: 'unavailable_parameter', field: 'resolution' }],
+  }
+  api.defaults.adapter = async (config) => ({
+    config,
+    headers: {},
+    status: 200,
+    statusText: 'OK',
+    data:
+      config.method === 'patch'
+        ? { success: true, data: { pricing_warnings } }
+        : { success: true, pricing_warnings },
+  })
+  await saveModelPricing([
+    { model_name: 'image', expected_version: 'v1', pricing: {} },
+  ])
+  await updateSystemOption({ key: 'billing_setting.billing_expr', value: '{}' })
+  expect(notify.mock.calls.map(([model]) => model)).toEqual(['image', 'image'])
+  expect(info.mock.calls.map(([model]) => model)).toEqual([
+    'literalOnly',
+    'literalOnly',
+  ])
 })
 
 it('uses an ordinary Error message and reports identical independent failures separately', () => {

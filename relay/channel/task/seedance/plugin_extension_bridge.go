@@ -130,12 +130,22 @@ func (a *TaskAdaptor) ensureSeedanceCreateConversion(c *gin.Context, info *relay
 		}
 		input["northRequest"] = north
 	}
+	if sourceID := contract.ModelArk.DraftSourceID(); sourceID != "" {
+		if info.TaskRelayInfo == nil || len(info.OriginTasks) != 1 || info.OriginTasks[0].TaskID != sourceID {
+			return nil, fmt.Errorf("draft task reference was not authorized")
+		}
+		ref := info.OriginTasks[0]
+		input["originTasks"] = []map[string]string{{"task_id": ref.TaskID, "upstream_task_id": ref.UpstreamTaskID}}
+	}
 	result, callErr := plugin.Engine.CallPathWithAdmissionTimeout(
 		seedancePluginRequestContext(c), seedanceExtensionCreateAdmissionTimeout,
 		"seedance", []string{string(a.protocol), "buildCreate"}, input,
 	)
 	if callErr != nil {
 		return nil, relaycommon.NewVideoContractError("invalid_video_parameter", seedanceHookError(callErr).Error())
+	}
+	if contract.ModelArk.DraftSourceID() != "" {
+		return a.finishDraftFinalConversion(c, info, plugin, result, requestMap, upstreamModel)
 	}
 	if seedanceOfficialUsageProtocol(a.protocol) || a.protocol == dto.VideoUpstreamProtocolArkMediaV1 {
 		object, ok := result.(map[string]any)

@@ -39,6 +39,9 @@ func taskCreateHTTPDisposition(
 	if info.ChannelType != constant.ChannelTypeSeedanceLink {
 		return relaycommon.TaskCreateOutcomeUnknown
 	}
+	if isVerifiedMoxingDraftRejection(info, status, body) {
+		return relaycommon.TaskCreateTerminalRejection
+	}
 	// A task ID or non-empty data envelope contradicts a terminal rejection.
 	// Classify the complete structured response, not its public/redacted message.
 	var response struct {

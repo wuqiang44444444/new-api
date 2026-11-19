@@ -61,6 +61,7 @@ func modelArkVideoAPI(customerModel string, protocol dto.VideoUpstreamProtocol, 
 	parameters := []dto.PublicAPIParameter{
 		fixedParameter("model", "string", true, customerModel),
 		{Name: "content", Type: "array", Required: true, MinItems: intPointer(1)},
+		{Name: "draft", Type: "boolean", DefaultValue: false},
 	}
 	if spec.minDuration > 0 {
 		duration := integerRangeParameter("duration", spec.durationRequired, spec.minDuration, spec.maxDuration)
@@ -142,7 +143,6 @@ func fullModelArkParameters(allowServiceTier bool) []dto.PublicAPIParameter {
 		stringEnumParameter("output_format", false, []string{"mp4", "mov"}),
 		{Name: "return_last_frame", Type: "boolean"},
 		integerRangeParameter("execution_expires_after", false, 3600, 259200),
-		{Name: "draft", Type: "boolean"},
 		{Name: "tools", Type: "array"},
 		{Name: "safety_identifier", Type: "string"},
 		integerRangeParameter("priority", false, 0, 9),

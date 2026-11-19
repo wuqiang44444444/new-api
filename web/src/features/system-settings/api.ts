@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { showSavedImagePriceWarnings } from '@/features/model-pricing/image-price-warnings'
 import { api } from '@/lib/api'
 
 import type {
@@ -44,6 +45,7 @@ export async function getSystemOptions() {
 
 export async function updateSystemOption(request: UpdateOptionRequest) {
   const res = await api.put<UpdateOptionResponse>('/api/option/', request)
+  if (res.data.success) showSavedImagePriceWarnings(res.data.pricing_warnings)
   return res.data
 }
 

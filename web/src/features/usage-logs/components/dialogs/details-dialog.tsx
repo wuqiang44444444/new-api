@@ -185,11 +185,15 @@ function BillingBreakdown(props: {
       : 0
   const explanation = other.billing_explanation
   if (explanation?.lines.length) {
+    let billingMode = isPerCall ? 'Per-call' : 'Per-token'
+    if (isTieredExpr) {
+      billingMode = 'Dynamic Pricing'
+    } else if (other.billing_facts?.billing_mode === 'per_image') {
+      billingMode = 'Per image'
+    }
     rows.push({
       label: t('Billing Mode'),
-      value: isTieredExpr
-        ? t('Dynamic Pricing')
-        : t(isPerCall ? 'Per-call' : 'Per-token'),
+      value: t(billingMode),
     })
     for (const line of explanation.lines) {
       if (line.label === 'Text Input' && line.unit === 'token') {
@@ -754,7 +758,12 @@ function LogDetailLoader(props: DetailsDialogProps & { detailRef: string }) {
       props.detailRef,
     ],
     queryFn: ({ signal }) =>
-      getUsageLogDetail(props.detailRef, props.isAdmin, signal),
+      getUsageLogDetail(
+        props.detailRef,
+        props.isAdmin,
+        signal,
+        props.log.created_at
+      ),
     retry: false,
   })
   if (query.data) {

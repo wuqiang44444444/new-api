@@ -21,7 +21,7 @@ func DiscoverCustomerOriginalReplayDays(ctx context.Context, today, now int64) (
 	db := usageReportMainDB(ctx).WithContext(ctx)
 	var ready []int64
 	if err := db.Model(&billingReportRebuild{}).
-		Where("NOT EXISTS (SELECT 1 FROM daily_report_retries retry WHERE retry.start = billing_report_rebuilds.start AND retry.retry_at > ?)", now).
+		Where("NOT EXISTS (SELECT 1 FROM daily_report_retries retry WHERE retry.start = billing_report_rebuilds.start AND "+currentDailyReportRetry+" AND retry.retry_at > ?)", usageReportMeterVersion, CustomerOriginalReplayVersion, now).
 		Limit(1).Pluck("start", &ready).Error; err != nil || len(ready) > 0 {
 		return len(ready) > 0, err
 	}
@@ -48,21 +48,31 @@ func DiscoverCustomerOriginalReplayDays(ctx context.Context, today, now int64) (
 		return false, nil
 	}
 	var candidate int64
+	if err := db.Table("billing_report_heads AS h").Select("h.start").
+		Joins("JOIN billing_report_generations AS g ON g.id = h.generation").
+		Where("h.start < ? AND COALESCE(g.original_replay_version, 0) < ?", before, CustomerOriginalReplayVersion).
+		Order("h.start DESC").Limit(1).Scan(&candidate).Error; err != nil {
+		return false, err
+	}
 	logs := usageReportLogDB(ctx).WithContext(ctx)
-	// Limit the discovery work independently of the size of the retention window.
+	// Also discover retained days that have never been published.
 	for range 4 {
 		var at int64
 		if err := logs.Model(&Log{}).Select("created_at").
-			Where("created_at > 0 AND created_at < ? AND type IN ?", before, []int{LogTypeConsume, LogTypeRefund}).
+			Where("created_at > ? AND created_at < ? AND type IN ?", candidate, before, []int{LogTypeConsume, LogTypeRefund}).
 			Order("created_at DESC").Limit(1).Scan(&at).Error; err != nil {
 			return false, err
 		}
 		if at == 0 {
-			before = 0
+			before = candidate
 			break
 		}
 		date := time.Unix(at, 0).In(UsageAnalyticsZone())
 		before = time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location()).Unix()
+		if before <= candidate {
+			before = candidate
+			break
+		}
 		var publishedVersion int
 		if err := db.Table("billing_report_heads AS h").
 			Select("COALESCE(g.original_replay_version, 0)").
@@ -74,6 +84,9 @@ func DiscoverCustomerOriginalReplayDays(ctx context.Context, today, now int64) (
 			candidate = before
 			break
 		}
+	}
+	if before != candidate {
+		candidate = 0 // The bounded scan will resume above the old head next cycle.
 	}
 	err = db.Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&cursor).

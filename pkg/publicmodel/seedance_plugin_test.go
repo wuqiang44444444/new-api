@@ -79,7 +79,9 @@ func TestViduPublishedContractMatchesBothRegions(t *testing.T) {
 			for name := range parameters {
 				fields = append(fields, name)
 			}
-			assert.ElementsMatch(t, []string{"model", "content", "resolution", "ratio", "duration", "generate_audio", "watermark", "callback_url", "return_last_frame", "execution_expires_after", "tools", "tools[].type", "safety_identifier"}, fields, name)
+			assert.ElementsMatch(t, []string{"model", "content", "draft", "resolution", "ratio", "duration", "generate_audio", "watermark", "callback_url", "return_last_frame", "execution_expires_after", "tools", "tools[].type", "safety_identifier"}, fields, name)
+			assert.Equal(t, "boolean", parameters["draft"].Type)
+			assert.Equal(t, false, parameters["draft"].DefaultValue)
 			assert.Equal(t, "object", parameters["content"].ItemType)
 			assert.Equal(t, "object", parameters["tools"].ItemType)
 			assert.Equal(t, []string{"web_search"}, parameters["tools[].type"].Enum)

@@ -26,7 +26,7 @@ last-reviewed: 2026-10-30
 - [MiniMax H3 京东云价格核查](京东云/MiniMaxH3价格核查.md)：京东报价缺口、MiniMax 中国官网刊例价及按系统汇率配置的文生视频输出定价验收。
 - [Nexhina Seedance 接口资料](Nexhina/Seedance接口资料.md)：ModelArk V3 视频、素材 Action、真人验证及本地接入实测。
 - [Nexhina MiniMax H3 接口资料](Nexhina/MiniMaxH3接口资料.md)：Hailuo V2 创建、查询、用量及本地复测。
-- [Vidu 国内站视频接口原始信息](Vidu国内站视频接口原始信息.md)：更正后的飞书 Drama 国内 ModelArk V3 合同、完整地址、参数、响应、价格与原文冲突。
+- [Vidu 国内站视频接口原始信息](Vidu国内站视频接口原始信息.md)：飞书 Drama 国内 ModelArk V3 接口摘录，含 480p 样片与 1080p 正式成片的官方规则和实测证据。
 - [Vidu 国外站视频接口原始信息](Vidu国外站视频接口原始信息.md)：飞书 Drama-ab 海外合同，独立保留国外域名、模型和美元价格。
 - [Vidu 两站差异与现有渠道适配结论](Vidu两站差异与现有渠道适配结论.md)：真实测试更正：创建可用，字符串数字及用量导致现有官方协议查询/结算失败，新增渠道暂时停用。
 - [Vidu 初次调研来源更正](Vidu国内站调用与Seedance协议适配调研.md)：旧普通 Vidu `/ent/v2` 调研不再作为本次 Drama/Seedance 接入依据。

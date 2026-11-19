@@ -74,6 +74,14 @@ func resolveMiniMaxLinkChannel() gin.HandlerFunc {
 				return
 			}
 		}
+		if contract.ModelArk.DraftSourceID() != "" {
+			rejectSeedanceDraftSource(c)
+			return
+		}
+		if contract.ModelArk.Draft != nil && *contract.ModelArk.Draft {
+			abortModelArkVideo(c, http.StatusBadRequest, "unsupported_parameter", "draft operation is not supported by this video protocol")
+			return
+		}
 
 		specificChannelID := 0
 		if pin, found, _ := service.GetChannelConstraints(c).ResolvedPin(); found {

@@ -154,6 +154,33 @@ it('shows an unpublished personal day as being prepared', async () => {
   client.clear()
 })
 
+it('keeps the personal refund notice visible when historical usage is unavailable', async () => {
+  const response = reply({ keys: [] })
+  get.mockResolvedValue({
+    data: {
+      ...response.data,
+      data: {
+        ...response.data.data,
+        published_days: [],
+        source_unavailable_days: [period.date],
+        pending_refunds: [
+          { task_id: 'pending-7', requested_at: period.start_timestamp },
+        ],
+      },
+    },
+  })
+  const client = new QueryClient()
+  render(
+    <QueryClientProvider client={client}>
+      <MyUsage period='day' date={period.date} onSearchChange={vi.fn()} />
+    </QueryClientProvider>
+  )
+  expect(await screen.findByText('Pending refund · 1')).toBeVisible()
+  expect(screen.getByText('Task ID pending-7')).toBeInTheDocument()
+  expect(screen.queryByText(/No recorded usage/)).not.toBeInTheDocument()
+  client.clear()
+})
+
 it('normalizes nullable key and URL slices at the API boundary', async () => {
   get.mockResolvedValue(reply({ keys: null }))
   expect(

@@ -97,7 +97,7 @@ func sweepTimedOutTasks(ctx context.Context) {
 
 		oldStatus := task.Status
 		task.Status = model.TaskStatusFailure
-		if oldStatus == model.TaskStatusReconciliationRequired {
+		if oldStatus == model.TaskStatusReconciliationRequired || task.IsVideoDraftOperation() {
 			task.Status = model.TaskStatusExpired
 			reason = upstreamOutcomeUnresolvedReason
 		}
@@ -610,6 +610,9 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 
 	ObserveChannelVideoPoll(ctx, task, resp.StatusCode, nil, responseBody)
 	logger.LogDebug(ctx, "updateVideoSingleTask response: %s", redactTaskResponseForLog(responseBody))
+	if task.IsVideoDraftOperation() && resp.StatusCode/100 != 2 {
+		return recordPollFailure(ctx, adaptor, task, snap.Status, classifyPollHTTP(resp.StatusCode), resp.StatusCode, "")
+	}
 
 	switch classifyPollHTTP(resp.StatusCode) {
 	case pollClassNotFound:
@@ -625,7 +628,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	taskResult := &relaycommon.TaskInfo{}
 	// try parse as New API response format
 	var responseItems taskdto.TaskResponse[model.Task]
-	if err = common.Unmarshal(responseBody, &responseItems); err == nil && responseItems.IsSuccess() {
+	if !task.IsVideoDraftOperation() && common.Unmarshal(responseBody, &responseItems) == nil && responseItems.IsSuccess() {
 		logger.LogDebug(ctx, "updateVideoSingleTask parsed as new api response format: %+v", responseItems)
 		t := responseItems.Data
 		taskResult.TaskID = t.TaskID
@@ -666,6 +669,9 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		return recordPollFailure(ctx, adaptor, task, snap.Status, pollClassUnrecognized, resp.StatusCode, taskResult.Reason)
 	}
 	ObserveTrustedChannelVideoResult(ctx, task, resp.StatusCode, parsedStatus, taskResult.Reason)
+	if handled, draftErr := applyDraftObservation(ctx, task, taskResult, responseBody, snap.Status, adapterVersion); handled {
+		return draftErr
+	}
 	task.Data = linkVideoRedactResponse(adapterVersion, task.ClientProtocol, responseBody)
 
 	if len(taskResult.PluginState) > 0 {
@@ -797,6 +803,7 @@ func redactVideoResponseBody(body []byte, modelArk bool) []byte {
 	delete(m, "official_usage")
 	if modelArk {
 		delete(m, modelarkusage.ObservationKey)
+		delete(m, "draft_task_id")
 	}
 	resp, _ := m["response"].(map[string]any)
 	if resp != nil {
@@ -935,6 +942,9 @@ func recordPollFailure(ctx context.Context, adaptor TaskPollingAdaptor, task *mo
 	}
 	if typedVideoTaskSucceeded(task) {
 		return fmt.Errorf("provider usage observation failed (%s, HTTP %d)", class, statusCode)
+	}
+	if task.IsVideoDraftOperation() {
+		return keepUnconfirmedDraftForReconciliation(ctx, task, fromStatus, "provider query did not confirm the video result")
 	}
 	task.PrivateData.PollFailures++
 	// TASK_POLL_MAX_FAILURES <= 0 disables the consecutive-failure cutoff, matching

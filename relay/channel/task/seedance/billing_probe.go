@@ -55,6 +55,12 @@ func (a *TaskAdaptor) BuildTaskBillingProbe(c *gin.Context, info *common.RelayIn
 		}
 	}
 
+	if info.TaskRelayInfo != nil && info.VideoDraftSourceID != "" {
+		if _, err := a.ensureSeedanceCreateConversion(c, info); err != nil {
+			return nil, err
+		}
+		return draftFinalProbe(c, info, resolution, a.protocol)
+	}
 	hasVideoInput := false
 	for _, item := range payload.Content {
 		if item.Type == "video_url" && item.VideoURL != nil && strings.TrimSpace(item.VideoURL.URL) != "" {
@@ -125,7 +131,7 @@ func (a *TaskAdaptor) BuildTaskBillingProbe(c *gin.Context, info *common.RelayIn
 	}
 	if a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 {
 		probe["billing_mode"] = "per-second"
-		if payload.Duration != nil && *payload.Duration == -1 {
+		if (info.TaskRelayInfo != nil && info.VideoDraftRequested) || (payload.Duration != nil && *payload.Duration == -1) {
 			probe["billing_mode"] = "per-token"
 		}
 	}

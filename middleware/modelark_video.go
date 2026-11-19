@@ -63,7 +63,7 @@ func ModelArkVideoCreateConvert() gin.HandlerFunc {
 			abortModelArkVideo(c, http.StatusBadRequest, "invalid_request", "model and content are required")
 			return
 		}
-		prompt, err := validateModelArkVideoCreateRequest(request)
+		prompt, err := prepareModelArkVideoRequest(body, &request)
 		if err != nil {
 			abortModelArkVideo(c, http.StatusBadRequest, "invalid_request", err.Error())
 			return
@@ -109,7 +109,7 @@ func rejectUnknownModelArkVideoFields(body map[string]any) error {
 		if err := rejectUnknownNestedVideoArrayFields(
 			content,
 			"content",
-			"type", "text", "role", "image_url", "video_url", "audio_url",
+			"type", "text", "role", "image_url", "video_url", "audio_url", "draft_task",
 		); err != nil {
 			return err
 		}

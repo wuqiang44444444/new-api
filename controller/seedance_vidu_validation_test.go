@@ -30,7 +30,7 @@ func TestViduRequestLimitsAreCheckedBeforeHoldAndProviderPost(t *testing.T) {
 		{"empty-resolution", "viduq3-drama-std", `,"resolution":""`, false},
 		{"unpublished-seed", "viduq3-drama-std", `,"seed":0`, false},
 		{"unpublished-camera", "viduq3-drama-std", `,"camera_fixed":false`, false},
-		{"unpublished-draft", "viduq3-drama-std", `,"draft":false`, false},
+		{"ordinary-explicit-draft-false", "viduq3-drama-std", `,"draft":false`, true},
 		{"tool", "viduq3-drama-std", `,"tools":[{"type":"other"}]`, false},
 		{"safety-id", "viduq3-drama-std", `,"safety_identifier":"` + strings.Repeat("x", 65) + `"`, false},
 	} {

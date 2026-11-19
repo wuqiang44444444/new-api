@@ -129,7 +129,18 @@ func deliverResourceAlerts(now func() time.Time, send mailSendFunc) error {
 		episode, sendErr := model.GetResourceAlertEpisode(ctx, delivery.EpisodeID)
 		var allowed bool
 		if sendErr == nil {
-			allowed, sendErr = resourceMailRecipientAllowed(ctx, episode, delivery.Recipient)
+			switch episode.Resource {
+			case model.PersonalUsageReportMail, model.PlatformUsageReportMail, model.CustomerStatusReportMail:
+				current, err := model.UsageReportMailVersionCurrent(ctx, episode)
+				sendErr = err
+				if err == nil && !current {
+					// Preserve the original outbox row and its deduplication key for cutover reconciliation.
+					state, next, stopReason = model.MailDeliveryRetryWait, at+int64((24*time.Hour).Seconds()), "report_version_unavailable"
+				}
+			}
+			if sendErr == nil && stopReason == "" {
+				allowed, sendErr = resourceMailRecipientAllowed(ctx, episode, delivery.Recipient)
+			}
 		}
 		cancel()
 		if allowed || sendErr != nil {
@@ -160,6 +171,9 @@ func deliverResourceAlerts(now func() time.Time, send mailSendFunc) error {
 		cancel()
 		if err != nil {
 			return err
+		}
+		if stopReason == "report_version_unavailable" && delivery.StopReason != stopReason {
+			common.SysError(fmt.Sprintf("usage report mail delivery %d held for cutover review (%s)", delivery.ID, stopReason))
 		}
 	}
 	return nil

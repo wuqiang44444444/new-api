@@ -23,6 +23,7 @@ import {
   type QueryClient,
 } from '@tanstack/react-query'
 import { t } from 'i18next'
+import { showSavedImagePriceWarnings } from './image-price-warnings'
 import { pluginExpressionsEqual } from '@/features/pricing/lib/plugin-pricing'
 
 import type {
@@ -169,6 +170,7 @@ export async function saveModelPricing(changes: ModelPricingChange[]) {
   if (!res.data.success) {
     throw createServerError(res.data, t('Failed to save model pricing'))
   }
+  showSavedImagePriceWarnings(res.data.data?.pricing_warnings)
 }
 
 export function useSaveModelPricing() {

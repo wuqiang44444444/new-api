@@ -17,7 +17,7 @@ export function BillingReportStatus({
   if (!report) return null
   let status = t('Published')
   if (report.published_days === 0) {
-    status = t('Not published')
+    status = report.rebuilding_days?.length ? t('Rebuilding') : t('Not published')
   } else if (
     report.published_days < report.expected_days ||
     report.incomplete_days
@@ -42,6 +42,20 @@ export function BillingReportStatus({
           </>
         )}
       </Badge>
+      {!!report.rebuilding_days?.length && (
+        <Badge variant='secondary' className={reportBadgeClassName}>
+          {t('Rebuilding days · {{days}}', {
+            days: report.rebuilding_days.join(', '),
+          })}
+        </Badge>
+      )}
+      {!!report.source_unavailable_days?.length && (
+        <Badge variant='outline' className={reportBadgeClassName}>
+          {t('Source unavailable · {{days}}', {
+            days: report.source_unavailable_days.join(', '),
+          })}
+        </Badge>
+      )}
       {report.estimated && (
         <Badge variant='secondary' className={reportBadgeClassName}>
           {t('Data as of {{time}}', {

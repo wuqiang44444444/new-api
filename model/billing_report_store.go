@@ -28,6 +28,10 @@ type billingReportGeneration struct {
 	Published             bool
 	RetiredAt             int64 `gorm:"index"`
 	CreatedAt             int64
+
+	IssueRows                  int64
+	HistoricalSource           string `gorm:"size:24"`
+	HistoricalCoverageComplete bool
 }
 
 type billingReportCustomerDay struct {
@@ -71,9 +75,15 @@ type billingReportLine struct {
 	InputTokens       int64
 	OutputTokens      int64
 	EvidenceTags      string
+
+	ReplayIssue             string `gorm:"size:64"`
+	PriceIssue              string `gorm:"size:40"`
+	PreviousOriginalMissing bool
+	PreviousOriginal        string `gorm:"size:32"`
 }
 
 type BillingReportManifest struct {
+	UsageReportRebuildStatus
 	Version        string `json:"version"`
 	PublishedDays  int    `json:"published_days"`
 	IncompleteDays int    `json:"incomplete_days,omitempty"`
@@ -118,7 +128,7 @@ func ResolveBillingReport(ctx context.Context, start, end int64, version string)
 				return ctx, nil, common.NewMessage("Invalid billing report version")
 			}
 		}
-		if err := DB.WithContext(ctx).Where("id IN ? AND published = ? AND start >= ? AND start <= ?", ids, true, start, end).
+		if err := DB.WithContext(ctx).Where("id IN ? AND published = ? AND start >= ? AND start <= ? AND original_replay_version = ?", ids, true, start, end, CustomerOriginalReplayVersion).
 			Order("start ASC").Find(&rows).Error; err != nil {
 			return ctx, nil, err
 		}
@@ -129,7 +139,6 @@ func ResolveBillingReport(ctx context.Context, start, end int64, version string)
 		if err := DB.WithContext(ctx).Table("billing_report_generations AS generation").Select("generation.*").
 			Joins("JOIN billing_report_heads AS head ON head.generation = generation.id").
 			Where("head.start >= ? AND head.start <= ?", start, min(end, todayStart)).
-			Where("(head.start = ? OR head.as_of >= head.start + ?)", todayStart, billingReportDaySeconds+3*3600).
 			Order("head.start ASC").Find(&rows).Error; err != nil {
 			return ctx, nil, err
 		}
@@ -144,7 +153,24 @@ func ResolveBillingReport(ctx context.Context, start, end int64, version string)
 	}
 	ids := make([]string, 0, len(rows))
 	seen := make(map[int64]bool, len(rows))
+	selected := rows[:0]
 	for _, row := range rows {
+		date := time.Unix(row.Start, 0).In(UsageAnalyticsZone()).Format(time.DateOnly)
+		if row.OriginalReplayVersion != CustomerOriginalReplayVersion {
+			report.RebuildingDays = append(report.RebuildingDays, date)
+			continue
+		}
+		if row.HistoricalSource == dailyReportSourceMissing {
+			if version != "" {
+				return ctx, nil, common.NewMessage("Billing report version is unavailable")
+			}
+			report.SourceUnavailableDays = append(report.SourceUnavailableDays, date)
+			continue
+		}
+		if version == "" && row.Start < todayStart && row.AsOf < row.Start+billingReportDaySeconds+3*3600 {
+			continue
+		}
+		selected = append(selected, row)
 		if seen[row.Start] {
 			return ctx, nil, common.NewMessage("Invalid billing report version")
 		}
@@ -165,7 +191,7 @@ func ResolveBillingReport(ctx context.Context, start, end int64, version string)
 		report.Version = strings.Join(ids, ",")
 	}
 	report.PublishedDays = len(ids)
-	report.generations = rows
+	report.generations = selected
 	return context.WithValue(ctx, billingReportContextKey{}, report), report, nil
 }
 

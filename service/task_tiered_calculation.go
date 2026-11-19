@@ -44,6 +44,12 @@ func ComputeTaskTieredBilling(task *model.Task) (billingexpr.TieredResult, billi
 		}
 		input.Usage = facts
 	}
+	if task.IsVideoDraftOperation() {
+		input.ExchangeRate = snap.UsdExchangeRate
+		if err := billingexpr.ValidateTaskTokenPrice(snap.ExprString, input); err != nil {
+			return result, input, err
+		}
+	}
 	input.RecordCalculation = true
 	var err error
 	result, err = billingexpr.ComputeTieredQuotaWithRequest(snap, billingexpr.TokenParams{C: float64(async.ActualTokens)}, input)

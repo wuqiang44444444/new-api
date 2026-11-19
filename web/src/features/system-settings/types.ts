@@ -40,6 +40,7 @@ export type UpdateOptionRequest = {
 }
 
 export type UpdateOptionResponse = {
+  pricing_warnings?: Record<string, import('@/features/model-pricing/image-price-warnings').ImagePriceWarning[]>
   success: boolean
   message: string
 }

@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useQuery } from '@tanstack/react-query'
+import { hashKey, useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -26,6 +26,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { formatLogQuota } from '@/lib/format'
 import { requireServerSuccess } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { getLogStats, getUserLogStats } from '../api'
 import { DEFAULT_LOG_STATS } from '../constants'
@@ -51,26 +52,56 @@ function StatBadge(props: {
   )
 }
 
-export function CommonLogsStats() {
-  const { t } = useTranslation()
-  const { isAdminView: isAdmin } = useLogsViewScope()
+export function CommonLogsStats(props: {
+  window?: { start: number; end: number }
+  windowPending?: boolean
+}) {
   const {
     page: _page,
     pageSize: _pageSize,
     ...searchParams
   } = route.useSearch()
-  const { sensitiveVisible } = useUsageLogsContext()
+  const { viewAccess, isAdminView } = useLogsViewScope()
+  const userId = useAuthStore((state) => state.auth.user?.id)
+  const scope = hashKey([userId, viewAccess, searchParams, props.window])
+  return (
+    <RangeStatistics
+      key={searchParams.billing ? 'billing' : scope}
+      scope={scope}
+      isAdmin={isAdminView}
+      searchParams={searchParams}
+      window={props.window}
+      windowPending={props.windowPending}
+    />
+  )
+}
 
-  const [expanded, setExpanded] = useState(false)
-  const enabled = !!searchParams.billing || expanded
+function RangeStatistics({
+  scope,
+  isAdmin,
+  searchParams,
+  window,
+  windowPending,
+}: {
+  scope: string
+  isAdmin: boolean
+  searchParams: Omit<ReturnType<typeof route.useSearch>, 'page' | 'pageSize'>
+  window?: { start: number; end: number }
+  windowPending?: boolean
+}) {
+  const { t } = useTranslation()
+  const { sensitiveVisible } = useUsageLogsContext()
+  const billing = !!searchParams.billing
+  const [requested, setRequested] = useState(false)
   const {
     data: stats,
-    isLoading,
+    isFetching,
     isError,
     refetch,
   } = useQuery({
-    enabled,
-    queryKey: ['usage-logs-stats', isAdmin, searchParams],
+    enabled: billing,
+    ...(billing ? {} : { retry: false }),
+    queryKey: ['usage-logs-stats', scope],
     queryFn: async ({ signal }) => {
       const params: GetLogStatsParams = buildApiParams({
         page: 1,
@@ -81,11 +112,11 @@ export function CommonLogsStats() {
       })
 
       if (!searchParams.billing) {
+        if (!window) throw new Error('Missing usage log statistics window')
         params.range_count = true
-        if (searchParams.startTime == null && searchParams.endTime == null) {
-          delete params.start_timestamp
-          delete params.end_timestamp
-        }
+        params.start_timestamp = window.start
+        params.end_timestamp = window.end
+        params.resolved_log_range = true
       }
       const result = isAdmin
         ? requireServerSuccess(await getLogStats(params, signal))
@@ -95,27 +126,36 @@ export function CommonLogsStats() {
         ? result.data || DEFAULT_LOG_STATS
         : DEFAULT_LOG_STATS
     },
-    placeholderData: (previousData) => previousData,
+    placeholderData: billing ? (previousData) => previousData : undefined,
   })
 
-  if (!enabled || isError) {
+  const showRetry = (billing || requested) && isError && !isFetching
+  if ((!billing && !requested) || showRetry) {
     return (
-      <Button
-        variant='outline'
-        size='sm'
-        onClick={() => {
-          if (isError) void refetch()
-          else setExpanded(true)
-        }}
-      >
-        {isError ? t('Retry') : t('View range statistics')}
-      </Button>
+      <div className='flex flex-wrap items-center gap-2'>
+        <Button
+          variant='outline'
+          size='sm'
+          disabled={windowPending || (!billing && !window)}
+          onClick={() => {
+            setRequested(true)
+            void refetch({ cancelRefetch: false })
+          }}
+        >
+          {showRetry ? t('Retry') : t('View range statistics')}
+        </Button>
+        {!billing && showRetry && (
+          <span role='alert' className='text-destructive text-xs'>
+            {t('Range statistics are temporarily unavailable.')}
+          </span>
+        )}
+      </div>
     )
   }
 
-  if (isLoading) {
+  if (billing ? !stats && isFetching : isFetching) {
     return (
-      <div className='flex items-center gap-2'>
+      <div className='flex items-center gap-2' aria-busy='true'>
         <Skeleton className='h-7 w-[150px] rounded-md' />
         <Skeleton className='h-7 w-[100px] rounded-md' />
         <Skeleton className='h-7 w-[120px] rounded-md' />

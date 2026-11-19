@@ -144,37 +144,48 @@ func TestBillingReportRejectsChangedFundingAndLostOriginal(t *testing.T) {
 }
 
 func TestBillingReportVersionUpgradeCorrectsOnlyReplayedOriginal(t *testing.T) {
-	db, start, _ := setupBillingReportTest(t)
-	ctx := context.Background()
-	expr := base64.StdEncoding.EncodeToString([]byte(`tier("base",p*2)`))
-	log := Log{UserId: 7, TokenId: 11, ChannelId: 21, ModelName: "sample", Type: LogTypeConsume, CreatedAt: start + 1, Quota: 10, PromptTokens: 100,
-		Other: fmt.Sprintf(`{"billing_mode":"tiered_expr","billing_unit":"token","expr_b64":%q,"matched_tier":"base","usage_semantic":"openai","group_ratio":0.1,"contract_applicable":false}`, expr)}
-	require.NoError(t, db.Create(&log).Error)
-	require.NoError(t, BuildBillingReportDay(ctx, start, "billing-test", "runner", nil, nil))
-	var head billingReportHead
-	require.NoError(t, db.Where("start = ?", start).Take(&head).Error)
-	var prior billingReportLine
-	require.NoError(t, db.Where("generation = ? AND source_id = ?", head.Generation, log.Id).Take(&prior).Error)
-	detail, err := prior.customerDetail()
-	require.NoError(t, err)
-	require.Equal(t, customerOriginalReplayed, detail.Export.OriginalSource)
-	detail.Export.RecordedOriginal = "101"
-	raw, err := common.Marshal(detail)
-	require.NoError(t, err)
-	require.NoError(t, db.Model(&prior).Update("customer", BillingStatementJSON(raw)).Error)
-	require.NoError(t, db.Model(&billingReportGeneration{}).Where("id = ?", head.Generation).Update("original_replay_version", CustomerOriginalReplayVersion-1).Error)
-	require.NoError(t, BuildBillingReportDay(ctx, start, "billing-test", "runner", nil, nil))
-	pinned, manifest, err := ResolveBillingReport(ctx, start, start+billingReportDaySeconds-1, "")
-	require.NoError(t, err)
-	assert.Equal(t, 1, manifest.PublishedDays)
-	view, err := GetBillingCustomerStatement(pinned, 7, start, start+billingReportDaySeconds-1, "api_key", 0, "", "")
-	require.NoError(t, err)
-	require.NotNil(t, view.OriginalQuota)
-	assert.EqualValues(t, 100, *view.OriginalQuota)
-	assert.EqualValues(t, 10, view.Summary.NetQuota)
+	for _, previous := range []string{"101", ""} {
+		t.Run("previous="+previous, func(t *testing.T) {
+			db, start, _ := setupBillingReportTest(t)
+			ctx := context.Background()
+			expr := base64.StdEncoding.EncodeToString([]byte(`tier("base",p*2)`))
+			log := Log{UserId: 7, TokenId: 11, ChannelId: 21, ModelName: "sample", Type: LogTypeConsume, CreatedAt: start + 1, Quota: 10, PromptTokens: 100,
+				Other: fmt.Sprintf(`{"billing_mode":"tiered_expr","billing_unit":"token","expr_b64":%q,"matched_tier":"base","usage_semantic":"openai","group_ratio":0.1,"contract_applicable":false}`, expr)}
+			require.NoError(t, db.Create(&log).Error)
+			require.NoError(t, BuildBillingReportDay(ctx, start, "billing-test", "runner", nil, nil))
+			var head billingReportHead
+			require.NoError(t, db.Where("start = ?", start).Take(&head).Error)
+			var prior billingReportLine
+			require.NoError(t, db.Where("generation = ? AND source_id = ?", head.Generation, log.Id).Take(&prior).Error)
+			detail, err := prior.customerDetail()
+			require.NoError(t, err)
+			require.Equal(t, customerOriginalReplayed, detail.Export.OriginalSource)
+			detail.Export.RecordedOriginal = previous
+			raw, err := common.Marshal(detail)
+			require.NoError(t, err)
+			require.NoError(t, db.Model(&prior).Update("customer", BillingStatementJSON(raw)).Error)
+			require.NoError(t, db.Model(&billingReportGeneration{}).Where("id = ?", head.Generation).Update("original_replay_version", CustomerOriginalReplayVersion-1).Error)
+			require.NoError(t, BuildBillingReportDay(ctx, start, "billing-test", "runner", nil, nil))
+			pinned, manifest, err := ResolveBillingReport(ctx, start, start+billingReportDaySeconds-1, "")
+			require.NoError(t, err)
+			assert.Equal(t, 1, manifest.PublishedDays)
+			view, err := GetBillingCustomerStatement(pinned, 7, start, start+billingReportDaySeconds-1, "api_key", 0, "", "")
+			require.NoError(t, err)
+			require.NotNil(t, view.OriginalQuota)
+			assert.EqualValues(t, 100, *view.OriginalQuota)
+			assert.EqualValues(t, 10, view.Summary.NetQuota)
+			require.NoError(t, BuildBillingReportDay(ctx, start, "billing-test", "runner", nil, nil))
+			lines, err := BillingReportDiagnosticLines(ctx, start, 0)
+			require.NoError(t, err)
+			require.Len(t, lines, 1)
+			assert.Equal(t, previous, lines[0].PreviousOriginal)
+			assert.Equal(t, previous == "", lines[0].PreviousOriginalMissing)
+			assert.Equal(t, "100", lines[0].CurrentOriginal)
+		})
+	}
 }
 
-func TestBillingReportKeepsOldGenerationWhenFrozenRulesAreAmbiguous(t *testing.T) {
+func TestBillingReportUpgradePublishesAmbiguousDerivedOriginalAsMissing(t *testing.T) {
 	db, start, _ := setupBillingReportTest(t)
 	ctx := context.Background()
 	expr := base64.StdEncoding.EncodeToString([]byte(`tier("base",p*2)*(param("service_tier") == "fast" ? 1.01 : 1)`))
@@ -187,13 +198,19 @@ func TestBillingReportKeepsOldGenerationWhenFrozenRulesAreAmbiguous(t *testing.T
 	require.NoError(t, db.Where("start = ?", start).Take(&head).Error)
 	require.NoError(t, db.Model(&billingReportGeneration{}).Where("id = ?", head.Generation).Update("original_replay_version", CustomerOriginalReplayVersion-1).Error)
 	require.NoError(t, db.Model(&log).Update("other", log.Other[:len(log.Other)-1]+","+trace+"}").Error)
-	require.ErrorIs(t, BuildBillingReportDay(ctx, start, "billing-test", "runner", nil, nil), errDailyReportCoverageDecreased)
+	require.NoError(t, BuildBillingReportDay(ctx, start, "billing-test", "runner", nil, nil))
 	pinned, report, err := ResolveBillingReport(ctx, start, start+billingReportDaySeconds-1, "")
 	require.NoError(t, err)
-	assert.Equal(t, head.Generation, report.Version)
+	assert.NotEqual(t, head.Generation, report.Version)
+	_, _, err = ResolveBillingReport(ctx, start, start+billingReportDaySeconds-1, head.Generation)
+	require.Error(t, err)
 	view, err := GetBillingCustomerStatement(pinned, 7, start, start+billingReportDaySeconds-1, "api_key", 0, "", "")
 	require.NoError(t, err)
-	require.NotNil(t, view.OriginalQuota)
-	assert.EqualValues(t, 100, *view.OriginalQuota)
+	assert.Nil(t, view.OriginalQuota)
+	lines, err := BillingReportDiagnosticLines(ctx, start, 0)
+	require.NoError(t, err)
+	require.Len(t, lines, 1)
+	assert.Equal(t, "100", lines[0].PreviousOriginal)
+	assert.Equal(t, BillingOriginalReplayMissingContext, lines[0].ReplayIssue)
 	assert.EqualValues(t, 10, view.Summary.NetQuota)
 }

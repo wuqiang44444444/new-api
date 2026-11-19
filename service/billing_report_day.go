@@ -10,12 +10,17 @@ import (
 )
 
 func runDailyReport(ctx context.Context, task *model.SystemTask, runnerID string, gate func(context.Context) error, localFast bool) error {
-	for followingReplay := false; ; followingReplay = true {
-		more, err := runDailyReportCycle(ctx, task, runnerID, gate, followingReplay)
-		if err != nil || !localFast || !more {
+	maxDays := 4
+	if localFast {
+		maxDays = 366
+	}
+	for i := 0; i < maxDays; i++ {
+		more, err := runDailyReportCycle(ctx, task, runnerID, gate, i > 0)
+		if err != nil || !more {
 			return err
 		}
 	}
+	return nil
 }
 
 func runDailyReportCycle(ctx context.Context, task *model.SystemTask, runnerID string, gate func(context.Context) error, followingReplay bool) (bool, error) {
@@ -71,6 +76,10 @@ func runDailyReportCycle(ctx context.Context, task *model.SystemTask, runnerID s
 		err = model.PublishScheduledDailyReport(buildCtx, scopes, task.TaskID, runnerID, start)
 	}
 	if err != nil {
+		if model.IsDailyReportCoverageIssue(err) {
+			// Publication already recorded the exact failing stage.
+			return false, err
+		}
 		waitCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 		defer cancel()
 		kinds := []string{model.DailyReportUsage}
@@ -101,6 +110,9 @@ func prepareDailyReport(ctx context.Context, scope model.DailyReportScope, task 
 	defer cancel()
 	ready, err := model.GetDailyReportStage(ctx, scope, requestedAt)
 	if err != nil || ready {
+		return err
+	}
+	if migrated, err := model.MigrateHistoricalDailyReport(ctx, scope, task.TaskID, runnerID); migrated || err != nil {
 		return err
 	}
 	if scope.Kind == model.DailyReportUsage {

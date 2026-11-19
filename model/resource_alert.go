@@ -23,6 +23,8 @@ type ResourceAlertEpisode struct {
 	MailUserID      int     `gorm:"index:idx_resource_alert_user,priority:2"`
 	MailPending     bool    `gorm:"index"`
 	WalletRejection bool
+
+	UsageReportGeneration string `gorm:"size:32"`
 }
 
 type ResourceAlertDelivery struct {

@@ -85,7 +85,7 @@ func billingReportLineFilters(query *gorm.DB, filters map[string]string) *gorm.D
 func (report *BillingReportManifest) customerDetails(ctx context.Context, filter BillingStatementLogFilter, result BillingStatementLogs, role int) (BillingStatementLogs, error) {
 	query := report.customerLines(ctx, filter)
 	var totals struct{ Quota, Requests, Tokens, RowCount int64 }
-	if err := query.Session(&gorm.Session{}).Select("COALESCE(SUM(customer_charge),0) AS quota, COALESCE(SUM(billable_requests),0) AS requests, COALESCE(SUM(input_tokens),0) + COALESCE(SUM(output_tokens),0) AS tokens, COUNT(*) AS row_count").Scan(&totals).Error; err != nil {
+	if err := query.Session(&gorm.Session{}).Select("COALESCE(SUM(customer_charge),0) AS quota, COALESCE(SUM(billable_requests),0) AS requests, COALESCE(SUM(CASE WHEN billing_mode = ? THEN 0 ELSE COALESCE(input_tokens,0) + COALESCE(output_tokens,0) END),0) AS tokens, COUNT(*) AS row_count", customerUsagePerImage).Scan(&totals).Error; err != nil {
 		return result, err
 	}
 	result.Quota = totals.Quota

@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -41,6 +42,9 @@ func ResolveSeedanceChannel() gin.HandlerFunc {
 			}
 		}
 
+		if !pinSeedanceDraftSource(c, contract.ModelArk, customerModel) {
+			return
+		}
 		specificChannelID := 0
 		if pin, found, _ := service.GetChannelConstraints(c).ResolvedPin(); found {
 			specificChannelID = pin.ChannelId
@@ -57,6 +61,10 @@ func ResolveSeedanceChannel() gin.HandlerFunc {
 			var err error
 			channel, selectedGroup, err = service.CustomerContractTypedChannel(c, customerModel, constant.ChannelTypeSeedanceLink, specificChannelID)
 			if err != nil {
+				if contract.ModelArk.DraftSourceID() != "" && errors.Is(err, service.ErrCustomerContractScope) {
+					rejectSeedanceDraftSource(c)
+					return
+				}
 				abortModelArkVideo(c, http.StatusServiceUnavailable, "model_not_found", "合同范围内无可用模型或渠道 / Contract model or channel is unavailable")
 				return
 			}
@@ -75,6 +83,10 @@ func ResolveSeedanceChannel() gin.HandlerFunc {
 			}
 		}
 		if channel == nil {
+			if contract.ModelArk.DraftSourceID() != "" {
+				rejectSeedanceDraftSource(c)
+				return
+			}
 			abortModelArkVideo(c, http.StatusServiceUnavailable, "model_not_found", "no enabled Seedance channel is configured for this model")
 			return
 		}

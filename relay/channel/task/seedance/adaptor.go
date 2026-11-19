@@ -32,6 +32,8 @@ type ContentItem struct {
 	VideoURL *MediaURL `json:"video_url,omitempty"`
 	AudioURL *MediaURL `json:"audio_url,omitempty"`
 	Role     string    `json:"role,omitempty"`
+
+	DraftTask *taskdto.ModelArkDraftTask `json:"draft_task,omitempty"`
 }
 
 type MediaURL struct {

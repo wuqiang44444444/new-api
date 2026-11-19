@@ -29,6 +29,9 @@ type dailyReportStage struct {
 	Dependencies          string
 	Incomplete            bool
 	RankReady             bool
+
+	HistoricalSource       string `gorm:"size:24"`
+	HistoricalMeterVersion int
 }
 
 type dailyReportStageKey struct{}
@@ -93,8 +96,10 @@ func GetDailyReportStage(ctx context.Context, scope DailyReportScope, requestedA
 }
 
 func dailyReportStageVersionCurrent(stage dailyReportStage) bool {
-	return stage.OriginalReplayVersion == CustomerOriginalReplayVersion &&
-		(stage.Kind != DailyReportUsage || stage.UsageMeterVersion == usageReportMeterVersion)
+	if stage.Kind == DailyReportUsage {
+		return stage.UsageMeterVersion == usageReportMeterVersion
+	}
+	return stage.OriginalReplayVersion == CustomerOriginalReplayVersion
 }
 
 func checkDailyReportStage(ctx context.Context, stage dailyReportStage) error {
@@ -140,19 +145,23 @@ func verifyPreviousDailyReportCoverage(ctx context.Context, stage dailyReportSta
 		return nil
 	}
 	db := usageReportMainDB(ctx).WithContext(ctx)
-	var old struct{ UpperLogID, SourceRows int64 }
+	var old struct {
+		UpperLogID, SourceRows int64
+		HistoricalSource       string
+	}
 	var err error
 	if stage.Kind == DailyReportUsage {
-		err = db.Model(&usageReportDay{}).Select("upper_log_id, source_rows").
+		err = db.Model(&usageReportDay{}).Select("upper_log_id, source_rows, historical_source").
 			Where("start = ? AND generation = ?", stage.Start, stage.Previous).Take(&old).Error
 	} else {
-		err = db.Model(&billingReportGeneration{}).Select("upper_log_id, rows AS source_rows").
+		err = db.Model(&billingReportGeneration{}).Select("upper_log_id, rows AS source_rows, historical_source").
 			Where("id = ?", stage.Previous).Take(&old).Error
 	}
 	if err != nil {
 		return err
 	}
-	if old.SourceRows == 0 || old.UpperLogID == 0 || stage.SourceRows < old.SourceRows || stage.UpperLogID <= old.UpperLogID {
+	if stage.HistoricalSource != "" || old.SourceRows == 0 || old.UpperLogID == 0 ||
+		(old.HistoricalSource == "" && (stage.SourceRows < old.SourceRows || stage.UpperLogID <= old.UpperLogID)) {
 		return nil
 	}
 	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -219,7 +228,7 @@ func publishDailyReportStages(ctx context.Context, scopes []DailyReportScope, ta
 				err = publishDailyReportStage(tx, stage)
 			}
 			if canPreserve(stage, err) {
-				if err := deferDailyReportDate(tx, stage.Start, stage.Kind, err); err != nil {
+				if err := deferDailyReportDate(tx, stage.Start, stage.Kind, err, &stage.SourceRows); err != nil {
 					return err
 				}
 				if err := tx.Delete(&stage).Error; err != nil {
@@ -249,7 +258,7 @@ func recordDailyReportCoverageIssue(ctx context.Context, stage dailyReportStage,
 	}
 	retryCtx, stop := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer stop()
-	return errors.Join(err, DeferDailyReportDate(retryCtx, stage.Start, stage.Kind, err))
+	return errors.Join(err, deferDailyReportDate(usageReportMainDB(retryCtx).WithContext(retryCtx), stage.Start, stage.Kind, err, &stage.SourceRows))
 }
 
 func publishDailyReportStage(tx *gorm.DB, stage dailyReportStage) error {
@@ -259,11 +268,14 @@ func publishDailyReportStage(tx *gorm.DB, stage dailyReportStage) error {
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		if current.Generation != stage.Previous {
+		if current.MeterVersion > stage.UsageMeterVersion || current.Generation != stage.Previous {
 			return errDailyReportSourceChanged
 		}
 		if current.Generation != "" {
-			if current.SourceRows > stage.SourceRows || (stage.Incomplete && !current.Incomplete) {
+			if replacesHistoricalReportWithoutSource(stage, current.HistoricalSource, current.SourceRows, current.UpperLogID) {
+				return errDailyReportCoverageDecreased
+			}
+			if stage.HistoricalSource == "" && (current.SourceRows > stage.SourceRows || (stage.Incomplete && !current.Incomplete)) {
 				return errDailyReportCoverageDecreased
 			}
 			if err := tx.Model(&usageReportDayRow{}).Where("generation = ? AND user_id = -1", current.Generation).
@@ -271,7 +283,14 @@ func publishDailyReportStage(tx *gorm.DB, stage dailyReportStage) error {
 				return err
 			}
 		}
-		head := usageReportDay{Start: stage.Start, Generation: stage.Generation, AsOf: stage.AsOf, SourceRows: stage.SourceRows, UpperLogID: stage.UpperLogID, Incomplete: stage.Incomplete, RankReady: stage.RankReady, MeterVersion: stage.UsageMeterVersion}
+		head := usageReportDay{HistoricalSource: stage.HistoricalSource, HistoricalMeterVersion: stage.HistoricalMeterVersion, Start: stage.Start, Generation: stage.Generation, AsOf: stage.AsOf, SourceRows: stage.SourceRows, UpperLogID: stage.UpperLogID, Incomplete: stage.Incomplete, RankReady: stage.RankReady, MeterVersion: stage.UsageMeterVersion}
+		if stage.HistoricalSource != "" && current.Generation != "" {
+			head.SourceRows, head.UpperLogID = current.SourceRows, current.UpperLogID
+			head.HistoricalCoverageComplete = current.HistoricalCoverageComplete ||
+				(current.HistoricalSource == "" && !current.Incomplete && current.SourceRows > 0 && current.UpperLogID > 0)
+		} else if current.HistoricalCoverageComplete {
+			head.Incomplete = false // The source checks proved that the full prior boundary was restored.
+		}
 		metadata, err := common.Marshal(head)
 		if err != nil {
 			return err
@@ -281,7 +300,7 @@ func publishDailyReportStage(tx *gorm.DB, stage dailyReportStage) error {
 			return err
 		}
 		return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "start"}},
-			DoUpdates: clause.AssignmentColumns([]string{"generation", "as_of", "source_rows", "upper_log_id", "incomplete", "rank_ready", "meter_version"})}).Create(&head).Error
+			DoUpdates: clause.AssignmentColumns([]string{"generation", "as_of", "source_rows", "upper_log_id", "incomplete", "rank_ready", "meter_version", "historical_source", "historical_meter_version", "historical_coverage_complete"})}).Create(&head).Error
 	}
 	var current billingReportHead
 	err := lockForUpdate(tx).Where("start = ?", stage.Start).Take(&current).Error
@@ -291,20 +310,40 @@ func publishDailyReportStage(tx *gorm.DB, stage dailyReportStage) error {
 	if current.Generation != stage.Previous {
 		return errDailyReportSourceChanged
 	}
+	var old billingReportGeneration
 	if current.Generation != "" {
-		var old billingReportGeneration
 		if err := tx.Where("id = ?", current.Generation).Take(&old).Error; err != nil {
 			return err
 		}
-		if old.Rows > stage.SourceRows || (stage.Incomplete && !old.Incomplete) {
+		if old.OriginalReplayVersion > stage.OriginalReplayVersion {
+			return errDailyReportSourceChanged
+		}
+		if replacesHistoricalReportWithoutSource(stage, old.HistoricalSource, old.Rows, old.UpperLogID) {
+			return errDailyReportCoverageDecreased
+		}
+		if stage.HistoricalSource == "" && (old.Rows > stage.SourceRows || (stage.Incomplete && !old.Incomplete)) {
 			return errDailyReportCoverageDecreased
 		}
 		if err := tx.Model(&old).Update("retired_at", common.GetTimestamp()).Error; err != nil {
 			return err
 		}
 	}
+	var issues int64
+	if err := tx.Model(&billingReportLine{}).Where("generation = ?", stage.Generation).
+		Where("replay_issue <> '' OR price_issue <> '' OR previous_original <> '' OR previous_original_missing = ?", true).Count(&issues).Error; err != nil {
+		return err
+	}
+	rows, upper, incomplete, historicalCoverageComplete := stage.SourceRows, stage.UpperLogID, stage.Incomplete, false
+	if stage.HistoricalSource != "" && old.ID != "" {
+		rows, upper = old.Rows, old.UpperLogID
+		historicalCoverageComplete = old.HistoricalCoverageComplete ||
+			(old.HistoricalSource == "" && !old.Incomplete && old.Rows > 0 && old.UpperLogID > 0)
+	} else if old.HistoricalCoverageComplete {
+		incomplete = false
+	}
 	if err := tx.Model(&billingReportGeneration{}).Where("id = ?", stage.Generation).
-		Updates(map[string]any{"published": true, "rows": stage.SourceRows}).Error; err != nil {
+		Updates(map[string]any{"published": true, "rows": rows, "upper_log_id": upper, "incomplete": incomplete, "historical_source": stage.HistoricalSource,
+			"historical_coverage_complete": historicalCoverageComplete, "issue_rows": issues}).Error; err != nil {
 		return err
 	}
 	head := billingReportHead{Start: stage.Start, Generation: stage.Generation, AsOf: stage.AsOf}

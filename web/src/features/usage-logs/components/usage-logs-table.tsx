@@ -38,6 +38,8 @@ import {
 import { useMediaQuery } from '@/hooks'
 import { useStatus } from '@/hooks/use-status'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
+import { formatTimestampToDate } from '@/lib/format'
+import { ROLE } from '@/lib/roles'
 import { createServerError } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
@@ -50,7 +52,7 @@ import {
 import { shouldShowBillingSource } from '../lib/billing-source'
 import { useColumnsByCategory } from '../lib/columns'
 import { parseLogOther } from '../lib/format'
-import { fetchLogsByCategory } from '../lib/utils'
+import { fetchLogsByCategory, getDefaultTimeRange } from '../lib/utils'
 import type { GetLogsResponse, LogCategory } from '../types'
 import { BillingFundGroups } from './billing-fund-groups'
 import { CommonLogsFilterBar } from './common-logs-filter-bar'
@@ -91,6 +93,32 @@ interface UsageLogsTableProps {
   logCategory: LogCategory
 }
 
+function legacyLogWindow(
+  search: Record<string, unknown>,
+  maxLookupDays: number,
+  previous?: NonNullable<GetLogsResponse['data']>
+) {
+  if (previous?.end_timestamp) {
+    return {
+      startTime: previous.start_timestamp
+        ? previous.start_timestamp * 1000
+        : 1000,
+      endTime: previous.end_timestamp * 1000,
+    }
+  }
+  const { start, end } = getDefaultTimeRange(true)
+  const endTime =
+    typeof search.endTime === 'number' ? search.endTime : end.getTime()
+  return {
+    startTime:
+      search.startTime ??
+      (search.endTime != null || !search.requestId
+        ? endTime - (end.getTime() - start.getTime())
+        : Math.max(1000, endTime - maxLookupDays * 86_400_000)),
+    endTime,
+  }
+}
+
 export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
   const { t } = useTranslation()
   const getColumnClassName = useCallback(
@@ -105,7 +133,8 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
   const isMobile = useMediaQuery('(max-width: 640px)')
   const searchParams = route.useSearch()
   const userId = useAuthStore((state) => state.auth.user?.id)
-  const { status, loading: statusLoading } = useStatus()
+  const { status, statusConfirmed, error: statusError } = useStatus()
+  const statusReady = statusConfirmed || !!statusError
   const navigate = route.useNavigate()
   const queryClient = useQueryClient()
   const { data: showBillingSource = false } = useQuery({
@@ -179,7 +208,15 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
   const isCommon = logCategory === 'common'
   const billingMode = isCommon && !!searchParams.billing
   const numberedLogs = isCommon && !billingMode
-  const snapshotMode = numberedLogs && status?.log_cursor_enabled !== false
+  const deferredTotal =
+    numberedLogs &&
+    statusConfirmed &&
+    status?.log_deferred_total_enabled === true
+  const role = useAuthStore((state) => state.auth.user?.role ?? ROLE.GUEST)
+  const maxLookupDays =
+    role >= ROLE.ADMIN
+      ? Infinity
+      : Math.max(1, status?.log_max_range_days ?? 365)
   const pageIndex = pagination.pageIndex
   const directBillingEvents =
     billingMode && searchParams.billingView === 'events'
@@ -192,8 +229,16 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
   const effectiveUpstreamRequestId = isAdmin ? upstreamRequestId : undefined
   const billingFilterKey = hashKey([filters, effectiveUpstreamRequestId])
   const logSnapshots = useRef(new Map<string, string>())
+  const legacyPagination = useRef(
+    new Map<string, ReturnType<typeof legacyLogWindow> | undefined>()
+  )
+  const [legacyTotalScope, setLegacyTotalScope] = useState<string>()
   const resetLogSnapshot = useCallback(() => {
     logSnapshots.current.clear()
+    setLegacyTotalScope(undefined)
+    for (const scope of legacyPagination.current.keys()) {
+      legacyPagination.current.set(scope, undefined)
+    }
   }, [])
   const [fundSelection, setFundSelection] = useState<{
     key: string
@@ -214,37 +259,80 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
     userId,
     groupFunds,
     fundGroup,
-    snapshotMode,
+    deferredTotal,
     billingFilterKey,
     numberedLogs ? null : columnFilters,
   ]
   const listScopeKey = hashKey(listScope)
   const { data, isLoading, isFetching, isError, isPlaceholderData, refetch } =
     useQuery<NonNullable<GetLogsResponse['data']>>({
-      enabled: !numberedLogs || !statusLoading,
+      enabled: !numberedLogs || statusReady,
+      ...(numberedLogs ? { retry: false } : {}),
       queryKey: ['logs', listScopeKey, pageIndex, pagination.pageSize],
+      ...(numberedLogs ? { staleTime: 10_000 } : {}),
       queryFn: async ({ signal }) => {
-        const pageSnapshot = snapshotMode
+        let legacyWindow = legacyPagination.current.get(listScopeKey)
+        const useSnapshot =
+          deferredTotal && !legacyPagination.current.has(listScopeKey)
+        if (!legacyWindow && numberedLogs && !useSnapshot) {
+          legacyWindow = legacyLogWindow(searchParams, maxLookupDays)
+          legacyPagination.current.set(listScopeKey, legacyWindow)
+        }
+        const pageSnapshot = useSnapshot
           ? (logSnapshots.current.get(listScopeKey) ?? 'start')
           : undefined
-        const result = await fetchLogsByCategory({
+        const config = {
           logCategory,
           isAdmin,
           page: pageIndex + 1,
-          pageSnapshot,
           groupFunds,
           fundGroup,
           signal,
           pageSize: pagination.pageSize,
-          searchParams,
+          searchParams: {
+            ...searchParams,
+            ...legacyWindow,
+          },
           columnFilters: numberedLogs ? [] : columnFilters,
+        }
+        const pageTotal = deferredTotal && useSnapshot ? 'defer' : undefined
+        let result = await fetchLogsByCategory({
+          ...config,
+          pageSnapshot,
+          pageTotal,
         })
+        if (
+          pageTotal &&
+          result.code === 'log_console_route_unavailable' &&
+          !signal.aborted
+        ) {
+          const previous = queryClient
+            .getQueriesData<NonNullable<GetLogsResponse['data']>>({
+              queryKey: ['logs', listScopeKey],
+            })
+            .find(([, cached]) => cached?.page_snapshot === pageSnapshot)?.[1]
+          const window = legacyLogWindow(searchParams, maxLookupDays, previous)
+          legacyPagination.current.set(listScopeKey, window)
+          logSnapshots.current.delete(listScopeKey)
+          queryClient.removeQueries({
+            queryKey: ['logs', listScopeKey],
+            type: 'inactive',
+          })
+          result = await fetchLogsByCategory({
+            ...config,
+            searchParams: { ...searchParams, ...window },
+          })
+        }
 
         if (!result?.success) {
           throw createServerError(result, 'Failed to load logs')
         }
 
-        if (snapshotMode && result.data?.page_snapshot && !signal.aborted) {
+        if (
+          !legacyPagination.current.has(listScopeKey) &&
+          result.data?.page_snapshot &&
+          !signal.aborted
+        ) {
           if (pageSnapshot !== result.data.page_snapshot) {
             queryClient.removeQueries({
               queryKey: ['logs', listScopeKey],
@@ -266,6 +354,146 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
         previousQuery?.queryKey[1] === listScopeKey ? previousData : undefined,
     })
 
+  const positionSnapshot =
+    deferredTotal && !isPlaceholderData ? data?.page_snapshot : undefined
+  const readLogPosition = async (
+    mode: 'count' | 'last',
+    signal: AbortSignal
+  ) => {
+    const result = await fetchLogsByCategory({
+      logCategory,
+      isAdmin,
+      page: 1,
+      pageSize: pagination.pageSize,
+      pageSnapshot: positionSnapshot,
+      pageTotal: mode,
+      signal,
+      searchParams,
+      columnFilters: [],
+    })
+    if (result.code === 'log_console_route_unavailable') {
+      return { kind: 'legacy' } as const
+    }
+    if (result.code === 'log_snapshot_expired') {
+      return { kind: 'expired' } as const
+    }
+    if (
+      !result.success ||
+      !result.data?.page_snapshot ||
+      result.data.total_pending
+    ) {
+      throw createServerError(result, 'Failed to load logs')
+    }
+    return {
+      kind: 'position',
+      page: result.data,
+      snapshot: result.data.page_snapshot,
+    } as const
+  }
+  const positionKey = [
+    listScopeKey,
+    positionSnapshot,
+    pageIndex,
+    pagination.pageSize,
+  ]
+  const count = useQuery({
+    enabled: false,
+    retry: false,
+    queryKey: ['usage-log-total', ...positionKey],
+    queryFn: ({ signal }) => readLogPosition('count', signal),
+  })
+  const last = useQuery({
+    enabled: false,
+    retry: false,
+    queryKey: ['usage-log-last-page', ...positionKey],
+    queryFn: ({ signal }) => readLogPosition('last', signal),
+  })
+  const positionBusy = count.isFetching || last.isFetching
+  const positionExpired =
+    count.data?.kind === 'expired' || last.data?.kind === 'expired'
+
+  const reloadLogSearch = () => {
+    logSnapshots.current.delete(listScopeKey)
+    queryClient.removeQueries({
+      queryKey: ['logs', listScopeKey],
+      type: 'inactive',
+    })
+    if (pageIndex === 0) void refetch()
+    else onPaginationChange({ ...pagination, pageIndex: 0 })
+  }
+
+  const requestTotal = async (destination?: number | 'last') => {
+    if (!positionSnapshot || positionBusy) return
+    const operation = destination === 'last' ? last : count
+    const result = await operation.refetch({ cancelRefetch: false })
+    if (
+      !result.isSuccess ||
+      logSnapshots.current.get(listScopeKey) !== positionSnapshot
+    ) {
+      return
+    }
+    if (result.data.kind === 'expired') return
+    if (result.data.kind === 'legacy') {
+      legacyPagination.current.set(
+        listScopeKey,
+        legacyLogWindow(searchParams, maxLookupDays, data)
+      )
+      logSnapshots.current.delete(listScopeKey)
+      queryClient.removeQueries({
+        queryKey: ['logs', listScopeKey],
+        type: 'inactive',
+      })
+      const fallback = await refetch()
+      if (
+        fallback.isSuccess &&
+        !fallback.data.total_pending &&
+        destination !== undefined
+      ) {
+        setLegacyTotalScope(
+          hashKey([listScopeKey, pageIndex, pagination.pageSize])
+        )
+      }
+      return
+    }
+
+    const page = result.data.page
+    const snapshot = result.data.snapshot
+    logSnapshots.current.set(listScopeKey, snapshot)
+    if (destination === 'last') {
+      const targetIndex = page.page - 1
+      queryClient.removeQueries({
+        queryKey: ['logs', listScopeKey],
+        type: 'inactive',
+      })
+      queryClient.setQueryData(
+        ['logs', listScopeKey, targetIndex, pagination.pageSize],
+        page
+      )
+      onPaginationChange({ ...pagination, pageIndex: targetIndex })
+      return
+    }
+
+    queryClient.setQueriesData<NonNullable<GetLogsResponse['data']>>(
+      { queryKey: ['logs', listScopeKey] },
+      (previous) =>
+        previous?.page_snapshot === positionSnapshot
+          ? {
+              ...previous,
+              total: page.total,
+              total_pending: false,
+              page_snapshot: snapshot,
+            }
+          : previous
+    )
+    if (destination !== undefined) {
+      const lastPage = Math.max(1, Math.ceil(page.total / pagination.pageSize))
+      onPaginationChange({
+        ...pagination,
+        pageIndex: Math.min(destination, lastPage) - 1,
+      })
+    }
+  }
+
   const logs =
     numberedLogs && (isError || isPlaceholderData) ? undefined : data?.items
   const columns = useColumnsByCategory(
@@ -275,13 +503,13 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
     showBillingSource
   )
   const isLoadingData =
-    (numberedLogs && (statusLoading || isPlaceholderData)) ||
+    (numberedLogs && (!statusReady || isPlaceholderData)) ||
     isLoading ||
     (isFetching && !data)
 
   const hasCurrentPage = data && !isPlaceholderData && !isFetching && !isError
   const ensureLogPageInRange = (pageCount: number) => {
-    if (hasCurrentPage) {
+    if (hasCurrentPage && !data?.total_pending) {
       ensurePageInRange(Math.max(1, pageCount), { resetTo: 'last' })
     }
   }
@@ -343,24 +571,70 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
                 <Button
                   variant='outline'
                   size='sm'
-                  onClick={() => void refetch()}
+                  onClick={
+                    deferredTotal ? reloadLogSearch : () => void refetch()
+                  }
                 >
                   {t('Retry')}
                 </Button>
               </div>
             )}
             {data && !isError && (
-              <ResultPagination
-                label={t('Usage Logs')}
-                page={pageIndex + 1}
-                pageSize={pagination.pageSize}
-                total={data.total}
-                disabled={isFetching || isPlaceholderData}
-                allowPageJump
-                onChange={(page, pageSize) =>
-                  onPaginationChange({ pageIndex: page - 1, pageSize })
-                }
-              />
+              <>
+                {legacyTotalScope ===
+                  hashKey([listScopeKey, pageIndex, pagination.pageSize]) && (
+                  <p
+                    role='status'
+                    className='text-muted-foreground text-right text-xs'
+                  >
+                    {t('Total loaded. Select the page again.')}
+                  </p>
+                )}
+                {!data.total_pending && (positionExpired || last.isError) && (
+                  <Button
+                    variant='outline'
+                    size='sm'
+                    onClick={
+                      positionExpired
+                        ? reloadLogSearch
+                        : () => void requestTotal('last')
+                    }
+                  >
+                    {positionExpired ? t('Refresh') : t('Retry')}
+                  </Button>
+                )}
+                <ResultPagination
+                  label={t('Usage Logs')}
+                  page={pageIndex + 1}
+                  pageSize={pagination.pageSize}
+                  total={data.total}
+                  disabled={isFetching || isPlaceholderData || positionBusy}
+                  allowPageJump
+                  onLastPage={
+                    positionSnapshot
+                      ? () => void requestTotal('last')
+                      : undefined
+                  }
+                  pendingTotal={
+                    data.total_pending
+                      ? {
+                          hasMore: data.has_more ?? false,
+                          busy: positionBusy,
+                          failed:
+                            count.isError || last.isError || positionExpired,
+                          onRefresh: positionExpired
+                            ? reloadLogSearch
+                            : undefined,
+                          onRequest: (destination) =>
+                            void requestTotal(destination),
+                        }
+                      : undefined
+                  }
+                  onChange={(page, pageSize) =>
+                    onPaginationChange({ pageIndex: page - 1, pageSize })
+                  }
+                />
+              </>
             )}
           </PageFooterPortal>
         )
@@ -423,7 +697,38 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
             </div>
           )}
           {isCommon && !searchParams.billing && (
-            <CommonLogsFilterBar table={table} onSearch={resetLogSnapshot} />
+            <>
+              <CommonLogsFilterBar
+                table={table}
+                onSearch={resetLogSnapshot}
+                statisticsWindow={
+                  data?.end_timestamp && !isPlaceholderData && !isError
+                    ? {
+                        start: data.start_timestamp ?? 0,
+                        end: data.end_timestamp,
+                      }
+                    : undefined
+                }
+                statisticsWindowPending={
+                  isFetching || isPlaceholderData || !data?.end_timestamp
+                }
+              />
+              {searchParams.requestId &&
+                data?.end_timestamp &&
+                !isPlaceholderData &&
+                !isError && (
+                  <p className='text-muted-foreground text-xs'>
+                    {data.start_timestamp
+                      ? t('Searched {{start}} to {{end}}', {
+                          start: formatTimestampToDate(data.start_timestamp),
+                          end: formatTimestampToDate(data.end_timestamp),
+                        })
+                      : t('Searched all logs through {{end}}', {
+                          end: formatTimestampToDate(data.end_timestamp),
+                        })}
+                  </p>
+                )}
+            </>
           )}
           {!isCommon && (
             <TaskLogsFilterBar table={table} logCategory={logCategory} />

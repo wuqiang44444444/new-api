@@ -7,6 +7,10 @@ source-url: https://shengshu.feishu.cn/wiki/UdZNw56HxiLfEykYOjmcsaYQn08
 
 # Vidu 国外站 Drama 官方协议调用原始信息
 
+本文件保留海外站 2026-09-28 的证据。国内站新版文档及两步实测见
+[国内站 Draft 样片复核](Vidu国内站视频接口原始信息.md#国内站-draft-样片更新与实测2026-11-18)。海外站是否支持
+`draft`、`draft_task`、开通条件、目标分辨率和有效期仍须依据海外站自身文档与账号实测确认。
+
 ## 1. 正确来源与保存边界
 
 - 官方文档：[【异步-官方协议】Vidu-drama-ab 生视频模型-海外](https://shengshu.feishu.cn/wiki/UdZNw56HxiLfEykYOjmcsaYQn08)。

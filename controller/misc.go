@@ -125,6 +125,7 @@ func GetStatus(c *gin.Context) {
 		"log_export_enabled":          operation_setting.GetLogSetting().UserExportEnabled,
 		"log_max_range_days":          operation_setting.GetLogSetting().MaxRangeDays,
 		"log_cursor_enabled":          !common.UsingLogDatabase(common.DatabaseTypeClickHouse),
+		"log_deferred_total_enabled":  !common.UsingLogDatabase(common.DatabaseTypeClickHouse),
 	}
 
 	// 根据启用状态注入可选内容

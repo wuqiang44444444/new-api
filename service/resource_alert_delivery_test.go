@@ -54,16 +54,28 @@ func TestResourceAlertRetriesOnlyDefinitelyUnsubmittedRecipients(t *testing.T) {
 }
 
 func TestImmediateMailIsClaimedAheadOfUsageBacklog(t *testing.T) {
-	withErrorReportTestDB(t)
+	db := withErrorReportTestDB(t)
 	withErrorReportSetting(t, "ops@example.com")
 	t.Setenv("FINANCE_MAIL_RECIPIENTS", "finance@example.com")
 	ctx := context.Background()
 	now := time.Now()
-	day := now.Add(-48 * time.Hour).Unix()
+	require.NoError(t, db.AutoMigrate(&model.Log{}, &model.Task{}, &model.TaskBillingDelivery{}))
+	prepareDailyReportExportTest(t)
+	period, err := model.ResolveUsageAnalyticsPeriod("day", now.In(model.UsageAnalyticsZone()).AddDate(0, 0, -2).Format(time.DateOnly), now.Unix())
+	require.NoError(t, err)
+	require.NoError(t, model.BuildUsageReportDay(ctx, period.Date, "export-fixture", "runner", nil))
+	report, err := model.PublishedUsageMailDay(ctx, period)
+	require.NoError(t, err)
+	require.Len(t, report.References, 1)
+	ref := report.References[0]
 	for _, kind := range []string{model.PlatformUsageReportMail, model.CustomerStatusReportMail} {
-		for range 3 {
+		for i := range 3 {
+			generation := ref.Generation
+			if i == 2 {
+				generation = ""
+			}
 			opened, err := model.OpenResourceAlert(ctx, model.ResourceAlertEpisode{
-				Resource: kind, OpenedAt: day, Subject: kind,
+				Resource: kind, OpenedAt: ref.Start, Subject: kind, UsageReportGeneration: generation,
 			}, []string{"ops@example.com"})
 			require.NoError(t, err)
 			require.True(t, opened)
@@ -84,5 +96,14 @@ func TestImmediateMailIsClaimedAheadOfUsageBacklog(t *testing.T) {
 	require.Len(t, sent, 4)
 	assert.Contains(t, sent[0], "Evidence cleanup alert")
 	assert.Equal(t, "wallet-risk", sent[1])
-	assert.Equal(t, model.PlatformUsageReportMail, sent[2])
+	assert.Equal(t, []string{model.PlatformUsageReportMail, model.PlatformUsageReportMail}, sent[2:])
+	require.NoError(t, deliverResourceAlerts(time.Now, func(_ context.Context, subject, _, _ string) error {
+		sent = append(sent, subject)
+		return nil
+	}))
+	assert.Equal(t, []string{model.CustomerStatusReportMail, model.CustomerStatusReportMail}, sent[4:])
+	var held int64
+	require.NoError(t, model.DB.Model(&model.ResourceAlertDelivery{}).
+		Where("status = ? AND stop_reason = ? AND next_attempt_at > ?", model.MailDeliveryRetryWait, "report_version_unavailable", now.Unix()).Count(&held).Error)
+	assert.EqualValues(t, 2, held)
 }

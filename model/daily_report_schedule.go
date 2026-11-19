@@ -46,9 +46,11 @@ func NextDailyReportDay(ctx context.Context, today, now int64) (start int64, req
 		return yesterday, queued.RequestedAt, true, false, err
 	}
 	var request billingReportRebuild
-	runnable := db.Where("(start <> ? OR ? >= ?)", yesterday, now, window).
-		Where("NOT EXISTS (SELECT 1 FROM daily_report_retries retry WHERE retry.start = billing_report_rebuilds.start AND retry.retry_at > ?)", now).
-		Order("requested_at ASC").Session(&gorm.Session{})
+	runnable := db.Where("NOT EXISTS (SELECT 1 FROM daily_report_retries retry WHERE retry.start = billing_report_rebuilds.start AND "+currentDailyReportRetry+" AND retry.retry_at > ?)", usageReportMeterVersion, CustomerOriginalReplayVersion, now)
+	if now < window {
+		runnable = runnable.Where("start <> ?", yesterday)
+	}
+	runnable = runnable.Order("requested_at ASC").Session(&gorm.Session{})
 	err = runnable.Where("COALESCE(original_replay_version, 0) = 0").Take(&request).Error
 	if err == nil {
 		return request.Start, request.RequestedAt, true, false, nil
@@ -67,9 +69,11 @@ func NextDailyReportDay(ctx context.Context, today, now int64) (start int64, req
 		{"tasks task", "JOIN usage_report_days report ON task.finish_time >= report.start AND task.finish_time < report.start + 86400", "task.video_refund_state = ? AND task.video_refund_completed_at >= ? AND task.video_refund_completed_at > report.as_of", []any{"refunded", now - 2*86400}},
 	} {
 		var found struct{ Start int64 }
-		err := db.Table(source.from).Select("report.start").Joins(source.join).
-			Where("report.start < ? AND (report.start <> ? OR ? >= ?)", today, yesterday, now, window).
-			Where("NOT EXISTS (SELECT 1 FROM daily_report_retries retry WHERE retry.start = report.start AND retry.retry_at > ?)", now).
+		query := db.Table(source.from).Select("report.start").Joins(source.join).Where("report.start < ?", today)
+		if now < window {
+			query = query.Where("report.start <> ?", yesterday)
+		}
+		err := query.Where("NOT EXISTS (SELECT 1 FROM daily_report_retries retry WHERE retry.start = report.start AND "+currentDailyReportRetry+" AND retry.retry_at > ?)", usageReportMeterVersion, CustomerOriginalReplayVersion, now).
 			Where(source.predicate, source.args...).Limit(1).Take(&found).Error
 		if err == nil {
 			return found.Start, 0, true, false, nil
@@ -78,9 +82,34 @@ func NextDailyReportDay(ctx context.Context, today, now int64) (start int64, req
 			return 0, 0, false, false, err
 		}
 	}
-	todayDue := !retry[today] && (staleToday || now-published[today] >= dailyReportRefreshSeconds)
-	if todayDue && latestHistory >= published[today] {
+	var staleBillingToday int64
+	if err := db.Table("billing_report_heads AS h").Select("h.start").
+		Joins("JOIN billing_report_generations AS g ON g.id = h.generation").
+		Where("h.start = ? AND COALESCE(g.original_replay_version, 0) < ?", today, CustomerOriginalReplayVersion).
+		Limit(1).Scan(&staleBillingToday).Error; err != nil {
+		return 0, 0, false, false, err
+	}
+	todayDue := !retry[today] && (staleToday || staleBillingToday != 0 || now-published[today] >= dailyReportRefreshSeconds)
+	if todayDue && (staleBillingToday != 0 || latestHistory >= published[today]) {
 		return today, 0, true, false, nil
+	}
+	var staleUsage usageReportDay
+	stale := db.Select("start").Where("start <= ?", today)
+	if now < window {
+		stale = stale.Where("start <> ?", yesterday)
+	}
+	err = stale.
+		Where("generation <> '' AND COALESCE(meter_version, 0) < ?", usageReportMeterVersion).
+		Where("NOT EXISTS (SELECT 1 FROM daily_report_retries retry WHERE retry.start = usage_report_days.start AND retry.kind = ? AND retry.release_version = ? AND retry.retry_at > ?)", DailyReportUsage, usageReportMeterVersion, now).
+		Order("start DESC").Take(&staleUsage).Error
+	if err == nil {
+		if todayDue {
+			return today, 0, true, false, nil
+		}
+		return staleUsage.Start, 0, true, true, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return 0, 0, false, false, err
 	}
 	err = runnable.Where("original_replay_version > 0").Take(&request).Error
 	if err == nil {
@@ -88,20 +117,6 @@ func NextDailyReportDay(ctx context.Context, today, now int64) (start int64, req
 			return today, 0, true, false, nil
 		}
 		return request.Start, request.RequestedAt, true, false, nil
-	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return 0, 0, false, false, err
-	}
-	var staleUsage usageReportDay
-	err = db.Select("start").Where("start < ? AND (start <> ? OR ? >= ?)", today, yesterday, now, window).
-		Where("COALESCE(meter_version, 0) < ?", usageReportMeterVersion).
-		Where("NOT EXISTS (SELECT 1 FROM daily_report_retries retry WHERE retry.start = usage_report_days.start AND retry.kind = ? AND retry.retry_at > ?)", DailyReportUsage, now).
-		Order("start DESC").Take(&staleUsage).Error
-	if err == nil {
-		if todayDue {
-			return today, 0, true, false, nil
-		}
-		return staleUsage.Start, 0, true, true, nil
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return 0, 0, false, false, err

@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { toast } from 'sonner'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -299,6 +299,26 @@ describe('admin customer contract entity drawer', () => {
       1
     )
     expect(screen.getByPlaceholderText('Search and select models')).toBeTruthy()
+  })
+
+  it('keeps the current contract when a keyboard switch is canceled', async () => {
+    const keyboard = userEvent.setup()
+    renderDrawer({ contractId: 5 })
+    const name = await screen.findByRole('textbox', { name: 'Contract name' })
+    const picker = screen.getByRole('combobox', { name: 'Current contract' })
+    await keyboard.type(name, ' draft')
+
+    picker.focus()
+    await keyboard.keyboard('{Enter}{End}{Enter}')
+    const confirmation = await screen.findByRole('alertdialog')
+    expect(confirmation).toHaveTextContent('Discard unsaved contract changes?')
+    await keyboard.click(
+      within(confirmation).getByRole('button', { name: 'Cancel' })
+    )
+
+    expect(name).toHaveValue('Main contract draft')
+    expect(picker).toHaveTextContent('Main contract')
+    expect(picker).toHaveAttribute('aria-expanded', 'false')
   })
 
   it('keeps internal channel facts admin-only and recalculates draft pricing', async () => {

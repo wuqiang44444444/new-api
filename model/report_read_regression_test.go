@@ -42,7 +42,7 @@ func TestLogCursorPreservesFilterAndSkipsNewerInserts(t *testing.T) {
 	assert.Empty(t, second.NextCursor)
 	_, err = GetLogCursorPage(ctx, 2, filter, first.NextCursor, 2, 1, 0, common.RoleCommonUser)
 	require.Error(t, err)
-	stats, err := GetLogRangeStatistics(ctx, 1, filter, 0)
+	stats, err := GetLogRangeStatistics(ctx, 1, filter, 0, false)
 	require.NoError(t, err)
 	assert.EqualValues(t, 3, stats.Total)
 	assert.Equal(t, 60, stats.Quota)

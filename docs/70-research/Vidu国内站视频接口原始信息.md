@@ -1,7 +1,7 @@
 ---
 status: reference
 owner: Dev Team
-last-reviewed: 2026-09-28
+last-reviewed: 2026-11-18
 source-url: https://shengshu.feishu.cn/wiki/PkFHwrme8ihMA8kshbgc5QwPnxe
 ---
 
@@ -10,11 +10,11 @@ source-url: https://shengshu.feishu.cn/wiki/PkFHwrme8ihMA8kshbgc5QwPnxe
 ## 1. 正确来源与保存边界
 
 - 官方文档：[【异步-官方协议】Vidu-drama 生视频模型-国内](https://shengshu.feishu.cn/wiki/PkFHwrme8ihMA8kshbgc5QwPnxe)。
-- 读取日期：2026-09-28；页面显示最新修改时间：09月17日（页面未显示年份，不推定年份）。
+- 第 2–9 节为 2026-09-28 读取的基线；Draft 以 [2026-11-18 的复核](#国内站-draft-样片更新与实测2026-11-18)为准。
 - 读取方式：浏览器匿名打开飞书，逐节读取基础信息、模型能力、请求、媒体规格、参数、响应、完整示例、错误码和定价。
 - 本文为原始接口事实的结构化摘录，保留技术字段、数值及文档冲突；不是完整原文镜像。
 - 本文件替换此前误用的普通 Vidu `/ent/v2` 七类接口资料；那些接口不能用于判断本次 Drama/Seedance 线路。
-- 未保存或调用用户提供的真实 Key。示例只含占位符；未创建任务或产生费用。
+- 初次读档未调用真实 Key；后续真实调用仅保留脱敏摘要，示例仍只含占位符。
 - 代码兼容判断另见[两站与现有 Seedance 渠道适配结论](Vidu两站差异与现有渠道适配结论.md)。
 
 ## 2. 连接与完整接口地址
@@ -182,3 +182,29 @@ curl 'https://api.vidu.cn/ent/api/v3/contents/generations/tasks/<TASK_ID>' \
 本次两站 `Seedance 2.0 std` 图片＋参考音频请求均创建成功。真实查询中的 `duration`、`seed`、
 `created_at`、`updated_at`、`frames_per_second` 为字符串，和上文文档示例的数值类型不同。
 原始文档摘录保持不变；实测事实及渠道状态见[双站实测记录](../99-archive/2026/09/2026-09-28-Vidu双站渠道接入与实测.md)。
+
+## 国内站 Draft 样片更新与实测（2026-11-18）
+
+复核同一份飞书原文的[顶层参数](https://shengshu.feishu.cn/wiki/PkFHwrme8ihMA8kshbgc5QwPnxe#OGl3dMzgToUz3NxuwOfc3ZS0n1b)
+和[样片输入](https://shengshu.feishu.cn/wiki/PkFHwrme8ihMA8kshbgc5QwPnxe#Z1qRdyvHnoaoU5xkYZNcJ3dznCd)。
+第 4 节旧摘录未列 `draft`，不再用于判断国内站的 Draft 支持。
+
+- `draft` 是可选布尔值，缺省 `false`。`true` 生成 480p 样片，指定其它分辨率会失败。原文明确
+  `viduq3.1-drama-flash` 不支持 `draft: true`。
+- 样片输入需联系商务开通，文档只为国内 Q3.1 标准版声明该操作。用同一模型再次调用 V3 创建，
+  `content` 输入 `{ "type": "draft_task", "draft_task": { "id": "<DRAFT_TASK_ID>" } }`。
+- 样片复用有效期从 `created_at` 算起。2026-10-28 10:00（UTC+8）及之后创建的样片为 14 天，
+  此前为 7 天。逾期无法用原任务生成正式视频。
+- [分辨率说明](https://shengshu.feishu.cn/wiki/PkFHwrme8ihMA8kshbgc5QwPnxe#XXqMdDwbgogPuFxbRCVcG2hpngL)
+  把 4K 列给 `viduq3-drama-std`，未列给本次使用的 `viduq3.1-drama-std`。本次显式请求 1080p；未尝试 4K。
+
+国内测试使用 `viduq3.1-drama-std` 与同一个已能履约的 Vidu 账号。
+
+| 步骤 | 发送的请求 | 可核对的结果 |
+| --- | --- | --- |
+| 样片 | 纯文本、`draft: true`、480p、4 秒、16:9、无音频；隔离网关临时开放字段 | `succeeded`、`draft: true`、查询时长 4 秒、`completion_tokens=38830`；文件 854×480、4.04 秒 |
+| 正式成片 | 同模型、1080p、仅在 `content` 中引用该样片的上游任务 ID；直连同一 Vidu 账号 | `succeeded`、`draft: false`、`completion_tokens=196425`；查询时长 5 秒，文件 1920×1080、4.04 秒；查询响应未带 `draft_task_id` |
+
+两步分别完成且均取得视频。API 时长、文件时长和供应商用量是不同证据，不能据文件秒数重算账单。
+未核对供应商账单；未验证海外站、同账号内其它型号、未开通账号及超期边界。普通网关仍会在样片提交前
+拒绝 `draft`，也尚未支持 `draft_task`；第二步直连结果不能视为本站成片适配或发布已完成。

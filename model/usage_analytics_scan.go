@@ -294,6 +294,13 @@ func (agg *usageAggregation) scanLogs(ctx context.Context) error {
 	}
 	agg.logUpper = upper
 	var cursor int64
+	if agg.opts.LogUpper != nil {
+		var err error
+		cursor, err = dailyReportFirstLogCursor(ctx, query, upper, 5*time.Second)
+		if err != nil {
+			return err
+		}
+	}
 	const batchSize = 500
 	columns := "id, COALESCE(request_id, '') AS request_id, user_id, token_id, COALESCE(token_name, '') AS token_name, channel_id, COALESCE(model_name, '') AS model_name, type, created_at, prompt_tokens, completion_tokens, quota, COALESCE(content, '') AS content, COALESCE(other, '') AS other, " + billingStatementGroupSelect()
 	if agg.opts.LogUpper != nil && query.Dialector.Name() == "postgres" {
@@ -1109,6 +1116,12 @@ func (agg *usageAggregation) foldCustomerDayTotals() ([]UsageAnalyticsMetrics, U
 	dayAccs := make([]usageMetricsAcc, len(agg.period.Days))
 	total := usageMetricsAcc{}
 	for key, acc := range agg.customer {
+		if key.day >= 0 && key.day < len(dayAccs) {
+			dayAccs[key.day].merge(acc)
+		}
+		total.merge(acc)
+	}
+	for key, acc := range agg.overview {
 		if key.day >= 0 && key.day < len(dayAccs) {
 			dayAccs[key.day].merge(acc)
 		}

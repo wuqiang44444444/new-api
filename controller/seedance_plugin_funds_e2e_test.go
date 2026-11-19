@@ -76,22 +76,33 @@ type seedanceFundsFixture struct {
 
 func newSeedanceFundsFixture(t *testing.T) *seedanceFundsFixture {
 	t.Helper()
+	return newSeedanceFundsFixtureOnDatabase(t, func(t *testing.T, models ...any) (*gorm.DB, common.DatabaseType) {
+		t.Helper()
+		db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+		require.NoError(t, err)
+		sqlDB, err := db.DB()
+		require.NoError(t, err)
+		sqlDB.SetMaxOpenConns(1)
+		t.Cleanup(func() { _ = sqlDB.Close() })
+		require.NoError(t, db.AutoMigrate(models...))
+		return db, common.DatabaseTypeSQLite
+	})
+}
+
+func newSeedanceFundsFixtureOnDatabase(t *testing.T, openDB func(*testing.T, ...any) (*gorm.DB, common.DatabaseType), extraModels ...any) *seedanceFundsFixture {
+	t.Helper()
 	service.InitHttpClient()
 	previousDBType, previousLogType := common.MainDatabaseType(), common.LogDatabaseType()
-	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
 	t.Cleanup(func() { common.SetDatabaseTypes(previousDBType, previousLogType) })
 
 	fx := &seedanceFundsFixture{t: t, userID: 9101, channelID: 9101}
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	sqlDB, err := db.DB()
-	require.NoError(t, err)
-	sqlDB.SetMaxOpenConns(1)
-	require.NoError(t, db.AutoMigrate(
+	models := []any{
 		&model.User{}, &model.Token{}, &model.Channel{}, &model.Log{}, &model.Task{}, &model.TaskBillingDelivery{}, &model.QuotaData{},
 		&model.TaskCreateIdempotency{}, &model.TaskCreateAttempt{}, &model.UserSubscription{},
 		&model.TaskPlugin{}, &model.SubscriptionPreConsumeRecord{},
-	))
+	}
+	db, dialect := openDB(t, append(models, extraModels...)...)
+	common.SetDatabaseTypes(dialect, dialect)
 	fx.db = db
 	previousDB := model.DB
 	model.DB = db

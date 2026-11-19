@@ -277,6 +277,9 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	}
 	exprStr, exists := billing_setting.ResolveTaskBillingExpr(pluginKey, modelName, info.UpstreamModelName)
 	useTiered := exists || billing_setting.GetBillingMode(modelName) == billing_setting.BillingModeTieredExpr
+	if !useTiered && info.TaskRelayInfo.IsVideoDraftOperation() {
+		return nil, service.TaskErrorWrapperLocal(fmt.Errorf("draft operations require token pricing"), "model_price_error", http.StatusBadRequest)
+	}
 	if useTiered && (info.ChannelType == constant.ChannelTypeSeedanceLink || info.ChannelType == constant.ChannelTypeMiniMaxLink) {
 		priceData, err = helper.ModelPriceHelperTaskTiered(c, info, adaptor)
 		if err != nil {

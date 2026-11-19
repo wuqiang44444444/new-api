@@ -282,14 +282,26 @@ export async function fetchLogsByCategory(
     }
     if (config.pageSnapshot) {
       params.page_snapshot = config.pageSnapshot
+      params.page_total = config.pageTotal
       if (searchParams.startTime == null && searchParams.endTime == null) {
         delete params.start_timestamp
         delete params.end_timestamp
       }
     }
-    return isAdmin
-      ? getAllLogs(params, config.signal)
-      : getUserLogs(params, config.signal)
+    const result = isAdmin
+      ? await getAllLogs(params, config.signal)
+      : await getUserLogs(params, config.signal)
+    if (
+      !config.pageSnapshot &&
+      !searchParams.billing &&
+      result.data &&
+      (params.start_timestamp != null || isAdmin) &&
+      params.end_timestamp != null
+    ) {
+      result.data.start_timestamp = params.start_timestamp ?? 0
+      result.data.end_timestamp = params.end_timestamp
+    }
+    return result
   }
 
   // For drawing and task logs

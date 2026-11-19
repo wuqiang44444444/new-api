@@ -320,6 +320,13 @@ snapshot rather than the process cache. No overrides are silently pruned.
 Public provider variants include their effective `billing_mode` so inherited
 ratio/per-call pricing is distinct from an unconfigured usage expression.
 
+Seedance Link draft and final jobs validate the selected price before the hold
+and against the frozen facts at settlement. The amount must be proportional to
+`u("tokens")`. Frozen facts can select a tier and set the rate. The token count
+cannot select a tier, change its rate, or be combined with a fixed fee. For
+example, `tier("preview", u("tokens") * 4 / 1000000)` qualifies. A model can
+keep its existing seconds-based branch for ordinary generation.
+
 Plugins serving different model families can optionally declare
 `meta.usageProfiles: [{models: ["image-model"], schema: {...}, examples: [...]}]`.
 Each profile provides the complete usage schema and optional display examples

@@ -174,7 +174,7 @@ test('requests ordinary logs by page number when cursor pagination is disabled',
   expect(requests[0].has('page_cursor')).toBe(false)
 })
 
-test('shows the exact page total and reuses the snapshot when jumping or changing page size', async () => {
+test('shows exact totals and keeps a bounded legacy window when jumping or changing page size', async () => {
   const user = userEvent.setup()
   await renderLogs({
     role: ROLE.USER,
@@ -192,20 +192,28 @@ test('shows the exact page total and reuses the snapshot when jumping or changin
       )
   expect(screen.getByText('Page 2 of 2')).toBeVisible()
   expect(screen.getByText('102')).toBeVisible()
-  expect(requests()[0].get('page_snapshot')).toBe('start')
+  expect(requests()[0].has('page_snapshot')).toBe(false)
+  const start = requests()[0].get('start_timestamp')
+  const end = requests()[0].get('end_timestamp')
+  expect(Number(start)).toBeGreaterThan(0)
+  expect(Number(end) - Number(start)).toBe(3600)
   expect(requests()[0].get('p')).toBe('2')
   expect(screen.getByRole('button', { name: 'Go to next page' })).toBeDisabled()
 
   await user.click(screen.getByRole('button', { name: 'Go to first page' }))
   expect(await screen.findByText('Page 1 of 2')).toBeVisible()
   await waitFor(() => expect(requests().at(-1)?.get('p')).toBe('1'))
-  expect(requests().at(-1)?.get('page_snapshot')).toBe('test-snapshot')
+  expect(requests().at(-1)?.has('page_snapshot')).toBe(false)
+  expect(requests().at(-1)?.get('start_timestamp')).toBe(start)
+  expect(requests().at(-1)?.get('end_timestamp')).toBe(end)
 
   await user.click(screen.getByRole('combobox', { name: 'Rows per page' }))
   await user.click(await screen.findByRole('option', { name: '20' }))
   expect(await screen.findByText('Page 1 of 6')).toBeVisible()
   expect(requests().at(-1)?.get('page_size')).toBe('20')
-  expect(requests().at(-1)?.get('page_snapshot')).toBe('test-snapshot')
+  expect(requests().at(-1)?.has('page_snapshot')).toBe(false)
+  expect(requests().at(-1)?.get('start_timestamp')).toBe(start)
+  expect(requests().at(-1)?.get('end_timestamp')).toBe(end)
 
   const pageNumber = screen.getByRole('spinbutton', { name: 'Page number' })
   await user.clear(pageNumber)
@@ -215,7 +223,9 @@ test('shows the exact page total and reuses the snapshot when jumping or changin
   await user.type(pageNumber, '5{Enter}')
   expect(await screen.findByText('Page 5 of 6')).toBeVisible()
   expect(requests().at(-1)?.get('p')).toBe('5')
-  expect(requests().at(-1)?.get('page_snapshot')).toBe('test-snapshot')
+  expect(requests().at(-1)?.has('page_snapshot')).toBe(false)
+  expect(requests().at(-1)?.get('start_timestamp')).toBe(start)
+  expect(requests().at(-1)?.get('end_timestamp')).toBe(end)
 })
 
 test.each([{ enabledPlans: [] }, { enabledPlans: [false] }])(

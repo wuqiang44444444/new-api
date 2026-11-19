@@ -12,7 +12,7 @@ type UsageReportRebuildStatus struct {
 }
 
 // selectUsageReportDays is the common read boundary for summaries, ranks and
-// exports. Older published days remain readable during and after rebuilding.
+// exports. A pending upgrade withholds the previous day's numbers.
 func selectUsageReportDays(ctx context.Context, period UsageAnalyticsPeriod, refs []UsageReportDayReference) ([]usageReportDay, PublishedUsageReport, error) {
 	meta := PublishedUsageReport{PublishedDays: []string{}, References: []UsageReportDayReference{}}
 	heads, err := reportDayHeads(ctx, period, refs)
@@ -37,12 +37,17 @@ func selectUsageReportDays(ctx context.Context, period UsageAnalyticsPeriod, ref
 		if !ok || day.Future {
 			continue
 		}
-		if head.MeterVersion < usageReportMeterVersion && len(refs) == 0 {
-			if issues[day.Start] {
+		if head.MeterVersion != usageReportMeterVersion || head.HistoricalSource == dailyReportSourceMissing {
+			if len(refs) != 0 {
+				return nil, meta, common.NewMessage("Usage report version is unavailable")
+			}
+			if head.MeterVersion == usageReportMeterVersion && head.HistoricalSource == dailyReportSourceMissing {
 				meta.SourceUnavailableDays = append(meta.SourceUnavailableDays, day.Date)
+				meta.refundOnlyGenerations = append(meta.refundOnlyGenerations, head.Generation)
 			} else {
 				meta.RebuildingDays = append(meta.RebuildingDays, day.Date)
 			}
+			continue
 		}
 		if len(refs) == 0 && day.End <= now && head.AsOf < day.End+3*3600 {
 			continue

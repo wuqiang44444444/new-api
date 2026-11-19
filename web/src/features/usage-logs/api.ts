@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { api, getFreshAuthHeaders, type ApiRequestConfig } from '@/lib/api'
 import { createServerError } from '@/lib/server-error-message'
 
-import type { UsageLog } from './data/schema'
+import { usageLogSchema, type UsageLog } from './data/schema'
 import {
   fetchBillingStatementLogs,
   fetchBillingStatementStats,
@@ -45,6 +45,15 @@ function buildApiPath(endpoint: string, isAdmin: boolean): string {
   return isAdmin ? endpoint : `${endpoint}/self`
 }
 
+function usageLogConsoleConfig(signal?: AbortSignal): ApiRequestConfig {
+  return {
+    signal,
+    disableDuplicate: true,
+    validateStatus: (status) =>
+      (status >= 200 && status < 300) || status === 404,
+  }
+}
+
 async function fetchLogs<T>(
   endpoint: string,
   params: T,
@@ -58,8 +67,14 @@ async function fetchLogs<T>(
     ...params,
   })
   const path = buildApiPath(endpoint, isAdmin)
-  const url = `${path}?${queryParams}`
-  const res = signal ? await api.get(url, { signal }) : await api.get(url)
+  const consolePage = !!paramRecord.page_total
+  const url = `${path}${consolePage ? '/console/page' : ''}?${queryParams}`
+  const config = consolePage ? usageLogConsoleConfig(signal) : { signal }
+  const res =
+    consolePage || signal ? await api.get(url, config) : await api.get(url)
+  if (consolePage && res.status === 404) {
+    return { success: false, code: 'log_console_route_unavailable' }
+  }
   const response = res.data as GetLogsResponse
   const data = response.data
   const { detail_refs: refs, items } = data ?? {}
@@ -72,9 +87,9 @@ async function fetchLogs<T>(
   return response
 }
 
-async function fetchLogStats<T>(
+async function fetchLogStats(
   endpoint: string,
-  params: T,
+  params: GetLogStatsParams,
   isAdmin: boolean,
   signal?: AbortSignal
 ): Promise<GetLogStatsResponse> {
@@ -82,8 +97,26 @@ async function fetchLogStats<T>(
     params as unknown as Record<string, unknown>
   )
   const path = buildApiPath(endpoint, isAdmin)
+  if (params.resolved_log_range) {
+    const res = await api.get(
+      `${path}/console/stat?${queryParams}`,
+      usageLogConsoleConfig(signal)
+    )
+    if (res.status === 404) {
+      return {
+        success: false,
+        message: 'Range statistics are temporarily unavailable.',
+      }
+    }
+    return res.data
+  }
   const url = `${path}/stat?${queryParams}`
-  const res = signal ? await api.get(url, { signal }) : await api.get(url)
+  const res = signal
+    ? await api.get(url, {
+        signal,
+        ...(params.range_count ? { disableDuplicate: true } : {}),
+      })
+    : await api.get(url)
   return res.data
 }
 
@@ -107,17 +140,44 @@ export const getUserLogs = (
 export async function getUsageLogDetail(
   ref: string,
   isAdmin: boolean,
-  signal: AbortSignal
+  signal: AbortSignal,
+  createdAt: number
 ) {
+  const config = usageLogConsoleConfig(signal)
   const res = await api.get<{ success: boolean; data: UsageLog }>(
-    isAdmin ? '/api/log/' : '/api/log/self',
+    `${buildApiPath('/api/log', isAdmin)}/console/page`,
     {
+      ...config,
       params: { log_ref: ref },
-      signal,
-      // React Query owns deduplication so a new fetch cannot reuse an aborted request.
-      disableDuplicate: true,
     }
   )
+  if (
+    res.status === 404 &&
+    !signal.aborted &&
+    Number.isSafeInteger(createdAt) &&
+    createdAt > 0
+  ) {
+    // A backend without log_ref may run its normal list handler. Bound that
+    // lookup to the displayed row's second and accept only a single detail.
+    const legacy = await api.get(isAdmin ? '/api/log/' : '/api/log/self', {
+      ...config,
+      params: {
+        log_ref: ref,
+        start_timestamp: createdAt,
+        end_timestamp: createdAt,
+        page_size: 1,
+      },
+    })
+    const detail = usageLogSchema.safeParse(legacy.data?.data)
+    if (
+      legacy.data?.success &&
+      detail.success &&
+      detail.data.created_at === createdAt
+    ) {
+      return legacy.data.data as UsageLog
+    }
+    throw createServerError(legacy.data, 'Failed to load logs')
+  }
   if (!res.data.success || !res.data.data) {
     throw createServerError(res.data, 'Failed to load logs')
   }

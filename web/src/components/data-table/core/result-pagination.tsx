@@ -2,7 +2,7 @@ import { getCoreRowModel, useReactTable } from '@tanstack/react-table'
 
 import { FieldSet } from '@/components/ui/field'
 
-import { DataTablePagination } from './pagination'
+import { DataTablePagination, type PendingPageTotal } from './pagination'
 
 // Reuse the shared table paging controls for paged report results.
 export function ResultPagination(props: {
@@ -14,6 +14,8 @@ export function ResultPagination(props: {
   disabled?: boolean
   allowPageJump?: boolean
   pageSizes?: readonly number[]
+  pendingTotal?: PendingPageTotal
+  onLastPage?: () => void
 }) {
   const pagination = { pageIndex: props.page - 1, pageSize: props.pageSize }
   const table = useReactTable({
@@ -22,6 +24,7 @@ export function ResultPagination(props: {
     getCoreRowModel: getCoreRowModel(),
     manualPagination: true,
     rowCount: props.total,
+    pageCount: props.pendingTotal ? -1 : undefined,
     state: { pagination },
     onPaginationChange: (update) => {
       if (props.disabled) return
@@ -44,6 +47,8 @@ export function ResultPagination(props: {
         pageSizes={props.pageSizes}
         showPageCount
         allowPageJump={props.allowPageJump}
+        pendingTotal={props.pendingTotal}
+        onLastPage={props.onLastPage}
       />
     </FieldSet>
   )
