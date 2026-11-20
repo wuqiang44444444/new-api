@@ -34,6 +34,8 @@ func (b *contractReservation) Reserve(target int) error {
 	b.held = max(b.held, target)
 	return nil
 }
+func (b *contractReservation) ReserveBeforeSubmit(target int) error { return b.Reserve(target) }
+
 func (b *contractReservation) GetPreConsumedQuota() int { return b.held }
 func (*contractReservation) Refund(*gin.Context)        {}
 func (*contractReservation) NeedsRefund() bool          { return false }

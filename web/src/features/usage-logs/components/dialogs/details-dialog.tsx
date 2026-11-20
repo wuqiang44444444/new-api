@@ -14,6 +14,7 @@ import {
   UserCog,
   Info,
   LogIn,
+  Workflow,
 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -89,6 +90,10 @@ import { BillingEquation } from '../billing-equation'
 import { LogDiscountCell } from '../log-discount-cell'
 import { ResponseModelDetails } from '../model-badge'
 import { PluginAuthorLink } from '../plugin-author-link'
+import {
+  RequestPluginAdminSteps,
+  RequestPluginRecord,
+} from '../request-plugin-record'
 import { TaskCostDisplay } from '../task-cost-display'
 import { TaskEvidence } from '../task-evidence'
 import { DetailRow, DetailSection } from './log-detail-layout'
@@ -173,6 +178,8 @@ function BillingBreakdown(props: {
   const taskCost = buildTaskCostSummary(log.type, log.quota, other)
   const isPerCall = isPerCallBilling(other.model_price)
   const isClaude = other.claude === true
+  // OpenAI 12-hour cache writes have their own price, listed like Claude's.
+  const hasCacheWrite12h = (other.cache_creation_tokens_12h || 0) > 0
   const isTieredExpr = other.billing_mode === 'tiered_expr'
   const tieredSummary = getTieredBillingSummary(other)
 
@@ -336,7 +343,7 @@ function BillingBreakdown(props: {
   if (
     !explanation?.lines.length &&
     !isTieredExpr &&
-    isClaude &&
+    (isClaude || hasCacheWrite12h) &&
     hasAnyCacheTokens(other)
   ) {
     if (other.cache_ratio != null && other.cache_ratio !== 1) {
@@ -350,7 +357,9 @@ function BillingBreakdown(props: {
       other.cache_creation_ratio !== 1
     ) {
       rows.push({
-        label: t('Cache Creation'),
+        label: hasCacheWrite12h
+          ? t('Cache Creation (30m)')
+          : t('Cache Creation'),
         value: `${fmtPrice(baseInputUSD * other.cache_creation_ratio)}/M`,
       })
     }
@@ -370,6 +379,15 @@ function BillingBreakdown(props: {
       rows.push({
         label: t('Cache Creation (1h)'),
         value: `${fmtPrice(baseInputUSD * other.cache_creation_ratio_1h)}/M`,
+      })
+    }
+    if (
+      other.cache_creation_ratio_12h != null &&
+      other.cache_creation_ratio_12h !== 0
+    ) {
+      rows.push({
+        label: t('Cache Creation (12h)'),
+        value: `${fmtPrice(baseInputUSD * other.cache_creation_ratio_12h)}/M`,
       })
     }
   }
@@ -604,6 +622,10 @@ function TokenBreakdown(props: { log: UsageLog; other: LogOtherData }) {
     (other.cache_creation_tokens || 0)
   const cacheWrite5m = other.cache_creation_tokens_5m || 0
   const cacheWrite1h = other.cache_creation_tokens_1h || 0
+  const cacheWrite12h = other.cache_creation_tokens_12h || 0
+  // cache_creation_tokens counts OpenAI 30-minute and 12-hour writes together.
+  const cacheWrite30m =
+    cacheWrite12h > 0 ? Math.max(cacheWrite - cacheWrite12h, 0) : 0
   const hasTokens = promptTokens > 0 || completionTokens > 0
 
   if (
@@ -669,7 +691,12 @@ function TokenBreakdown(props: { log: UsageLog; other: LogOtherData }) {
     })
   }
 
-  if (cacheWrite > 0 && cacheWrite5m === 0 && cacheWrite1h === 0) {
+  if (
+    cacheWrite > 0 &&
+    cacheWrite5m === 0 &&
+    cacheWrite1h === 0 &&
+    cacheWrite12h === 0
+  ) {
     rows.push({
       label: t('Cache Write'),
       value: cacheWrite.toLocaleString(),
@@ -690,11 +717,21 @@ function TokenBreakdown(props: { log: UsageLog; other: LogOtherData }) {
     })
   }
 
-  if (
-    other.image &&
-    other.image_output &&
-    imageUsage?.image_input === undefined
-  ) {
+  if (cacheWrite30m > 0) {
+    rows.push({
+      label: t('Cache Write (30m)'),
+      value: cacheWrite30m.toLocaleString(),
+    })
+  }
+
+  if (cacheWrite12h > 0) {
+    rows.push({
+      label: t('Cache Write (12h)'),
+      value: cacheWrite12h.toLocaleString(),
+    })
+  }
+
+  if (other.image && other.image_output) {
     rows.push({
       label: t('Image Tokens'),
       value: other.image_output.toLocaleString(),
@@ -1282,6 +1319,12 @@ function FullLogDetailsDialog(props: DetailsDialogProps) {
           </DetailSection>
         ) : null}
 
+        {props.isAdmin && adminInfo?.request_plugins?.length ? (
+          <DetailSection label={t('Request processing steps')}>
+            <RequestPluginAdminSteps steps={adminInfo.request_plugins} />
+          </DetailSection>
+        ) : null}
+
         {props.isRoot && other?.root_info ? (
           <DetailSection label={t('Root Diagnostics')}>
             {other.root_info.task_plugin ? (
@@ -1673,6 +1716,19 @@ function FullLogDetailsDialog(props: DetailsDialogProps) {
             )}
           </DetailSection>
         )}
+
+        {other?.request_plugins?.length ? (
+          <DetailSection
+            icon={<Workflow className='size-3.5' aria-hidden='true' />}
+            iconTone='chart-3'
+            label={t('Request processing')}
+          >
+            <RequestPluginRecord
+              items={other.request_plugins}
+              loadIcons={props.isRoot}
+            />
+          </DetailSection>
+        ) : null}
 
         {/* Param override */}
         {other?.po && Array.isArray(other.po) && other.po.length > 0 && (

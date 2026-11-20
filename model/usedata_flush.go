@@ -97,9 +97,11 @@ func persistQuotaDataFlushChunk(ctx context.Context, db *gorm.DB, chunk quotaDat
 				return err
 			default:
 				if err := tx.Model(&existing).Updates(map[string]any{
-					"count":      gorm.Expr("count + ?", row.Count),
-					"quota":      gorm.Expr("quota + ?", row.Quota),
-					"token_used": gorm.Expr("token_used + ?", row.TokenUsed),
+					"count":                 gorm.Expr("count + ?", row.Count),
+					"quota":                 gorm.Expr("quota + ?", row.Quota),
+					"token_used":            gorm.Expr("token_used + ?", row.TokenUsed),
+					"cache_read_tokens":     gorm.Expr("COALESCE(cache_read_tokens, 0) + ?", row.CacheReadTokens),
+					"cache_creation_tokens": gorm.Expr("COALESCE(cache_creation_tokens, 0) + ?", row.CacheCreationTokens),
 				}).Error; err != nil {
 					return err
 				}

@@ -98,10 +98,10 @@ func TestGetUserBillingStatementCountsAsyncTasksOnceAcrossSettlementAdjustments(
 	})
 
 	logs := []Log{
-		{UserId: 7, CreatedAt: 1100, Type: LogTypeConsume, TokenId: 11, TokenName: "task-key", ModelName: "model-refund", Quota: 1000, UseTime: 2, Other: `{"is_task":true}`},
+		{UserId: 7, CreatedAt: 1100, Type: LogTypeConsume, TokenId: 11, TokenName: "task-key", ModelName: "model-refund", Quota: 1000, UseTime: 2, Other: `{"is_task":true,"task_id":"refund-task","task_billing_event": "create"}`},
 		{UserId: 7, CreatedAt: 1200, Type: LogTypeRefund, TokenId: 11, TokenName: "task-key", ModelName: "model-refund", CompletionTokens: 250, Quota: 300, UseTime: 99, IsStream: true, Other: `{"task_id":"refund-task"}`},
 		{UserId: 7, CreatedAt: 1300, Type: LogTypeConsume, TokenId: 11, TokenName: "task-key", ModelName: "model-supplement", Quota: 1000, UseTime: 3, IsStream: true, Other: `{"is_task":true}`},
-		{UserId: 7, CreatedAt: 1400, Type: LogTypeConsume, TokenId: 11, TokenName: "task-key", ModelName: "model-supplement", CompletionTokens: 400, Quota: 200, UseTime: 99, IsStream: true, Other: `{"task_id":"supplement-task"}`},
+		{UserId: 7, CreatedAt: 1400, Type: LogTypeConsume, TokenId: 11, TokenName: "task-key", ModelName: "model-supplement", CompletionTokens: 400, Quota: 200, UseTime: 99, IsStream: true, Other: `{"task_id":"supplement-task","task_billing_event":"adjustment"}`},
 		{UserId: 7, CreatedAt: 900, Type: LogTypeConsume, TokenId: 11, TokenName: "task-key", ModelName: "model-cross-period", Quota: 500, UseTime: 4, Other: `{"is_task":true}`},
 		{UserId: 7, CreatedAt: 1500, Type: LogTypeRefund, TokenId: 11, TokenName: "task-key", ModelName: "model-cross-period", CompletionTokens: 100, Quota: 500, Other: `{"task_id":"cross-period-task"}`},
 	}

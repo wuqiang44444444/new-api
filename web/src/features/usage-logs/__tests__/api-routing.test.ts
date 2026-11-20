@@ -51,7 +51,7 @@ test.each([
     const signal = new AbortController().signal
     let requestedUrl: string | undefined
     api.get = ((url, config) => {
-      requestedUrl = api.getUri({ ...config, url })
+      requestedUrl = api.getUri({ params: config?.params, url })
       return Promise.resolve({ data: { success: true, data: { id: 1 } } })
     }) as typeof api.get
 
@@ -65,7 +65,7 @@ test('bounds a 404 fallback and refuses an ordinary list response', async () => 
   const signal = new AbortController().signal
   const requests: string[] = []
   api.get = ((url, config) => {
-    requests.push(api.getUri({ ...config, url }))
+    requests.push(api.getUri({ params: config?.params, url }))
     return Promise.resolve(
       requests.length === 1
         ? { status: 404, data: {} }

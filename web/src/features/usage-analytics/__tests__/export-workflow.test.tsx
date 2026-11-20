@@ -142,13 +142,13 @@ beforeEach(() => {
   vi.mocked(api.get).mockImplementation(async (url, config) => {
     if (
       url === '/api/usage/admin/customers' &&
-      config?.params?.group_by === 'model'
+      (config?.params as Record<string, unknown> | undefined)?.group_by === 'model'
     ) {
       return { data: { success: true, data: { items: [], total: 0 } } }
     }
     if (url === '/api/usage/admin/upstream-summary') {
-      if (config?.params?.rank_metric) {
-        const secondPage = config.params.rank_page === 2
+      if ((config?.params as Record<string, unknown> | undefined)?.rank_metric) {
+        const secondPage = (config?.params as Record<string, unknown> | undefined)?.rank_page === 2
         return {
           data: {
             success: true,
@@ -171,11 +171,11 @@ beforeEach(() => {
           },
         }
       }
-      const selected = config?.params?.channel_id === channelUsage.channel_id
+      const selected = (config?.params as Record<string, unknown> | undefined)?.channel_id === channelUsage.channel_id
       const metrics = selected
         ? channelUsage.total
         : { ...total, total_calls: 995 }
-      const monthly = config?.params?.period === 'month'
+      const monthly = (config?.params as Record<string, unknown> | undefined)?.period === 'month'
       return {
         data: {
           success: true,
@@ -596,7 +596,7 @@ it.each(['week', 'month'] as const)(
     vi.mocked(api.get).mockImplementation(async (url, config) => {
       if (
         url === '/api/usage/admin/customers' &&
-        config?.params?.group_by === 'model'
+        (config?.params as Record<string, unknown> | undefined)?.group_by === 'model'
       ) {
         return {
           data: {
@@ -898,7 +898,7 @@ it('shows non-token units in the channel ranking only when used for pricing', as
   vi.mocked(api.get).mockImplementation(async (url, config) => {
     if (
       url === '/api/usage/admin/upstream-summary' &&
-      config?.params?.rank_metric
+      (config?.params as Record<string, unknown> | undefined)?.rank_metric
     ) {
       const ranked = {
         calls: 1,

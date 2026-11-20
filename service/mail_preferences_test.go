@@ -139,7 +139,7 @@ func TestMailPreferencesUsesPersonalEmailAndKeepsAccountSecurityIndependent(t *t
 	require.NoError(t, notifyUser(model.MailWalletLow, time.Now(), 31, "account@example.com", settings, dto.NewNotify("wallet-fixture", "wallet fixture", "fixture", nil), false))
 	require.NoError(t, notifyUser(model.MailSubscriptionLow, time.Now(), 31, "account@example.com", settings, dto.NewNotify("subscription-fixture", "subscription fixture", "fixture", nil), false))
 	requireLocalMail(t, inbox, "subscription fixture", "personal@example.com")
-	require.NoError(t, NotifyAccountSecurityChange("account@example.com", "Password updated"))
+	require.NoError(t, NotifyAccountSecurityChange("en", "account@example.com", "Password updated"))
 	requireLocalMail(t, inbox, "Account security", "account@example.com")
 	assert.Empty(t, inbox)
 }

@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { SystemBehaviorSection } from '../general/system-behavior-section'
 import { EmailSettingsSection } from '../integrations/email-settings-section'
+import { MailPolicySection } from '../integrations/mail-policy-section'
 import { MonitoringSettingsSection } from '../integrations/monitoring-settings-section'
 import { ObjectStorageSection } from '../integrations/object-storage-section'
 import { WorkerSettingsSection } from '../integrations/worker-settings-section'
@@ -43,7 +44,7 @@ const OPERATIONS_SECTIONS = [
   },
   {
     id: 'alerts',
-    titleKey: 'Monitoring & Alerts',
+    titleKey: 'Model performance metrics',
     build: (settings: OperationsSettings) => (
       <MonitoringSettingsSection
         defaultValues={{
@@ -62,10 +63,34 @@ const OPERATIONS_SECTIONS = [
   },
   {
     id: 'email',
-    titleKey: 'Email delivery',
+    titleKey: 'Email & Notifications',
     build: (settings: OperationsSettings) => (
       <EmailSettingsSection
         defaultValues={{
+          QuotaRemindEnabled: settings.QuotaRemindEnabled,
+          QuotaRemindThreshold: settings.QuotaRemindThreshold,
+          EmailProvider: settings.EmailProvider,
+          ResendApiKey: settings.ResendApiKey,
+          ResendKeyConfigured: settings.ResendKeyConfigured,
+          ResendFrom: settings.ResendFrom,
+          SMTPServer: settings.SMTPServer,
+          SMTPPort: settings.SMTPPort,
+          SMTPAccount: settings.SMTPAccount,
+          SMTPFrom: settings.SMTPFrom,
+          SMTPToken: settings.SMTPToken,
+          SMTPSSLEnabled: settings.SMTPSSLEnabled,
+          SMTPStartTLSEnabled: settings.SMTPStartTLSEnabled,
+          SMTPInsecureSkipVerify: settings.SMTPInsecureSkipVerify,
+          SMTPForceAuthLogin: settings.SMTPForceAuthLogin,
+        }}
+      />
+    ),
+  },
+  {
+    id: 'mail-policy',
+    titleKey: 'Email delivery',
+    build: (settings: OperationsSettings) => (
+      <MailPolicySection defaultValues={{
           'error_report_setting.recipients':
             settings['error_report_setting.recipients'],
           'resource_alert_setting.cpu': settings['resource_alert_setting.cpu'],
@@ -102,6 +127,8 @@ const OPERATIONS_SECTIONS = [
             settings['log_setting.user_export_enabled'] ?? true,
           'log_setting.max_range_days':
             settings['log_setting.max_range_days'] ?? 365,
+          'system_task_setting.retention_days':
+            settings['system_task_setting.retention_days'] ?? 30,
         }}
       />
     ),

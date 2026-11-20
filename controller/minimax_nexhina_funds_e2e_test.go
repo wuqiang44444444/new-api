@@ -69,7 +69,15 @@ func TestMiniMaxNexhinaConfiguredModelFunding(t *testing.T) {
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/channel/", bytes.NewReader(body))
 	AddChannel(ctx)
-	require.JSONEq(t, `{"success":true,"message":""}`, recorder.Body.String())
+	var result struct {
+		Success bool `json:"success"`
+		Data    struct {
+			IDs []int `json:"ids"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &result))
+	require.True(t, result.Success)
+	require.Len(t, result.Data.IDs, 1)
 
 	catalog, err := model.GetConfiguredMiniMaxPublicModels()
 	require.NoError(t, err)

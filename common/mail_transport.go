@@ -111,6 +111,9 @@ func (c MailTransportConfig) Validate() error {
 }
 
 func MailTransportReady() bool {
+	if active, key, from := resendMailSettings(); active {
+		return ValidateResendConfiguration(key, from) == nil
+	}
 	return CurrentMailTransport().Validate() == nil
 }
 
@@ -137,6 +140,9 @@ func sendEmailContext(ctx context.Context, subject, receiver, content string, wa
 		return err
 	}
 	defer func() { <-mailSendSlots }()
+	if active, key, from := resendMailSettings(); active {
+		return sendResendEmail(key, from, subject, strings.Join(receivers, ";"), content)
+	}
 
 	ctx, cancel := context.WithTimeout(ctx, SMTPTotalTimeout)
 	defer cancel()

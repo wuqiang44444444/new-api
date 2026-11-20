@@ -208,8 +208,9 @@ func TaskErrorWrapperLocal(err error, code string, statusCode int) *taskdto.Task
 	}
 }
 
-func TaskErrorWrapper(err error, code string, statusCode int) *taskdto.TaskError {
+func TaskErrorWrapper(err error, code string, statusCode int, upstreamURLs ...string) *taskdto.TaskError {
 	code, text := taskErrorDetails(err, code, statusCode, "", "")
+	text = common.MaskSensitiveInfo(text, upstreamURLs...)
 	//避免暴露内部错误
 	taskError := &taskdto.TaskError{
 		Code:       code,

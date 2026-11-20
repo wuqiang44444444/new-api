@@ -215,7 +215,7 @@ test('completed results are restored from history after reopening the page', asy
       success: true,
       data:
         url === '/api/system-task/list' &&
-        config?.params?.type === 'task_request_evidence_retention'
+        (config?.params as Record<string, unknown> | undefined)?.type === 'task_request_evidence_retention'
           ? [task]
           : null,
       total: 1,
@@ -276,7 +276,7 @@ test('failed runs show real partial results and the sanitized failure explanatio
       success: true,
       data:
         url === '/api/system-task/list' &&
-        config?.params?.type === 'task_request_evidence_retention'
+        (config?.params as Record<string, unknown> | undefined)?.type === 'task_request_evidence_retention'
           ? [
               {
                 ...task,
@@ -316,7 +316,7 @@ test('health alerts display backlog and preserve unknown inode counts', async ()
     data: {
       success: true,
       data:
-        config?.params?.type === 'task_request_evidence_monitor'
+        (config?.params as Record<string, unknown> | undefined)?.type === 'task_request_evidence_monitor'
           ? [
               {
                 ...task,

@@ -37,7 +37,7 @@ it.each([
     const matches =
       url === '/api/task_request_evidence' &&
       Object.entries(filter).every(
-        ([key, value]) => config?.params[key] === value
+        ([key, value]) => (config?.params as Record<string, unknown> | undefined)?.[key] === value
       )
     const items = matches
       ? [{ id: 1, request_id: 'captured-request', body_expired: false }]

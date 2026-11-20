@@ -712,7 +712,9 @@ it('opens the effective expression breakdown from the price without creating met
   expect(preview).toHaveTextContent('0.3')
   expect(preview).toHaveTextContent('0.6')
   expect(preview).toHaveTextContent('x-priority')
-  expect(write).not.toHaveBeenCalled()
+  expect(
+    write.mock.calls.filter(([url]) => url !== '/api/option/billing-expression/preview')
+  ).toEqual([])
 })
 
 it('shows an unrecognized expression as special and retains its full source in pricing details', async () => {

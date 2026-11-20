@@ -60,29 +60,30 @@ func GetUserBillingStatement(
 	modelName string,
 ) ([]BillingStatementItem, BillingStatementSummary, error) {
 	var rows []billingStatementRow
-	// Async settlement adjustments carry task_id and must affect tokens and
-	// quota, but they are not additional model calls.
-	const taskSettlementPattern = `%"task_id"%`
+	// Task creation can carry task_id. Settlement adjustments affect tokens
+	// and quota without counting as additional model calls.
+	const taskIDPattern = `%"task!_id"%`
+	const taskCreatePattern = `%"task!_billing!_event":"create"%`
 	query := LOG_DB.Model(&Log{}).
 		Scopes(customerSettlementLogs).
 		Select(`
 			token_id,
 			token_name,
 			model_name,
-			COALESCE(SUM(CASE WHEN type = ? AND COALESCE(other, '') NOT LIKE ? THEN 1 ELSE 0 END), 0) AS requests,
+			COALESCE(SUM(CASE WHEN type = ? AND (COALESCE(other, '') NOT LIKE ? ESCAPE '!' OR REPLACE(COALESCE(other, ''), ' ', '') LIKE ? ESCAPE '!') THEN 1 ELSE 0 END), 0) AS requests,
 			COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
 			COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
 			COALESCE(SUM(CASE WHEN type = ? THEN quota ELSE 0 END), 0) AS gross_quota,
 			COALESCE(SUM(CASE WHEN type = ? THEN quota ELSE 0 END), 0) AS refund_quota,
-			COALESCE(AVG(CASE WHEN type = ? AND COALESCE(other, '') NOT LIKE ? THEN use_time ELSE NULL END), 0) AS average_use_time_seconds,
-			COALESCE(SUM(CASE WHEN type = ? AND COALESCE(other, '') NOT LIKE ? AND is_stream THEN 1 ELSE 0 END), 0) AS stream_requests,
+			COALESCE(AVG(CASE WHEN type = ? AND (COALESCE(other, '') NOT LIKE ? ESCAPE '!' OR REPLACE(COALESCE(other, ''), ' ', '') LIKE ? ESCAPE '!') THEN use_time ELSE NULL END), 0) AS average_use_time_seconds,
+			COALESCE(SUM(CASE WHEN type = ? AND (COALESCE(other, '') NOT LIKE ? ESCAPE '!' OR REPLACE(COALESCE(other, ''), ' ', '') LIKE ? ESCAPE '!') AND is_stream THEN 1 ELSE 0 END), 0) AS stream_requests,
 			MAX(created_at) AS latest_request_timestamp
 		`,
-			LogTypeConsume, taskSettlementPattern,
+			LogTypeConsume, taskIDPattern, taskCreatePattern,
 			LogTypeConsume,
 			LogTypeRefund,
-			LogTypeConsume, taskSettlementPattern,
-			LogTypeConsume, taskSettlementPattern,
+			LogTypeConsume, taskIDPattern, taskCreatePattern,
+			LogTypeConsume, taskIDPattern, taskCreatePattern,
 		).
 		Where("user_id = ? AND type IN ? AND created_at >= ? AND created_at <= ?",
 			userId, []int{LogTypeConsume, LogTypeRefund}, startTimestamp, endTimestamp)

@@ -167,7 +167,12 @@ func GetUserBillingStatementBreakdown(
 		quota := max(int64(log.Quota), int64(0))
 		addBillingStatementValue(&accumulator.item.GrossQuota, quota)
 		addBillingStatementValue(&summary.GrossQuota, quota)
-		if strings.Contains(log.Other, `"task_id"`) {
+		var other map[string]json.RawMessage
+		var decodeErr error
+		if log.Other != "" {
+			decodeErr = common.UnmarshalJsonStr(log.Other, &other)
+		}
+		if strings.Contains(log.Other, `"task_id"`) && billingBreakdownString(other["task_billing_event"]) != "create" {
 			addBillingStatementValue(&accumulator.item.UnallocatedAdjustmentQuota, quota)
 			addBillingStatementValue(&summary.UnallocatedAdjustmentQuota, quota)
 			continue
@@ -175,19 +180,16 @@ func GetUserBillingStatementBreakdown(
 		addBillingStatementValue(&accumulator.item.Requests, 1)
 		addBillingStatementValue(&summary.Requests, 1)
 
-		var other map[string]json.RawMessage
-		if log.Other != "" {
-			if err := common.UnmarshalJsonStr(log.Other, &other); err != nil {
-				if accumulator.item.DataQuality == nil {
-					accumulator.item.DataQuality = &BillingStatementBreakdownDataQuality{}
-				}
-				if summary.DataQuality == nil {
-					summary.DataQuality = &BillingStatementBreakdownDataQuality{}
-				}
-				addBillingStatementValue(&accumulator.item.DataQuality.UnavailableRequests, 1)
-				addBillingStatementValue(&summary.DataQuality.UnavailableRequests, 1)
-				continue
+		if decodeErr != nil {
+			if accumulator.item.DataQuality == nil {
+				accumulator.item.DataQuality = &BillingStatementBreakdownDataQuality{}
 			}
+			if summary.DataQuality == nil {
+				summary.DataQuality = &BillingStatementBreakdownDataQuality{}
+			}
+			addBillingStatementValue(&accumulator.item.DataQuality.UnavailableRequests, 1)
+			addBillingStatementValue(&summary.DataQuality.UnavailableRequests, 1)
+			continue
 		}
 		cacheReadTokens, _ := billingBreakdownNonNegativeInt(other["cache_tokens"])
 		cacheWriteTokens := normalizedBillingBreakdownCacheWriteTokens(other)

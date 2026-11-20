@@ -32,10 +32,10 @@ func TestClientErrorRecorderAcrossActualPluginDispatcher(t *testing.T) {
 		t.Run(strconv.Itoa(status), func(t *testing.T) {
 			capture := logtest.New(t)
 			handlerCalls := 0
-			handlers := func(g *jsplugin.RoutingGeneration, b jsplugin.RouteBinding) []gin.HandlerFunc {
+			handlers := func(g *jsplugin.RoutingGeneration, b jsplugin.RouteGroup) []gin.HandlerFunc {
 				pipeline := productionPluginRouteHandlers(g, b)
 				// Keep real pinning and TokenAuth; replace provider execution with a fixed result.
-				return []gin.HandlerFunc{pipeline[0], pipeline[1], func(c *gin.Context) { handlerCalls++; c.String(status, "original response") }}
+				return []gin.HandlerFunc{pipeline[0], pipeline[1], pipeline[2], func(c *gin.Context) { handlerCalls++; c.String(status, "original response") }}
 			}
 			outer, registry := newPluginRouterTest(t, []*jsplugin.LoadedPlugin{plugin}, handlers)
 			outer.Use(capture.Middleware())
@@ -50,7 +50,7 @@ func TestClientErrorRecorderAcrossActualPluginDispatcher(t *testing.T) {
 			if status >= 400 && status < 500 {
 				log := capture.String()
 				assert.Equal(t, 1, strings.Count(log, "event=authenticated_api_client_error"))
-				assert.Contains(t, log, "route=/vendor/diagnostic/:task_id")
+				assert.Contains(t, log, "route=/vendor/diagnostic/:s2")
 				assert.Contains(t, log, "module=relay")
 				assert.Contains(t, log, "user_id="+strconv.Itoa(user.Id))
 				assert.Contains(t, log, "request_id=request-phase-two")

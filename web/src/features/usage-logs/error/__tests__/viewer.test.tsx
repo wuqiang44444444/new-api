@@ -195,7 +195,7 @@ it('sends the selected HTTP status and replaces the displayed results on search 
   }
   const get = vi.spyOn(api, 'get').mockImplementation(async (_url, config) => {
     // The persisted filtering contract is covered by the backend integration test.
-    const items = config?.params?.status === '200' ? [] : [upstreamFailure]
+    const items = (config?.params as Record<string, unknown> | undefined)?.status === '200' ? [] : [upstreamFailure]
     return { data: { success: true, data: { items, total: items.length } } }
   })
   await renderViewer()
@@ -466,7 +466,7 @@ it('finds polling evidence without a request ID on a historical task index', asy
   vi.spyOn(api, 'get').mockImplementation(async (url, config) => {
     if (url === '/api/task_request_evidence') {
       const matches =
-        config?.params?.task_id === 'vid-task-1' && !config?.params?.request_id
+        (config?.params as Record<string, unknown> | undefined)?.task_id === 'vid-task-1' && !(config?.params as Record<string, unknown> | undefined)?.request_id
       return {
         data: {
           success: true,

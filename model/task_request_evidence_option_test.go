@@ -113,14 +113,14 @@ func TestRequestEvidenceRetentionOptionPersistenceAndRefresh(t *testing.T) {
 
 	persisted.Value = "1"
 	require.NoError(t, db.Save(&persisted).Error)
-	loadOptionsFromDatabase()
+	LoadOptionsFromDatabase()
 	assert.Equal(t, system_setting.TaskRequestEvidenceRetentionPolicy{Days: 1, Source: "database"}, getPolicy())
 	persisted.Value = "invalid"
 	require.NoError(t, db.Save(&persisted).Error)
-	loadOptionsFromDatabase()
+	LoadOptionsFromDatabase()
 	assert.Equal(t, defaultPolicy, getPolicy())
 	require.NoError(t, UpdateOption(key, "14"))
 	require.NoError(t, db.Delete(&persisted).Error)
-	loadOptionsFromDatabase()
+	LoadOptionsFromDatabase()
 	assert.Equal(t, defaultPolicy, getPolicy())
 }

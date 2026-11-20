@@ -83,6 +83,7 @@ export type DynamicPriceEntry = {
 
 export type CardExamplePrice = {
   label: string
+  total: number
   formatted: string
 }
 
@@ -362,28 +363,23 @@ export function getDynamicPriceEntries(
       return []
     }
 
+    let label = variable.label
+    let shortLabel = variable.shortLabel
+    if (variable.key === 'cc') {
+      if (typeof (tier as ParsedTier).cacheCreate1hPrice === 'number') {
+        label = 'Cache Creation (5m)'
+        shortLabel = 'Cache Write (5m)'
+      } else if (typeof (tier as ParsedTier).cacheCreate12hPrice === 'number') {
+        label = 'Cache Creation (30m)'
+        shortLabel = 'Cache Write (30m)'
+      }
+    }
     return [
       {
         key: variable.key,
         field: variable.field,
-        label: imageTokenPriceLabel(
-          variable.key,
-          variable.key === 'cc' &&
-          typeof (tier as ParsedTier).cacheCreate1hPrice === 'number'
-            ? 'Cache Creation (5m)'
-            : variable.label,
-          options.imageGeneration,
-          tier as ParsedTier
-        ),
-        shortLabel: imageTokenPriceLabel(
-          variable.key,
-          variable.key === 'cc' &&
-          typeof (tier as ParsedTier).cacheCreate1hPrice === 'number'
-            ? 'Cache Write (5m)'
-            : variable.shortLabel,
-          options.imageGeneration,
-          tier as ParsedTier
-        ),
+        label: imageTokenPriceLabel(variable.key, label, options.imageGeneration, tier as ParsedTier),
+        shortLabel: imageTokenPriceLabel(variable.key, shortLabel, options.imageGeneration, tier as ParsedTier),
         labelKind: 'i18n' as const,
         value,
         formatted: formatDynamicUnitPrice(value, options),
@@ -637,7 +633,11 @@ export function getCardExamplePrice(
   model: PricingModel,
   options: DynamicPriceOptions
 ): CardExamplePrice | null {
-if(model.billing_display !== undefined){const example=model.billing_usage_examples?.[0];if(!example || !Number.isFinite(example.total)) return null;return {label:example.label,formatted:formatTaskUsageUnitPrice(example.total as number,options)}}
+if (model.billing_display !== undefined) {
+    const example = model.billing_usage_examples?.[0]
+    if (typeof example?.total !== 'number' || !Number.isFinite(example.total)) return null
+    return { label: example.label, total: example.total, formatted: formatTaskUsageUnitPrice(example.total, options) }
+  }
   if (model.billing_plugin_variants?.length) {
     const variant = model.billing_plugin_variants.find(
       (provider) => provider.billing_expr
@@ -662,6 +662,7 @@ if(model.billing_display !== undefined){const example=model.billing_usage_exampl
 
   return {
     label: firstExample.label,
+    total: result.total,
     formatted: formatTaskUsageUnitPrice(result.total, options),
   }
 }

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -31,8 +32,6 @@ func LatestChannelProbeFailures(previous, recent []ChannelProbeMailFailure) []Ch
 }
 
 func NotifyChannelProbeRun(at time.Time, tested, passed, failed, unsupported int, samples []ChannelProbeMailFailure) {
-	lang := RootUserLanguage()
-	subject := i18n.Translate(lang, i18n.MsgChannelTestCompletedSubject)
 	var body strings.Builder
 	writeOperationsMailRows(&body, [][2]string{
 		{"完成时间（北京时间） / Finished at (Beijing time)", at.In(errorReportLocation()).Format("2006-01-02 15:04:05")},
@@ -69,5 +68,12 @@ func NotifyChannelProbeRun(at time.Time, tested, passed, failed, unsupported int
 	if link := consoleMailLink("/channels"); link != "" {
 		writeReportMailLink(&body, link, "打开渠道管理 / Open channel management")
 	}
-	notifyRootUser(model.MailChannelTest, dto.NotifyTypeChannelTest, subject, i18n.Translate(lang, i18n.MsgChannelTestCompletedContent), body.String())
+	template := body.String()
+	if !EnqueueMailWork(func() {
+		notifyChannelWatchers(model.MailChannelTest, dto.NotifyTypeChannelTest, func(lang string) (string, string) {
+			return i18n.Translate(lang, i18n.MsgChannelTestCompletedSubject), i18n.Translate(lang, i18n.MsgChannelTestCompletedContent)
+		}, func(_, _ string) string { return template })
+	}) {
+		common.SysError("channel probe notification queue is full")
+	}
 }

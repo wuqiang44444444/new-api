@@ -93,6 +93,18 @@ it.each([200, 400])(
         }
       }
       if (
+        config.method === 'post' &&
+        config.url === '/api/option/billing-expression/preview'
+      ) {
+        return {
+          data: { success: true, data: { quota: 0 } },
+          status: 200,
+          statusText: 'OK',
+          headers: {},
+          config,
+        }
+      }
+      if (
         config.method === 'patch' &&
         config.url === '/api/option/model_pricing'
       ) {

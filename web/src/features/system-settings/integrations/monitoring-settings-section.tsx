@@ -81,7 +81,7 @@ type MonitoringFormInput = z.input<typeof monitoringSchema>
 type MonitoringFormValues = z.output<typeof monitoringSchema>
 
 type FlatMonitoringDefaults = {
-  QuotaRemindThreshold: string
+  QuotaRemindThreshold?: string | number
   'perf_metrics_setting.enabled': boolean
   'perf_metrics_setting.flush_interval': number
   'perf_metrics_setting.bucket_time': 'minute' | '5min' | 'hour'
@@ -95,7 +95,7 @@ type MonitoringSettingsSectionProps = {
 const buildFormDefaults = (
   defaults: MonitoringSettingsSectionProps['defaultValues']
 ): MonitoringFormInput => ({
-  QuotaRemindThreshold: defaults.QuotaRemindThreshold ?? '',
+  QuotaRemindThreshold: String(defaults.QuotaRemindThreshold ?? 0),
   perf_metrics_setting: {
     enabled: defaults['perf_metrics_setting.enabled'],
     flush_interval: defaults['perf_metrics_setting.flush_interval'],
@@ -107,7 +107,7 @@ const buildFormDefaults = (
 const normalizeDefaults = (
   defaults: MonitoringSettingsSectionProps['defaultValues']
 ): FlatMonitoringDefaults => ({
-  QuotaRemindThreshold: (defaults.QuotaRemindThreshold ?? '').trim(),
+  QuotaRemindThreshold: parseWalletReminderThreshold(String(defaults.QuotaRemindThreshold ?? 0)) ?? 0,
   'perf_metrics_setting.enabled': defaults['perf_metrics_setting.enabled'],
   'perf_metrics_setting.flush_interval':
     defaults['perf_metrics_setting.flush_interval'],
@@ -120,7 +120,7 @@ const normalizeDefaults = (
 const normalizeFormValues = (
   values: MonitoringFormValues
 ): FlatMonitoringDefaults => ({
-  QuotaRemindThreshold: values.QuotaRemindThreshold.trim(),
+  QuotaRemindThreshold: parseWalletReminderThreshold(values.QuotaRemindThreshold) ?? 0,
   'perf_metrics_setting.enabled': values.perf_metrics_setting.enabled,
   'perf_metrics_setting.flush_interval':
     values.perf_metrics_setting.flush_interval,
@@ -180,7 +180,7 @@ export function MonitoringSettingsSection({
     for (const key of updates) {
       await updateOption.mutateAsync({
         key,
-        value: normalized[key],
+        value: normalized[key] ?? 0,
       })
     }
 
@@ -189,13 +189,18 @@ export function MonitoringSettingsSection({
   }
 
   return (
-    <SettingsSection title={t('Monitoring & Alerts')}>
+    <SettingsSection title={t('Model performance metrics')}>
       <Form {...form}>
         <SettingsForm onSubmit={form.handleSubmit(onSubmit)}>
           <SettingsPageFormActions
             onSave={form.handleSubmit(onSubmit)}
             isSaving={updateOption.isPending}
           />
+          <p className='text-muted-foreground text-xs'>
+            {t(
+              'Collect relay latency and success-rate metrics for the model square.'
+            )}
+          </p>
           <FormField
             control={form.control}
             name='QuotaRemindThreshold'

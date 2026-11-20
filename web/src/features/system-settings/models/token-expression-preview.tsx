@@ -64,6 +64,7 @@ export function TokenExpressionPreview({
     cacheReadTokens: 0,
     cacheCreateTokens: 0,
     cacheCreate1hTokens: 0,
+    cacheCreate12hTokens: 0,
     imageTokens: 0,
     imageCacheTokens: 0,
     imageOutputTokens: 0,
@@ -72,10 +73,10 @@ export function TokenExpressionPreview({
   })
 
   const tokens = useMemo(() => {
-    const values = buildEstimatorTokens(promptTokens, completionTokens, extras)
+    const values = buildEstimatorTokens(promptTokens, completionTokens, extras, effectiveExpr)
     if (lengthOverride.trim()) values.len = Number(lengthOverride)
     return values
-  }, [promptTokens, completionTokens, extras, lengthOverride])
+  }, [promptTokens, completionTokens, extras, lengthOverride, effectiveExpr])
 
   const preview = useBillingExpressionPreview(
     effectiveExpr.trim()

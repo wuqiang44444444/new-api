@@ -21,7 +21,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import { SettingsPageProvider } from '../../components/settings-page-context'
-import { EmailSettingsSection } from '../email-settings-section'
+import { MailPolicySection } from '../mail-policy-section'
 
 const { get, put, post } = vi.hoisted(() => ({
   get: vi.fn(),
@@ -76,7 +76,7 @@ async function setup(values = defaults) {
   render(
     <QueryClientProvider client={client}>
       <SettingsPageProvider actionsContainer={actions}>
-        <EmailSettingsSection defaultValues={values} />
+        <MailPolicySection defaultValues={values} />
       </SettingsPageProvider>
     </QueryClientProvider>
   )

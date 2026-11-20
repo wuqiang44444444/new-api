@@ -17,23 +17,13 @@ func formatNotifyType(channelId int, status int) string {
 	return fmt.Sprintf("%s_%d_%d", dto.NotifyTypeChannelUpdate, channelId, status)
 }
 
-func shouldCloseActiveWebSocketsAfterDisable(channelId int) bool {
+func shouldCloseActiveWebSocketsAfterDisable(channelId int) (bool, *model.Channel) {
 	channel, err := model.GetChannelById(channelId, true)
 	if err != nil {
 		common.SysLog(common.LogText("failed to check channel status before closing active websockets: channel_id=%d, error=%v", channelId, err))
-		return true
+		return true, nil
 	}
-	return channel.Status != common.ChannelStatusEnabled
-}
-
-// RootUserLanguage returns the saved language of the root user, who receives
-// channel notices; it is empty when the root user saved none.
-func RootUserLanguage() string {
-	root := model.GetRootUser()
-	if root == nil {
-		return ""
-	}
-	return root.GetSetting().Language
+	return channel.Status != common.ChannelStatusEnabled, channel
 }
 
 // disable & notify
@@ -48,28 +38,35 @@ func DisableChannel(channelError types.ChannelError, reason string, audit ...mod
 
 	success := model.UpdateChannelStatus(channelError.ChannelId, channelError.UsingKey, common.ChannelStatusAutoDisabled, reason, audit...)
 	if success {
-		if shouldCloseActiveWebSocketsAfterDisable(channelError.ChannelId) {
+		closeWebSockets, channel := shouldCloseActiveWebSocketsAfterDisable(channelError.ChannelId)
+		if closeWebSockets {
 			CloseActiveWebSocketsForChannel(channelError.ChannelId, ChannelDisabledCloseReason)
 		}
-		lang := RootUserLanguage()
-		params := map[string]any{"Name": safeMailText(channelError.ChannelName, 72), "Id": channelError.ChannelId, "Reason": reason}
-		subject := i18n.Translate(lang, i18n.MsgChannelNotifyDisabledSubject, params)
-		content := i18n.Translate(lang, i18n.MsgChannelNotifyDisabledContent, params)
-		params["Reason"] = i18n.Translate(lang, i18n.MsgChannelDisableReview)
-		body := renderChannelStatusMail(i18n.Translate(lang, i18n.MsgChannelNotifyDisabledContent, params), time.Now(), channelError.ChannelId, true, audit)
-		notifyRootUser(model.MailChannelDisabled, formatNotifyType(channelError.ChannelId, common.ChannelStatusAutoDisabled), subject, content, body)
+		at := time.Now()
+		channelName := safeMailText(channelError.ChannelName, 72)
+		params := map[string]any{"Name": channelName, "Id": channelError.ChannelId, "Reason": reason}
+		notifyChannelWatchers(model.MailChannelDisabled, formatNotifyType(channelError.ChannelId, common.ChannelStatusAutoDisabled), func(lang string) (string, string) {
+			return i18n.Translate(lang, i18n.MsgChannelNotifyDisabledSubject, params), i18n.Translate(lang, i18n.MsgChannelNotifyDisabledContent, params)
+		}, func(lang, _ string) string {
+			safeParams := map[string]any{"Name": channelName, "Id": channelError.ChannelId, "Reason": i18n.Translate(lang, i18n.MsgChannelDisableReview)}
+			return renderChannelStatusMail(i18n.Translate(lang, i18n.MsgChannelNotifyDisabledContent, safeParams), at, channelError.ChannelId, true, audit)
+		})
+		if common.IsMasterNode && channel != nil {
+			scheduledPlugins.disabled(channel, channelError.UsingKey, time.Now())
+		}
 	}
 }
 
 func EnableChannel(channelId int, usingKey string, channelName string, audit ...model.ChannelStatusAudit) {
 	success := model.UpdateChannelStatus(channelId, usingKey, common.ChannelStatusEnabled, "", audit...)
 	if success {
-		lang := RootUserLanguage()
+		at := time.Now()
 		params := map[string]any{"Name": safeMailText(channelName, 72), "Id": channelId}
-		subject := i18n.Translate(lang, i18n.MsgChannelNotifyEnabledSubject, params)
-		content := i18n.Translate(lang, i18n.MsgChannelNotifyEnabledContent, params)
-		body := renderChannelStatusMail(content, time.Now(), channelId, false, audit)
-		notifyRootUser(model.MailChannelRecovered, formatNotifyType(channelId, common.ChannelStatusEnabled), subject, content, body)
+		notifyChannelWatchers(model.MailChannelRecovered, formatNotifyType(channelId, common.ChannelStatusEnabled), func(lang string) (string, string) {
+			return i18n.Translate(lang, i18n.MsgChannelNotifyEnabledSubject, params), i18n.Translate(lang, i18n.MsgChannelNotifyEnabledContent, params)
+		}, func(_, content string) string {
+			return renderChannelStatusMail(content, at, channelId, false, audit)
+		})
 	}
 }
 

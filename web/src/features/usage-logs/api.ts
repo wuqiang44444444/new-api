@@ -45,7 +45,7 @@ function buildApiPath(endpoint: string, isAdmin: boolean): string {
   return isAdmin ? endpoint : `${endpoint}/self`
 }
 
-function usageLogConsoleConfig(signal?: AbortSignal): ApiRequestConfig {
+function usageLogConsoleConfig(signal?: AbortSignal): Pick<ApiRequestConfig, 'signal' | 'disableDuplicate' | 'validateStatus'> {
   return {
     signal,
     disableDuplicate: true,
