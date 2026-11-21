@@ -1151,6 +1151,43 @@ func TestDoubaoNativeOfficialBodies(t *testing.T) {
 		assert.Equal(t, map[string]any{"error": map[string]any{"code": "InvalidParameter", "message": "content is required"}}, rendered)
 	})
 
+	t.Run("video query projects only authorized gateway artifact URLs", func(t *testing.T) {
+		task := map[string]any{
+			"task_id": "task_pub", "status": "SUCCESS",
+			"data": map[string]any{
+				"model": seedance, "status": "succeeded", "duration": 4,
+				"usage": map[string]any{"completion_tokens": 40594},
+				"content": map[string]any{
+					"video_url":      "https://upstream.invalid/video.mp4?signature=fixture",
+					"last_frame_url": "https://upstream.invalid/frame.jpg?signature=fixture",
+					"width":          864,
+				},
+			},
+		}
+		const videoURL = "https://gateway.example/v1/tasks/task_pub/artifacts/video/content?access=fixture"
+		const frameURL = "https://gateway.example/v1/tasks/task_pub/artifacts/last_frame/content?access=fixture"
+		artifacts := map[string]any{
+			"video":      map[string]any{"url": videoURL},
+			"last_frame": map[string]any{"url": frameURL},
+		}
+		projected, err := call([]string{"native", "taskStatus"}, map[string]any{"artifacts": artifacts}, task)
+		require.NoError(t, err)
+		assert.Equal(t, "task_pub", projected["id"])
+		assert.Equal(t, "succeeded", projected["status"])
+		assert.EqualValues(t, 4, projected["duration"])
+		assert.Equal(t, map[string]any{"completion_tokens": float64(40594)}, projected["usage"])
+		assert.Equal(t, map[string]any{"video_url": videoURL, "last_frame_url": frameURL, "width": float64(864)}, projected["content"])
+
+		delete(artifacts, "last_frame")
+		projected, err = call([]string{"native", "taskStatus"}, map[string]any{"artifacts": artifacts}, task)
+		require.NoError(t, err)
+		assert.Equal(t, map[string]any{"video_url": videoURL, "width": float64(864)}, projected["content"])
+
+		projected, err = call([]string{"native", "taskStatus"}, map[string]any{}, task)
+		require.NoError(t, err)
+		assert.Equal(t, map[string]any{"width": float64(864)}, projected["content"])
+	})
+
 	t.Run("Base64 images settle like URLs", func(t *testing.T) {
 		request, err := decodeDoubaoImage(t, registry, plugin, map[string]any{"model": lite, "prompt": "a cat", "response_format": "b64_json"})
 		require.NoError(t, err)

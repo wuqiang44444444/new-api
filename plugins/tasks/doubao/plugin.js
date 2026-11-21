@@ -777,6 +777,15 @@ export const native = {
       output.status = "failed";
       output.error = { code: "InternalServiceError", message: task.fail_reason || "task failed" };
     }
+    if (data.content && typeof data.content === "object" && !Array.isArray(data.content)) {
+      // The host projects authorized gateway URLs. Never echo Ark's source URLs.
+      const artifacts = ctx.artifacts || {};
+      output.content = Object.assign({}, data.content);
+      delete output.content.video_url;
+      delete output.content.last_frame_url;
+      if (artifacts.video && artifacts.video.url) output.content.video_url = artifacts.video.url;
+      if (artifacts.last_frame && artifacts.last_frame.url) output.content.last_frame_url = artifacts.last_frame.url;
+    }
     return output;
   },
   // Seedream's own body: Base64 images and streamed images come back as Ark
