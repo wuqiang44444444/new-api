@@ -29,7 +29,7 @@ import {
   Wallet01Icon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   useEffect,
   useId,
@@ -103,6 +103,7 @@ import { VersionLinesDrawer } from './version-lines-drawer'
 
 type CustomerStatementProps = {
   reportVersion?: string
+  onViewLatest?: () => void
   isAdmin: boolean
   period: { start_timestamp: number; end_timestamp: number }
   userId?: number
@@ -124,7 +125,7 @@ type VersionBoundEnvelope = {
 export function CustomerStatementView(props: CustomerStatementProps) {
   return (
     <CustomerStatementBody
-      key={`${props.userId}-${props.period.start_timestamp}-${props.period.end_timestamp}`}
+      key={`${props.userId}-${props.period.start_timestamp}-${props.period.end_timestamp}-${props.reportVersion ?? ''}`}
       {...props}
     />
   )
@@ -132,6 +133,7 @@ export function CustomerStatementView(props: CustomerStatementProps) {
 
 function CustomerStatementBody(props: CustomerStatementProps) {
   const { t, i18n } = useTranslation()
+  const queryClient = useQueryClient()
   const byApiKey = props.dimension === 'api_key'
   const [adminModelKeyId, setAdminModelKeyId] = useState<number>()
   const exportContentId = useId()
@@ -190,17 +192,19 @@ function CustomerStatementBody(props: CustomerStatementProps) {
     return createAdminExport(selectedUserId, payload)
   }
   const statementExport = useBillingExportJob(submitExport)
+  const statementQueryKey = [
+    'billing-customer-reconciliation',
+    props.isAdmin,
+    selectedUserId,
+    props.dimension,
+    props.period.start_timestamp,
+    props.period.end_timestamp,
+    previewVersionId,
+  ]
   const statementQuery = useQuery({
-    queryKey: [
-      'billing-customer-reconciliation',
-      props.isAdmin,
-      selectedUserId,
-      props.dimension,
-      props.period.start_timestamp,
-      props.period.end_timestamp,
-      previewVersionId,
-      ...(props.reportVersion ? [props.reportVersion] : []),
-    ],
+    queryKey: props.reportVersion
+      ? [...statementQueryKey, props.reportVersion]
+      : statementQueryKey,
     queryFn: async () => {
       if (props.isAdmin && selectedUserId == null) {
         throw new Error(t('Select customer'))
@@ -240,6 +244,9 @@ function CustomerStatementBody(props: CustomerStatementProps) {
   const formatCustomerStatementQuota = (value: number | null | undefined) =>
     formatVersionQuota(value, boundVersion)
   const versionBound = boundVersion != null
+  const reportSnapshot = Boolean(
+    props.reportVersion && !previewVersionId && !versionBound
+  )
   const versionDownload = useMutation({
     mutationFn: async (input: { draftPublicId: string; role?: string }) => {
       const response = props.isAdmin
@@ -339,6 +346,22 @@ function CustomerStatementBody(props: CustomerStatementProps) {
   const actions = (
     <>
       {props.toolbar}
+      {reportSnapshot && props.onViewLatest && (
+        <Button
+          variant='outline'
+          size='sm'
+          onClick={() => {
+            queryClient.removeQueries({
+              queryKey: statementQueryKey,
+              exact: true,
+              type: 'inactive',
+            })
+            props.onViewLatest?.()
+          }}
+        >
+          {t('View latest bill')}
+        </Button>
+      )}
       <Button
         variant={props.isAdmin ? 'outline' : 'default'}
         size={props.isAdmin ? 'sm' : 'default'}
@@ -358,7 +381,9 @@ function CustomerStatementBody(props: CustomerStatementProps) {
       </Button>
     </>
   )
-  const reportStatus = <BillingReportStatus report={report} />
+  const reportStatus = (
+    <BillingReportStatus report={report} snapshot={reportSnapshot} />
+  )
   const pendingRefund = statementQuery.data?.pending_refund_count ? (
     <p className='text-sm font-medium'>
       {t('Pending refund')} · {statementQuery.data.pending_refund_count}

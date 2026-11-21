@@ -188,19 +188,28 @@ func compressSigV4Whitespace(value string) string {
 
 // encodeSigV4Query 按 RFC 3986 重新编码 query，键排序满足规范形式要求。
 func encodeSigV4Query(query url.Values) string {
+	encode := func(value string) string { return strings.ReplaceAll(url.QueryEscape(value), "+", "%20") }
+	encoded := make(url.Values, len(query))
 	keys := make([]string, 0, len(query))
-	for key := range query {
+	for key, values := range query {
+		key = encode(key)
 		keys = append(keys, key)
+		for _, value := range values {
+			encoded.Add(key, encode(value))
+		}
+		sort.Strings(encoded[key])
 	}
 	sort.Strings(keys)
 	var builder strings.Builder
-	for i, key := range keys {
-		if i > 0 {
-			builder.WriteString("&")
+	for _, key := range keys {
+		for _, value := range encoded[key] {
+			if builder.Len() > 0 {
+				builder.WriteByte('&')
+			}
+			builder.WriteString(key)
+			builder.WriteByte('=')
+			builder.WriteString(value)
 		}
-		builder.WriteString(url.QueryEscape(key))
-		builder.WriteString("=")
-		builder.WriteString(url.QueryEscape(query.Get(key)))
 	}
 	return builder.String()
 }

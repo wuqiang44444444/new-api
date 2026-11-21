@@ -107,7 +107,7 @@ func TestDailyReportPublishesRefundDayWhenOlderUsageCoverageWasLost(t *testing.T
 	require.NoError(t, BuildUsageReportDay(staged, oldDate, "billing-test", "runner", nil))
 	require.NoError(t, BuildUsageReportDay(staged, refundDate, "billing-test", "runner", nil))
 	require.NoError(t, BuildBillingReportDay(staged, refundDay, "billing-test", "runner", nil, nil))
-	require.NoError(t, PublishScheduledDailyReport(staged, scopes, "billing-test", "runner", refundDay))
+	require.NoError(t, PublishScheduledDailyReport(staged, scopes, "billing-test", "runner", refundDay, nil))
 
 	oldPeriod, err := ResolveUsageAnalyticsPeriod("day", oldDate, common.GetTimestamp())
 	require.NoError(t, err)

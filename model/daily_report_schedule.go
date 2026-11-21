@@ -11,10 +11,10 @@ func NextDailyReportDay(ctx context.Context, today, now int64) (start int64, req
 	db := usageReportMainDB(ctx).WithContext(ctx)
 	var usage []usageReportDay
 	var billing []billingReportHead
-	if err := db.Where("start BETWEEN ? AND ?", today-90*86400, today).Find(&usage).Error; err != nil {
+	if err := db.Where("start BETWEEN ? AND ?", today-90*86400, today-86400).Find(&usage).Error; err != nil {
 		return 0, 0, false, false, err
 	}
-	if err := db.Where("start BETWEEN ? AND ?", today-90*86400, today).Find(&billing).Error; err != nil {
+	if err := db.Where("start BETWEEN ? AND ?", today-90*86400, today-86400).Find(&billing).Error; err != nil {
 		return 0, 0, false, false, err
 	}
 	retry, err := dailyReportRetryDates(ctx, "", now)
@@ -23,30 +23,21 @@ func NextDailyReportDay(ctx context.Context, today, now int64) (start int64, req
 	}
 
 	usageAsOf := make(map[int64]int64, len(usage))
-	staleToday := false
 	for _, head := range usage {
 		usageAsOf[head.Start] = head.AsOf
-		if head.Start == today {
-			staleToday = head.MeterVersion < usageReportMeterVersion
-		}
 	}
 	published := make(map[int64]int64, len(billing))
-	var latestHistory int64
 	for _, head := range billing {
-		at := min(usageAsOf[head.Start], head.AsOf)
-		published[head.Start] = at
-		if head.Start < today {
-			latestHistory = max(latestHistory, at)
-		}
+		published[head.Start] = min(usageAsOf[head.Start], head.AsOf)
 	}
-	yesterday, window := today-86400, today+3*3600
+	yesterday, window := today-86400, today+dailyReportCloseDelay
 	if now >= window && !retry[yesterday] && published[yesterday] < window {
 		var queued billingReportRebuild
 		err := db.Where("start = ?", yesterday).Limit(1).Find(&queued).Error
 		return yesterday, queued.RequestedAt, true, false, err
 	}
 	var request billingReportRebuild
-	runnable := db.Where("NOT EXISTS (SELECT 1 FROM daily_report_retries retry WHERE retry.start = billing_report_rebuilds.start AND "+currentDailyReportRetry+" AND retry.retry_at > ?)", usageReportMeterVersion, CustomerOriginalReplayVersion, now)
+	runnable := db.Where("start < ?", today).Where("NOT EXISTS (SELECT 1 FROM daily_report_retries retry WHERE retry.start = billing_report_rebuilds.start AND "+currentDailyReportRetry+" AND retry.retry_at > ?)", usageReportMeterVersion, CustomerOriginalReplayVersion, now)
 	if now < window {
 		runnable = runnable.Where("start <> ?", yesterday)
 	}
@@ -57,6 +48,29 @@ func NextDailyReportDay(ctx context.Context, today, now int64) (start int64, req
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return 0, 0, false, false, err
+	}
+
+	// An explicitly deferred day remains eligible even after it leaves the
+	// rolling discovery window. Respect both projections' cooldowns.
+	var retryDay struct {
+		Start        int64
+		NeedsBilling int
+	}
+	pending := db.Model(&dailyReportRetry{}).
+		Select("start, MAX(CASE WHEN kind = ? THEN 1 ELSE 0 END) AS needs_billing", DailyReportBilling).
+		Where("start > 0 AND start < ? AND "+currentDailyReportRetry, today, usageReportMeterVersion, CustomerOriginalReplayVersion)
+	if now < window {
+		pending = pending.Where("start <> ?", yesterday)
+	}
+	err = pending.Group("start").Having("MAX(retry_at) <= ?", now).
+		Order("MIN(retry_at) ASC, start ASC").Limit(1).Find(&retryDay).Error
+	if err != nil {
+		return 0, 0, false, false, err
+	}
+	if retryDay.Start != 0 {
+		var queued billingReportRebuild
+		err = db.Where("start = ?", retryDay.Start).Limit(1).Find(&queued).Error
+		return retryDay.Start, queued.RequestedAt, true, retryDay.NeedsBilling == 0 && queued.RequestedAt == 0, err
 	}
 
 	for _, source := range []struct {
@@ -82,19 +96,8 @@ func NextDailyReportDay(ctx context.Context, today, now int64) (start int64, req
 			return 0, 0, false, false, err
 		}
 	}
-	var staleBillingToday int64
-	if err := db.Table("billing_report_heads AS h").Select("h.start").
-		Joins("JOIN billing_report_generations AS g ON g.id = h.generation").
-		Where("h.start = ? AND COALESCE(g.original_replay_version, 0) < ?", today, CustomerOriginalReplayVersion).
-		Limit(1).Scan(&staleBillingToday).Error; err != nil {
-		return 0, 0, false, false, err
-	}
-	todayDue := !retry[today] && (staleToday || staleBillingToday != 0 || now-published[today] >= dailyReportRefreshSeconds)
-	if todayDue && (staleBillingToday != 0 || latestHistory >= published[today]) {
-		return today, 0, true, false, nil
-	}
 	var staleUsage usageReportDay
-	stale := db.Select("start").Where("start <= ?", today)
+	stale := db.Select("start").Where("start < ?", today)
 	if now < window {
 		stale = stale.Where("start <> ?", yesterday)
 	}
@@ -103,9 +106,6 @@ func NextDailyReportDay(ctx context.Context, today, now int64) (start int64, req
 		Where("NOT EXISTS (SELECT 1 FROM daily_report_retries retry WHERE retry.start = usage_report_days.start AND retry.kind = ? AND retry.release_version = ? AND retry.retry_at > ?)", DailyReportUsage, usageReportMeterVersion, now).
 		Order("start DESC").Take(&staleUsage).Error
 	if err == nil {
-		if todayDue {
-			return today, 0, true, false, nil
-		}
 		return staleUsage.Start, 0, true, true, nil
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -113,23 +113,22 @@ func NextDailyReportDay(ctx context.Context, today, now int64) (start int64, req
 	}
 	err = runnable.Where("original_replay_version > 0").Take(&request).Error
 	if err == nil {
-		if todayDue {
-			return today, 0, true, false, nil
-		}
 		return request.Start, request.RequestedAt, true, false, nil
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return 0, 0, false, false, err
 	}
 	for day := yesterday - 86400; day >= today-90*86400; day -= 86400 {
-		if !retry[day] && published[day] == 0 {
+		if !retry[day] && published[day] < day+billingReportDaySeconds+dailyReportCloseDelay {
 			return day, 0, true, false, nil
 		}
 	}
-	for day := yesterday; day >= today-7*86400; day -= 86400 {
-		if !retry[day] && (day != yesterday || now >= window) && now-published[day] >= 86400 && published[day] < day+2*86400 {
+	// Keep the existing one-time closed-day reconciliation for sources
+	// without an append or delivery cursor, such as late task/batch updates.
+	for day := yesterday - 86400; day >= today-7*86400; day -= 86400 {
+		if !retry[day] && now-published[day] >= 86400 && published[day] < day+2*86400 {
 			return day, 0, true, false, nil
 		}
 	}
-	return today, 0, todayDue, false, nil
+	return 0, 0, false, false, nil
 }

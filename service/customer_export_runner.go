@@ -41,6 +41,7 @@ const (
 	customerExportProgressInterval   = 2 * time.Second
 	customerExportTotalBytes         = 512 << 20
 	customerExportCleanupLimitPerRun = 5
+	customerExportCleanupFilesPerJob = 10
 )
 
 var ErrCustomerExportInvalidRequest = errors.New("invalid export request")
@@ -267,7 +268,6 @@ func normalizeCustomerExportFilters(jobType string, request CustomerExportReques
 // 清理，然后按预算逐个认领并执行排队任务；预算结束后若仍有排队任务则重新
 // 唤醒自己，不允许永不退出的循环占据调度设施。
 func runCustomerExportScheduler(ctx context.Context, runnerID string) bool {
-	executor := "customer-export-" + runnerID
 	if _, err := model.RecoverInterruptedCustomerExportJobs(common.GetTimestamp()); err != nil {
 		logger.LogWarn(ctx, fmt.Sprintf("customer export recovery failed: %v", err))
 	}
@@ -276,7 +276,14 @@ func runCustomerExportScheduler(ctx context.Context, runnerID string) bool {
 	customerExportCleanupPass(maintenanceCtx)
 	stopMaintenance()
 	deadline := time.Now().Add(customerExportRunSlice)
-	var pressure customerExportPressureTracker
+	policy := customerStatementExportPolicy{beforeBatch: func(context.Context) error { return errCustomerStatementExportPressure }}
+	sourceCtx, closeSource, sourceErr := model.OpenUsageReportSource(ctx)
+	if sourceErr == nil {
+		defer closeSource()
+		ctx = sourceCtx
+		policy = newCustomerStatementExportPolicy()
+	}
+	pressure := customerExportPressureTracker{statementPolicy: policy}
 	for ctx.Err() == nil && time.Now().Before(deadline) {
 		pressure.step(model.CustomerExportLogDatabasePressure())
 		if pressure.degraded {
@@ -284,6 +291,7 @@ func runCustomerExportScheduler(ctx context.Context, runnerID string) bool {
 			logger.LogWarn(ctx, "customer export scheduler paused by database pressure")
 			return false
 		}
+		executor := "customer-export-" + runnerID + "-" + common.GetRandomString(8)
 		job, err := model.ClaimNextQueuedCustomerExportJob(executor, customerExportLeaseUntil(), int64(customerExportQueueWaitBudget.Seconds()))
 		if err != nil {
 			logger.LogWarn(ctx, fmt.Sprintf("customer export claim failed: %v", err))
@@ -292,7 +300,19 @@ func runCustomerExportScheduler(ctx context.Context, runnerID string) bool {
 		if job == nil {
 			break
 		}
-		runCustomerExportJob(ctx, job, executor, &pressure)
+		if runCustomerExportJob(ctx, job, executor, &pressure) {
+			if pressure.statementPolicy.beforeBatch(ctx) == nil {
+				return false // retry source and storage outages on periodic discovery
+			}
+			for time.Now().Before(deadline) {
+				if waitDailyReportBudget(ctx, reportObservationInterval) != nil {
+					return false
+				}
+				if pressure.statementPolicy.beforeBatch(ctx) == nil {
+					break
+				}
+			}
+		}
 	}
 	return ctx.Err() == nil
 }
@@ -336,20 +356,26 @@ func customerExportCleanupPass(ctx context.Context) {
 		if artifact.StoreIdentity == "" || artifact.StoreIdentity != store.ExportIdentity() {
 			continue
 		}
-		cleaned := true
-		for _, file := range artifact.Files {
+		var attempted int
+		var failed []model.CustomerExportArtifactFile
+		for _, file := range artifact.Files[:min(len(artifact.Files), customerExportCleanupFilesPerJob)] {
 			if ctx.Err() != nil {
-				return
+				break
 			}
-			deleteCtx, cancel := context.WithTimeout(ctx, time.Minute)
+			deleteCtx, cancel := context.WithTimeout(ctx, customerExportBatchTimeout)
 			if err := store.ExportDeleteObject(deleteCtx, file.ObjectKey); err != nil {
-				cleaned = false
+				failed = append(failed, file)
 			}
 			cancel()
+			attempted++
 		}
-		if cleaned {
-			if err := model.DeleteCustomerExportArtifactRecord(job.JobID); err != nil {
-				logger.LogWarn(ctx, fmt.Sprintf("customer export cleanup record failed: job=%s err=%v", job.JobID, err))
+		if attempted > 0 || len(artifact.Files) == 0 {
+			artifact.Files = append(artifact.Files[attempted:], failed...)
+			persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), customerExportBatchTimeout)
+			err := model.SaveCustomerExportCleanupRemainder(persistCtx, job.JobID, artifact)
+			cancel()
+			if err != nil {
+				logger.LogWarn(ctx, "customer export cleanup checkpoint could not be saved")
 			}
 		}
 	}
@@ -360,7 +386,7 @@ func customerExportCleanupPass(ctx context.Context) {
 
 // runCustomerExportJob 执行单个任务：执行前再次校验存储能力；失败路径删除
 // 未发布产物并进入明确终态，不发布部分文件。
-func runCustomerExportJob(ctx context.Context, job *model.CustomerExportJob, executor string, pressure *customerExportPressureTracker) {
+func runCustomerExportJob(ctx context.Context, job *model.CustomerExportJob, executor string, pressure *customerExportPressureTracker) bool {
 	ctx = model.WithBillingStatementRefundReferenceCache(ctx)
 	if err := model.CheckCustomerExportExecution(ctx, job.JobID, executor, common.GetTimestamp()); err != nil {
 		status := model.CustomerExportJobStatusFailed
@@ -369,7 +395,7 @@ func runCustomerExportJob(ctx context.Context, job *model.CustomerExportJob, exe
 		}
 		_ = model.FinishCustomerExportJob(job.JobID, executor, status, "authorization_or_lease", "export no longer authorized or active", nil)
 		logger.LogWarn(context.Background(), fmt.Sprintf("customer export stopped: job=%s type=%s code=authorization_or_lease", job.JobID, job.JobType))
-		return
+		return false
 	}
 	ctx, stop := monitorCustomerExport(ctx, job, executor)
 	filters, err := job.DecodeFilters()
@@ -389,9 +415,13 @@ func runCustomerExportJob(ctx context.Context, job *model.CustomerExportJob, exe
 	}
 	var artifact *model.CustomerExportArtifact
 	workDir := filepath.Join(customerExportTemporaryRoot(), job.JobID)
-	defer os.RemoveAll(workDir)
+	if job.JobType != model.CustomerExportJobTypeStatementDetails {
+		defer os.RemoveAll(workDir)
+	}
 	if err == nil {
 		switch job.JobType {
+		case model.CustomerExportJobTypeStatementArchive:
+			artifact, err = executeCustomerExportShareArchive(ctx, job, filters, workDir)
 		case model.CustomerExportJobTypeCustomerStatements:
 			artifact, err = executeCustomerStatementsExport(ctx, job, filters, workDir)
 		case model.CustomerExportJobTypeUpstreamSummary:
@@ -402,9 +432,24 @@ func runCustomerExportJob(ctx context.Context, job *model.CustomerExportJob, exe
 			artifact, err = executeUsageAnalyticsExport(ctx, job, filters, workDir)
 		case model.CustomerExportJobTypeStatementVersion:
 			err = runBillingStatementVersionGeneration(ctx, job, pressure)
-		case model.CustomerExportJobTypeStatementSummary:
-			artifact, err = executeCustomerExportSummary(ctx, job, filters, workDir)
-		case model.CustomerExportJobTypeStatementDetails, model.CustomerExportJobTypeUsageLogs:
+		case model.CustomerExportJobTypeStatementSummary, model.CustomerExportJobTypeStatementDetails:
+			if filters.BillingReportVersion == "-" {
+				artifact = &model.CustomerExportArtifact{
+					Files: []model.CustomerExportArtifactFile{}, GeneratedAt: common.GetTimestamp(),
+					MissingDates: model.CustomerStatementExportMissingDates(ctx, filters),
+				}
+				break
+			}
+			if job.JobType == model.CustomerExportJobTypeStatementSummary {
+				artifact, err = executeCustomerExportSummary(ctx, job, filters, workDir)
+				break
+			}
+			policy := newCustomerStatementExportPolicy()
+			if pressure != nil && pressure.statementPolicy.beforeBatch != nil {
+				policy = pressure.statementPolicy
+			}
+			artifact, err = executeCustomerStatementExport(ctx, job, filters, workDir, policy)
+		case model.CustomerExportJobTypeUsageLogs:
 			artifact, err = executeCustomerExportLogScan(ctx, job, filters, workDir, executor, pressure)
 		default:
 			err = errors.New("unknown export job type")
@@ -425,6 +470,11 @@ func runCustomerExportJob(ctx context.Context, job *model.CustomerExportJob, exe
 	if cause := context.Cause(ctx); cause != nil {
 		err = cause
 	}
+	if job.JobType == model.CustomerExportJobTypeStatementDetails && errors.Is(err, model.ErrCustomerExportStateConflict) {
+		if cancelled, readErr := model.IsCustomerExportCancelRequested(job.JobID); readErr == nil && cancelled {
+			err = model.ErrCustomerExportCancelled
+		}
+	}
 	if err == nil {
 		err = model.ValidateBillingStatementRefundReferenceCache(ctx)
 	}
@@ -432,6 +482,21 @@ func runCustomerExportJob(ctx context.Context, job *model.CustomerExportJob, exe
 		err = model.CheckCustomerExportExecution(ctx, job.JobID, executor, common.GetTimestamp())
 	}
 	stop()
+	if job.JobType == model.CustomerExportJobTypeStatementDetails &&
+		(errors.Is(err, errCustomerStatementExportPressure) || errors.Is(err, errCustomerStatementExportYield) ||
+			errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+		pauseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), customerExportBatchTimeout)
+		pauseErr := model.PauseCustomerStatementExport(pauseCtx, job.JobID, executor, common.GetTimestamp(), false,
+			errors.Is(err, errCustomerStatementExportPressure))
+		cancel()
+		if pauseErr == nil {
+			return !errors.Is(err, errCustomerStatementExportYield)
+		}
+		if cancelled, readErr := model.IsCustomerExportCancelRequested(job.JobID); readErr == nil && cancelled {
+			_ = model.FinishCustomerExportJob(job.JobID, executor, model.CustomerExportJobStatusCancelled, "cancelled", "", nil)
+		}
+		return true
+	}
 	status, code := model.CustomerExportJobStatusSucceeded, ""
 	if err != nil {
 		status, code = model.CustomerExportJobStatusFailed, "generation_failed"
@@ -459,6 +524,7 @@ func runCustomerExportJob(ctx context.Context, job *model.CustomerExportJob, exe
 		}
 		logger.LogWarn(context.Background(), fmt.Sprintf("customer export finish rejected: job=%s", job.JobID))
 	}
+	return false
 }
 
 var (
@@ -493,12 +559,6 @@ func executeCustomerExportLogScan(ctx context.Context, job *model.CustomerExport
 		scope.CustomerName = fmt.Sprintf("user-%d", job.TargetUserId)
 	}
 
-	statementScope := job.JobType == model.CustomerExportJobTypeStatementDetails
-	if statementScope {
-		writer.useStatementDetails(filters.Language)
-		writer.setBillingCoverage(filters)
-		scope.PeriodEnd = filters.EndTimestamp - 1
-	}
 	batchParams := model.CustomerExportBatchParams{
 		ModelName:      filters.ModelName,
 		UserId:         job.TargetUserId,
@@ -508,25 +568,18 @@ func executeCustomerExportLogScan(ctx context.Context, job *model.CustomerExport
 		TokenId:        filters.TokenId,
 		ChannelId:      filters.ChannelId, TokenName: filters.TokenName, Group: filters.Group,
 		RequestId: filters.RequestId, UpstreamRequestId: filters.UpstreamRequestId, Username: filters.Username,
-		Limit:          customerExportBatchSize,
-		StatementScope: statementScope,
+		Limit: customerExportBatchSize,
 	}
-	if statementScope && len(batchParams.LogTypes) == 0 {
-		batchParams.LogTypes = []int{model.LogTypeConsume, model.LogTypeRefund}
+	upperCtx, stopUpper := context.WithTimeout(ctx, customerExportBatchTimeout)
+	upper, upperErr := model.CustomerExportLogUpperBound(upperCtx)
+	stopUpper()
+	if upperErr != nil {
+		return nil, upperErr
 	}
-	published := statementScope && model.BillingReportFromContext(ctx) != nil
-	if !published {
-		upperCtx, stopUpper := context.WithTimeout(ctx, customerExportBatchTimeout)
-		upper, upperErr := model.CustomerExportLogUpperBound(upperCtx)
-		stopUpper()
-		if upperErr != nil {
-			return nil, upperErr
-		}
-		if upper == 0 {
-			return &model.CustomerExportArtifact{Files: []model.CustomerExportArtifactFile{}, GeneratedAt: scope.GeneratedAt}, nil
-		}
-		batchParams.UpperId = upper
+	if upper == 0 {
+		return &model.CustomerExportArtifact{Files: []model.CustomerExportArtifactFile{}, GeneratedAt: scope.GeneratedAt}, nil
 	}
+	batchParams.UpperId = upper
 	progress := model.CustomerExportProgress{}
 	var lastProgressWrite time.Time
 	deadline := time.Now().Add(customerExportJobBudget)
@@ -555,30 +608,16 @@ func executeCustomerExportLogScan(ctx context.Context, job *model.CustomerExport
 		}
 		batchStart := time.Now()
 		batchCtx, cancelBatch := context.WithTimeout(ctx, customerExportBatchTimeout)
+		rows, scanErr := model.NextCustomerExportLogBatch(batchCtx, withCustomerExportCursor(batchParams, cursor))
 		var exportRows []model.CustomerExportRow
-		var scanErr, buildErr error
-		var scanned int
-		if published {
-			exportRows, cursor, scanErr = model.ReadBillingReportCustomerExportBatch(batchCtx, job.TargetUserId, filters, cursor, batchParams.Limit)
-			scanned = len(exportRows)
-		} else {
-			rows, readErr := model.NextCustomerExportLogBatch(batchCtx, withCustomerExportCursor(batchParams, cursor))
-			scanErr = readErr
-			if scanErr == nil && len(rows) > 0 {
-				// 7.3.13: the batch context also bounds the serial Task-fact
-				// classification so auxiliary queries stay inside the budget.
-				modelFilter := filters.ModelName
-				if !statementScope {
-					modelFilter = "" // Native model filtering has already run in SQL.
-				}
-				exportRows, buildErr = model.BuildCustomerExportRows(batchCtx, rows, modelFilter, filters.BillingMode, func(log *model.Log, row *model.CustomerExportRow) {
-					attachCustomerExportBillingExplanation(log, row, filters.QuotaPerUnit)
-				})
-			}
-			scanned = len(rows)
-			if scanned > 0 {
-				cursor = int64(rows[scanned-1].Id)
-			}
+		var buildErr error
+		scanned := len(rows)
+		if scanErr == nil && scanned > 0 {
+			// Auxiliary Task reads share the batch deadline. Native model filtering has run in SQL.
+			exportRows, buildErr = model.BuildCustomerExportRows(batchCtx, rows, "", filters.BillingMode, func(log *model.Log, row *model.CustomerExportRow) {
+				attachCustomerExportBillingExplanation(log, row, filters.QuotaPerUnit)
+			})
+			cursor = int64(rows[scanned-1].Id)
 		}
 		cancelBatch()
 		if scanErr != nil {
@@ -677,6 +716,7 @@ type customerExportPressureTracker struct {
 	lastWaitSeconds float64
 	degraded        bool
 	healthyWindows  int
+	statementPolicy customerStatementExportPolicy
 }
 
 func (t *customerExportPressureTracker) step(sampleWaitCount int64, sampleWaitSeconds float64) {
@@ -766,12 +806,14 @@ func executeCustomerExportSummary(ctx context.Context, job *model.CustomerExport
 	if err != nil {
 		return nil, err
 	}
+	missing := model.CustomerStatementExportMissingDates(ctx, filters)
 	if lines == 0 {
-		return &model.CustomerExportArtifact{Files: []model.CustomerExportArtifactFile{}, GeneratedAt: common.GetTimestamp()}, nil
+		return &model.CustomerExportArtifact{Files: []model.CustomerExportArtifactFile{}, GeneratedAt: common.GetTimestamp(), MissingDates: missing}, nil
 	}
 	artifact, err := uploadCustomerExportArtifact(ctx, job.JobID, files, paths, lines)
 	if err == nil {
 		artifact.GeneratedAt = scope.GeneratedAt
+		artifact.MissingDates = missing
 	}
 	return artifact, err
 }

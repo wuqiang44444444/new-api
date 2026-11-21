@@ -10,31 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestFastBillingReportsRequireLocalDevelopmentDatabases(t *testing.T) {
-	const local = "postgres://dev@127.0.0.1:54330/dev?sslmode=disable"
-	const remote = "postgres://dev@db.example.com/dev?sslmode=disable"
-	for _, tc := range []struct {
-		name, setting, main, logs string
-		want                      bool
-	}{
-		{name: "default uses the resource gate", main: local},
-		{name: "local development bypasses the resource gate", setting: "true", main: local, want: true},
-		{name: "local IPv6 log endpoint", setting: "true", main: local, logs: "postgres://dev@[::1]/dev?sslmode=disable", want: true},
-		{name: "remote primary", setting: "true", main: remote},
-		{name: "remote log endpoint", setting: "true", main: local, logs: remote},
-		{name: "remote failover host", setting: "true", main: "postgres://dev@localhost,db.example.com/dev?sslmode=disable"},
-		{name: "remote address overrides local hostname", setting: "true", main: local + "&host=db.example.com"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("LOCAL_DEV_FAST_BILLING_REPORTS", tc.setting)
-			t.Setenv("SQL_DSN", tc.main)
-			t.Setenv("LOG_SQL_DSN", tc.logs)
-			assert.Equal(t, tc.want, localFastBillingReports())
-		})
-	}
-}
-
-func TestFastBillingReportsPublishMultipleHistoricalDatesUnderOneLease(t *testing.T) {
+func TestDailyReportPublishesMultipleHistoricalDatesAcrossTicks(t *testing.T) {
 	db := setupVersionServiceTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.TaskBillingDelivery{}, &model.SystemTask{}, &model.SystemTaskLock{}))
 	prepareDailyReportExportTest(t)
@@ -48,9 +24,9 @@ func TestFastBillingReportsPublishMultipleHistoricalDatesUnderOneLease(t *testin
 		{UserId: 7, Type: model.LogTypeConsume, CreatedAt: second + 1, Quota: 40, ModelName: "second"},
 	}).Error)
 
-	require.NoError(t, runDailyReport(ctx, &model.SystemTask{TaskID: "export-fixture"}, "runner", func(ctx context.Context) error {
-		return ctx.Err()
-	}, true))
+	for range 8 {
+		require.NoError(t, runDailyReport(ctx, &model.SystemTask{TaskID: "export-fixture"}, "runner", func(ctx context.Context) error { return ctx.Err() }))
+	}
 
 	_, report, err := model.ResolveBillingReport(ctx, first, second+86399, "")
 	require.NoError(t, err)
@@ -95,7 +71,11 @@ func TestDailyReportUpgradesAllKnownHistoryWithExplicitMissingDates(t *testing.T
 	}
 	require.NoError(t, db.Create(&model.User{Id: 7, Username: "history-fixture", Quota: 800}).Error)
 
-	require.NoError(t, runDailyReport(ctx, task, runner, func(ctx context.Context) error { return ctx.Err() }, true))
+	// Each tick processes at most one scope. A day can require separate
+	// usage metering and original billing replay passes.
+	for range 3 * dates {
+		require.NoError(t, runDailyReport(ctx, task, runner, func(ctx context.Context) error { return ctx.Err() }))
+	}
 
 	for i := range dates {
 		at := first.AddDate(0, 0, i)

@@ -45,14 +45,14 @@ func TestCustomerOriginalReplayDiscoverySchedulesOldDatesAutomatically(t *testin
 	var count int64
 	require.NoError(t, db.Model(&billingReportRebuild{}).Count(&count).Error)
 	assert.EqualValues(t, 1, count)
-	require.NoError(t, CompleteBillingReportRebuild(ctx, queued.Start, queued.RequestedAt))
+	require.NoError(t, db.Delete(&queued).Error)
 
 	more, err = DiscoverCustomerOriginalReplayDays(ctx, today, today)
 	require.NoError(t, err)
 	assert.True(t, more)
 	var older billingReportRebuild
 	require.NoError(t, db.Where("start = ?", missing).Take(&older).Error)
-	require.NoError(t, CompleteBillingReportRebuild(ctx, older.Start, older.RequestedAt))
+	require.NoError(t, db.Delete(&older).Error)
 	for range 2 {
 		more, err = DiscoverCustomerOriginalReplayDays(ctx, today, today)
 		require.NoError(t, err)
@@ -62,13 +62,14 @@ func TestCustomerOriginalReplayDiscoverySchedulesOldDatesAutomatically(t *testin
 	assert.Zero(t, count)
 }
 
-func TestDailyReportSelectsCurrentRefreshBeforeAutomaticOriginalReplay(t *testing.T) {
+func TestDailyReportSelectsYesterdayBeforeAutomaticOriginalReplay(t *testing.T) {
 	db, today, _ := setupBillingReportTest(t)
 	ctx := context.Background()
 	yesterday := today - billingReportDaySeconds
 	old := today - 120*billingReportDaySeconds
 	now := today + 4*3600
 	require.NoError(t, db.Create(&Log{UserId: 7, Type: LogTypeConsume, CreatedAt: old + 1}).Error)
+	require.NoError(t, db.Create(&billingReportRebuild{Start: today, RequestedAt: 1}).Error)
 	_, err := DiscoverCustomerOriginalReplayDays(ctx, today, now)
 	require.NoError(t, err)
 
@@ -79,19 +80,11 @@ func TestDailyReportSelectsCurrentRefreshBeforeAutomaticOriginalReplay(t *testin
 	require.NoError(t, db.Create(&usageReportDay{Start: yesterday, AsOf: now}).Error)
 	require.NoError(t, db.Create(&billingReportHead{Start: yesterday, AsOf: now}).Error)
 
-	next, _, due, _, err = NextDailyReportDay(ctx, today, now)
-	require.NoError(t, err)
-	require.True(t, due)
-	assert.Equal(t, today, next)
-	require.NoError(t, db.Create(&usageReportDay{Start: today, AsOf: now}).Error)
-	require.NoError(t, db.Create(&billingReportHead{Start: today, AsOf: now}).Error)
-
-	// The prior process just refreshed today, but its meter is obsolete.
-	next, _, due, _, err = NextDailyReportDay(ctx, today, now)
-	require.NoError(t, err)
-	require.True(t, due)
-	assert.Equal(t, today, next)
-	require.NoError(t, db.Model(&usageReportDay{}).Where("start = ?", today).Update("meter_version", usageReportMeterVersion).Error)
+	// An open day with out-of-date heads and an explicit request still waits
+	// for its normal close window. Its request also does not block discovery.
+	require.NoError(t, db.Create(&usageReportDay{Start: today, Generation: "open-usage", AsOf: now}).Error)
+	require.NoError(t, db.Create(&billingReportGeneration{ID: "open-billing", Start: today, Published: true, AsOf: now}).Error)
+	require.NoError(t, db.Create(&billingReportHead{Start: today, Generation: "open-billing", AsOf: now}).Error)
 
 	next, revision, due, _, err := NextDailyReportDay(ctx, today, now)
 	require.NoError(t, err)

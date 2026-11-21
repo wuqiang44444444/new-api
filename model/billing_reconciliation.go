@@ -211,9 +211,11 @@ type billingReconciliationModelAccumulator struct {
 	model                     BillingReconciliationModelSummary
 	discountSeen              bool
 	discountRatio             float64
+	discountSourceID          int64
 	contractDiscountSeen      bool
 	hasContractDiscountFact   bool
 	contractDiscountRatio     float64
+	contractDiscountSourceID  int64
 	multipleContractDiscounts bool
 	originalQuota             decimal.Decimal
 	originalQuotaKnown        bool
@@ -671,7 +673,7 @@ func accumulateBillingReconciliationLog(target *BillingReconciliationUsage, log 
 	}
 }
 
-func accumulateBillingReconciliationPrice(accumulator *billingReconciliationModelAccumulator, log billingReconciliationLog, parsed parsedBillingReconciliationLog) {
+func accumulateBillingReconciliationPrice(accumulator *billingReconciliationModelAccumulator, log billingReconciliationLog, parsed parsedBillingReconciliationLog, sourceID int64) {
 	if log.Type != LogTypeConsume && log.Type != LogTypeRefund {
 		return
 	}
@@ -695,7 +697,7 @@ func accumulateBillingReconciliationPrice(accumulator *billingReconciliationMode
 		}
 	}
 	if !parsed.unavailable {
-		observeBillingDiscountFactors(accumulator, parsed)
+		observeBillingDiscountFactors(accumulator, parsed, sourceID)
 	}
 }
 

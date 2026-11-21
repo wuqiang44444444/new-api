@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -18,6 +19,8 @@ export default defineConfig(({ envMode }) => {
     'http://localhost:3000'
 
   const isProd = envMode === 'production'
+  const httpsCert = process.env.LOCAL_DEV_HTTPS_CERT
+  const httpsKey = process.env.LOCAL_DEV_HTTPS_KEY
   const devProxy = Object.fromEntries(
     (['/api', '/v1', '/mj', '/pg'] as const).map((key) => [
       key,
@@ -80,6 +83,10 @@ export default defineConfig(({ envMode }) => {
       host: '0.0.0.0',
       strictPort: false,
       proxy: devProxy,
+      https:
+        !isProd && httpsCert && httpsKey
+          ? { cert: readFileSync(httpsCert), key: readFileSync(httpsKey) }
+          : undefined,
     },
     output: {
       // Production optimizations

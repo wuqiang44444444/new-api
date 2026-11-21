@@ -181,19 +181,26 @@ func CloseChannelAlert(ctx context.Context, id, at int64, reason string) error {
 func ClaimChannelAlertDelivery(ctx context.Context, owner string, now, leaseUntil int64) (*ChannelAlertDelivery, error) {
 	db := DB.WithContext(ctx)
 	pending := []string{MailDeliveryPending, MailDeliveryRetryWait}
-	var delivery ChannelAlertDelivery
-	found := db.Where("status IN ? AND next_attempt_at <= ?", pending, now).
-		Order("next_attempt_at, id").Limit(1).Find(&delivery)
-	if found.Error != nil || found.RowsAffected == 0 {
-		return nil, found.Error
+	// Give a worker that loses the conditional update one chance to claim the next ready delivery.
+	for range 2 {
+		var delivery ChannelAlertDelivery
+		found := db.Where("status IN ? AND next_attempt_at <= ?", pending, now).
+			Order("next_attempt_at, id").Limit(1).Find(&delivery)
+		if found.Error != nil || found.RowsAffected == 0 {
+			return nil, found.Error
+		}
+		result := db.Model(&ChannelAlertDelivery{}).Where("id = ? AND status IN ? AND next_attempt_at <= ?", delivery.ID, pending, now).
+			Updates(map[string]any{"status": MailDeliverySending, "lease_owner": owner, "lease_until": leaseUntil, "attempts": gorm.Expr("attempts + 1")})
+		if result.Error != nil {
+			return nil, result.Error
+		}
+		if result.RowsAffected == 0 {
+			continue
+		}
+		delivery.Attempts++
+		return &delivery, nil
 	}
-	result := db.Model(&ChannelAlertDelivery{}).Where("id = ? AND status IN ? AND next_attempt_at <= ?", delivery.ID, pending, now).
-		Updates(map[string]any{"status": MailDeliverySending, "lease_owner": owner, "lease_until": leaseUntil, "attempts": gorm.Expr("attempts + 1")})
-	if result.Error != nil || result.RowsAffected == 0 {
-		return nil, result.Error
-	}
-	delivery.Attempts++
-	return &delivery, nil
+	return nil, nil
 }
 
 func FinishChannelAlertDelivery(ctx context.Context, delivery ChannelAlertDelivery, owner, status string, next, submitted, accepted int64, stopReason string) error {

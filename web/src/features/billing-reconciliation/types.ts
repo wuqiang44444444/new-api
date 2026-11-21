@@ -393,6 +393,7 @@ export type UpstreamDetails = {
 }
 
 export type BillingReportManifest = {
+  missing_days?: string[]
   rebuilding_days?: string[]
   source_unavailable_days?: string[]
   version: string

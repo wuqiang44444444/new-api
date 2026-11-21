@@ -99,7 +99,7 @@ func ensureLogRequestId(log *Log) {
 
 func createLog(log *Log) error {
 	ensureLogRequestId(log)
-	return trackBillingStatementLogWriteFailure(log, LOG_DB.Create(log).Error)
+	return trackBillingStatementLogWriteFailure(log, writeObservedLog(log))
 }
 
 func clickHouseLogOrder(prefix string) string {

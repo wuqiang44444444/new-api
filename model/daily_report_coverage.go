@@ -32,6 +32,10 @@ func dailyReportLogUpperBound(ctx context.Context) (int64, error) {
 	if upper, ok := ctx.Value(dailyReportLogBoundaryKey{}).(int64); ok {
 		return upper, nil
 	}
+	return readDailyReportLogUpperBound(ctx)
+}
+
+func readDailyReportLogUpperBound(ctx context.Context) (int64, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	var row struct{ ID int64 }
@@ -50,14 +54,16 @@ func dailyReportLogScanCoverage(ctx context.Context, count, revision int64) dail
 // PostgreSQL's tuple version changes on UPDATE, even when the row count
 // stays the same. Scope checks to the fixed ID boundary of the current day.
 func readDailyReportCoverage(ctx context.Context, query *gorm.DB) (dailyReportCoverage, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
 	var coverage dailyReportCoverage
 	columns := "COUNT(*) AS rows"
 	if query.Dialector.Name() == "postgres" {
 		columns += ", CAST(COALESCE(SUM(" + dailyReportTupleRevision + "), 0) AS text) AS revision"
 	}
-	err := query.WithContext(ctx).Select(columns).Scan(&coverage).Error
+	err := executeDailyReportBatch(ctx, func(ctx context.Context) error {
+		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		return query.WithContext(ctx).Select(columns).Scan(&coverage).Error
+	})
 	return coverage, err
 }
 
@@ -133,6 +139,9 @@ func dailyReportDependencies(ctx context.Context, start int64, kind string) (str
 	queries = append(queries, tasks, deliveries, discounts)
 	var revision string
 	for _, query := range queries {
+		if err := usageReportBeforeBatch(ctx); err != nil {
+			return "", err
+		}
 		coverage, err := readDailyReportCoverage(ctx, query.Session(&gorm.Session{}))
 		if err != nil {
 			return "", err

@@ -12,11 +12,13 @@ import { I18nextProvider, initReactI18next } from 'react-i18next'
 import { afterEach, expect, it, vi } from 'vitest'
 
 import { api } from '@/lib/api'
+import { copyToClipboard } from '@/lib/copy-to-clipboard'
 
 import type { CustomerExportJobView } from '../export-api'
 import { ExportJobsDrawer } from '../export-jobs-drawer'
 
 vi.mock('@/lib/api', () => ({ api: { get: vi.fn(), post: vi.fn() } }))
+vi.mock('@/lib/copy-to-clipboard', () => ({ copyToClipboard: vi.fn() }))
 
 const clients: QueryClient[] = []
 afterEach(async () => {
@@ -113,6 +115,9 @@ it.each([
 
   await mountDrawer(mode)
   const download = await screen.findByRole('button', { name: 'Download CSV' })
+  expect(
+    screen.queryByRole('button', { name: 'Download all (ZIP)' })
+  ).toBeNull()
   expect(screen.queryByText('Customer #7')).toBeNull()
   expect(screen.queryByRole('button', { name: 'Filters' })).toBeNull()
   expect(screen.queryByText(/Historical export/)).toBeNull()
@@ -161,6 +166,112 @@ it('expands multipart statements without signing until a file is selected', asyn
   click.mockRestore()
 })
 
+it('downloads an existing multipart statement as a single ZIP before expanding the files', async () => {
+  const job = jobView({})
+  const artifact = job.artifact
+  if (!artifact) throw new Error('Missing export artifact fixture')
+  artifact.files.push({ ...artifact.files[0], file_name: 'export.part2.csv' })
+  const path = '/api/billing/exports/cex_a/archive.zip'
+  const click = vi
+    .spyOn(HTMLAnchorElement.prototype, 'click')
+    .mockImplementation(function (this: HTMLAnchorElement) {
+      expect(this.getAttribute('href')).toBe(path)
+      expect(this.hasAttribute('download')).toBe(true)
+    })
+  vi.mocked(api.get).mockResolvedValueOnce({
+    data: { success: true, data: { items: [job] } },
+  })
+  vi.mocked(api.post).mockResolvedValueOnce({ status: 204 })
+
+  await mountDrawer(true)
+  const archive = await screen.findByRole('button', {
+    name: 'Download all (ZIP)',
+  })
+  expect(
+    screen
+      .getByRole('button', { name: 'View files (2)' })
+      .getAttribute('aria-expanded')
+  ).toBe('false')
+  await userEvent.click(archive)
+  await waitFor(() => expect(click).toHaveBeenCalledTimes(1))
+  expect(api.post).toHaveBeenCalledWith(path, undefined, {
+    skipErrorHandler: true,
+  })
+  expect(api.get).toHaveBeenCalledTimes(1)
+})
+
+it('queues an archive for existing statement files and copies its link when ready', async () => {
+  const source = jobView({})
+  const sourceArtifact = source.artifact
+  if (!sourceArtifact) throw new Error('Missing source artifact fixture')
+  sourceArtifact.files.push({
+    ...sourceArtifact.files[0],
+    file_name: 'export.part2.csv',
+  })
+  const archive = jobView({
+    job_id: 'cex_share',
+    job_type: 'statement_archive',
+    artifact: {
+      ...sourceArtifact,
+      files: [
+        { ...sourceArtifact.files[0], file_name: 'statement-details.zip' },
+      ],
+    },
+  })
+  const shareLink =
+    'https://downloads.example/statement-details.zip?sig=fixture'
+  vi.mocked(api.get).mockImplementation(async (path) => {
+    if (path === '/api/billing/exports/cex_share') {
+      return { data: { success: true, data: archive } }
+    }
+    if (path === '/api/billing/exports/cex_share/share-link') {
+      return { data: { success: true, data: { url: shareLink } } }
+    }
+    return { data: { success: true, data: { items: [source] } } }
+  })
+  vi.mocked(api.post).mockResolvedValueOnce({
+    data: {
+      success: true,
+      data: { ...archive, status: 'queued', artifact: undefined },
+    },
+  })
+  vi.mocked(copyToClipboard).mockResolvedValueOnce(true)
+
+  await mountDrawer(true)
+  await userEvent.click(
+    await screen.findByRole('button', { name: 'Create 7-day download link' })
+  )
+  expect(api.post).toHaveBeenCalledWith(
+    '/api/billing/exports/cex_a/share-archive',
+    undefined,
+    { skipErrorHandler: true, skipBusinessError: true }
+  )
+  await userEvent.click(
+    await screen.findByRole('button', { name: 'Copy download link' })
+  )
+  await waitFor(() => expect(copyToClipboard).toHaveBeenCalledWith(shareLink))
+  expect(screen.queryByText(shareLink)).toBeNull()
+})
+
+it('shows ZIP packaging without reporting ledger scan progress', async () => {
+  const archive = jobView({
+    job_id: 'cex_share',
+    job_type: 'statement_archive',
+    status: 'running',
+    progress: { scanned: 0, matched: 0, written: 0, files: 0 },
+    artifact: undefined,
+  })
+  vi.mocked(api.get).mockResolvedValue({
+    data: { success: true, data: { items: [archive] } },
+  })
+
+  await mountDrawer(true)
+
+  expect(await screen.findAllByText('Packaging ZIP')).not.toHaveLength(0)
+  expect(screen.getAllByText('Reusing existing CSV files')).not.toHaveLength(0)
+  expect(screen.queryByText('Scanned 0 records · 0 matched')).toBeNull()
+})
+
 it('offers regeneration when the personal statement file expires before its status refreshes', async () => {
   const job = jobView({ expires_at: Math.floor(Date.now() / 1000) - 1 })
   vi.mocked(api.get).mockResolvedValueOnce({
@@ -183,6 +294,32 @@ it('lists jobs with their status and keeps succeeded jobs downloadable', async (
   expect(await screen.findByText('Statement details')).toBeTruthy()
   expect(screen.getByText('Ready to download')).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Download' })).toBeTruthy()
+})
+
+it('shows dates excluded from the frozen export when it has no files', async () => {
+  const job = jobView({
+    artifact: {
+      files: [],
+      line_count: 0,
+      size_bytes: 0,
+      generated_at: 1789000000,
+      expires_at: Math.floor(Date.now() / 1000) + 600,
+      missing_report_dates: ['2026-11-08', '2026-11-09', '2026-11-10'],
+    },
+  })
+  vi.mocked(api.get).mockResolvedValueOnce({
+    data: { success: true, data: { items: [job] } },
+  })
+
+  await mountDrawer(true)
+
+  expect(
+    await screen.findByText(
+      'Days missing when requested · 2026-11-08, 2026-11-09, 2026-11-10'
+    )
+  ).toBeTruthy()
+  expect(screen.getByText('Partial data')).toBeTruthy()
+  expect(screen.queryByText('No records matched this export scope.')).toBeNull()
 })
 
 it('lets users cancel queued jobs but shows no download before completion', async () => {
@@ -329,14 +466,15 @@ it('shows cancellation immediately when requested and prevents duplicate cancell
   expect(screen.queryByText('Generating')).toBeNull()
 })
 
-it('shows resource waiting while a job remains active', async () => {
+it('shows committed progress while statement details are queued for resources', async () => {
   vi.mocked(api.get).mockResolvedValueOnce({
     data: {
       success: true,
       data: {
         items: [
           jobView({
-            status: 'running',
+            status: 'queued',
+            job_type: 'statement_details',
             progress: {
               scanned: 10,
               matched: 5,
@@ -351,7 +489,7 @@ it('shows resource waiting while a job remains active', async () => {
   })
   await mountDrawer()
   expect(await screen.findByText('Waiting for resources')).toBeTruthy()
-  expect(screen.getByText('Scanned 10 records · 5 matched')).toBeTruthy()
+  expect(screen.getByText('5 exported rows · 1 CSV files')).toBeTruthy()
 })
 
 it('does not offer expired signed URLs and lets users renew them', async () => {

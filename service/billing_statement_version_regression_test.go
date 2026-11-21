@@ -95,5 +95,6 @@ func TestBillingStatementDownloadFilenameIsSigned(t *testing.T) {
 	parsed, err := url.Parse(signed)
 	require.NoError(t, err)
 	assert.Equal(t, `attachment; filename=2026-08-v2-detail.csv`, parsed.Query().Get("response-content-disposition"))
+	assert.Contains(t, parsed.RawQuery, "response-content-disposition=attachment%3B%20filename%3D2026-08-v2-detail.csv")
 	assert.NotEmpty(t, parsed.Query().Get("X-Amz-Signature"))
 }

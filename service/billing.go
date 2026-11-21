@@ -69,7 +69,9 @@ func SettleBilling(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuo
 }
 
 // The funding result stays true when only the API key adjustment fails.
-func settleBillingWithFunding(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuota int) (bool, error) {
+func settleBillingWithFunding(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuota int) (_ bool, settlementErr error) {
+	sample := common.BeginReportForeground(common.ReportForegroundSettlement)
+	defer func() { sample.Finish(settlementErr != nil) }()
 	if relayInfo.Billing != nil {
 		preConsumed := relayInfo.Billing.GetPreConsumedQuota()
 		delta := actualQuota - preConsumed

@@ -45,7 +45,10 @@ func TestCustomerStatementExportWorkerReuse(t *testing.T) {
 			assert.Equal(t, job.JobID, active.JobID)
 			claimed, err := model.ClaimNextQueuedCustomerExportJob("reuse-worker", common.GetTimestamp()+120, 1800)
 			require.NoError(t, err)
-			runCustomerExportJob(context.Background(), claimed, "reuse-worker", nil)
+			pressure := &customerExportPressureTracker{statementPolicy: customerStatementExportPolicy{
+				beforeBatch: func(context.Context) error { return nil }, partRows: 50_000,
+			}}
+			runCustomerExportJob(context.Background(), claimed, "reuse-worker", pressure)
 			finished, err := model.GetCustomerExportJob(job.JobID)
 			require.NoError(t, err)
 			require.Equal(t, model.CustomerExportJobStatusSucceeded, finished.Status)
@@ -101,7 +104,7 @@ func TestCustomerStatementExportWorkerReuse(t *testing.T) {
 			}}
 			claimed, err = model.ClaimNextQueuedCustomerExportJob("reuse-worker", common.GetTimestamp()+120, 1800)
 			require.NoError(t, err)
-			runCustomerExportJob(context.Background(), claimed, "reuse-worker", nil)
+			runCustomerExportJob(context.Background(), claimed, "reuse-worker", pressure)
 			changedDuringGeneration, err := model.GetCustomerExportJob(next.JobID)
 			require.NoError(t, err)
 			require.Equal(t, model.CustomerExportJobStatusSucceeded, changedDuringGeneration.Status)

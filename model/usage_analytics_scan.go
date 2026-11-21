@@ -78,6 +78,7 @@ type usageTaskPieces struct {
 	cacheWrite              int64
 	billableImageCount      *int64
 	billableImageApplicable bool
+	billableImageSourceID   int64
 	imageCount              int64
 	imageCountKnown         bool
 	imageCountMissing       bool
@@ -87,8 +88,10 @@ type usageTaskPieces struct {
 	missingSeconds          int64
 	rowsSeen                int64
 	billingMode             string
+	billingModeSourceID     int64
 	tokenId                 int
 	tokenName               string
+	tokenSourceID           int64
 	// customerOriginal 是客户侧估算原价中间值（消费正计、可关联退款负计）。
 	customerOriginal   decimal.Decimal
 	originalKnown      bool
@@ -293,34 +296,34 @@ func (agg *usageAggregation) scanLogs(ctx context.Context) error {
 		}
 	}
 	agg.logUpper = upper
-	var cursor int64
-	if agg.opts.LogUpper != nil {
-		var err error
-		cursor, err = dailyReportFirstLogCursor(ctx, query, upper, 5*time.Second)
-		if err != nil {
-			return err
-		}
+	cursor, err := newReportLogCursor(ctx, query, upper, agg.opts.LogUpper != nil)
+	if err != nil {
+		return err
 	}
-	const batchSize = 500
 	columns := "id, COALESCE(request_id, '') AS request_id, user_id, token_id, COALESCE(token_name, '') AS token_name, channel_id, COALESCE(model_name, '') AS model_name, type, created_at, prompt_tokens, completion_tokens, quota, COALESCE(content, '') AS content, COALESCE(other, '') AS other, " + billingStatementGroupSelect()
 	if agg.opts.LogUpper != nil && query.Dialector.Name() == "postgres" {
 		columns += ", " + dailyReportTupleRevision + " AS tuple_revision"
 	}
-	for cursor < upper {
+	for cursor.more(upper) {
+		if err := cursor.pace(ctx); err != nil {
+			return err
+		}
 		if err := usageReportBeforeBatch(ctx); err != nil {
 			return err
 		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		batchCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		var batch []struct {
 			ID            int64
 			Fact          billingReconciliationLog `gorm:"embedded"`
 			TupleRevision int64
 		}
-		err := query.Session(&gorm.Session{}).WithContext(batchCtx).Select(columns).Where("id > ? AND id <= ?", cursor, upper).Order("id asc").Limit(batchSize).Scan(&batch).Error
-		cancel()
+		err := executeDailyReportBatch(ctx, func(ctx context.Context) error {
+			batchCtx, cancel := context.WithTimeout(ctx, dailyReportBatchTimeout(ctx))
+			defer cancel()
+			return cursor.batch(query.Session(&gorm.Session{}).WithContext(batchCtx).Select(columns), upper).Scan(&batch).Error
+		})
 		if err != nil {
 			return err
 		}
@@ -334,7 +337,8 @@ func (agg *usageAggregation) scanLogs(ctx context.Context) error {
 				return err
 			}
 		}
-		cursor = batch[len(batch)-1].ID
+		last := batch[len(batch)-1]
+		cursor.id, cursor.createdAt = last.ID, last.Fact.CreatedAt
 	}
 	return nil
 }
@@ -506,6 +510,8 @@ func (agg *usageAggregation) stashTaskLogPieceForTask(task *usageTaskRecord, row
 
 // appendTaskLogPiece 把一条关联日志的已知事实合并到任务合并事实。
 func (agg *usageAggregation) appendTaskLogPiece(pieces *usageTaskPieces, row usageLogRow, bundle *usageDiscountBundle) {
+	// Range logs carry source IDs. Direct delivery evidence is merged after
+	// the range scan and keeps its existing precedence.
 	pieces.rowsSeen++
 	if agg.opts.WantCustomer {
 		if pieces.discounts == nil {
@@ -514,7 +520,7 @@ func (agg *usageAggregation) appendTaskLogPiece(pieces *usageTaskPieces, row usa
 		// 身份由 Task 的最终客户模型/API Key 定位，组合只保留冻结计价事实。
 		fact := row.fact
 		fact.ModelName = ""
-		pieces.discounts.observe(fact, 0, row.parsed)
+		pieces.discounts.observe(fact, 0, row.parsed, row.id)
 	}
 	if row.fact.Type == LogTypeConsume {
 		pieces.gross += max(int64(row.fact.Quota), 0)
@@ -530,8 +536,8 @@ func (agg *usageAggregation) appendTaskLogPiece(pieces *usageTaskPieces, row usa
 	pieces.cacheWrite += tokens.CacheWriteTokens
 	if row.parsed.billableImageApplicable {
 		pieces.billableImageApplicable = true
-		if row.parsed.billableImageCount != nil {
-			pieces.billableImageCount = row.parsed.billableImageCount
+		if row.parsed.billableImageCount != nil && (row.id == 0 || row.id >= pieces.billableImageSourceID) {
+			pieces.billableImageCount, pieces.billableImageSourceID = row.parsed.billableImageCount, row.id
 		}
 	}
 	pieces.imageCount += tokens.ImageCount
@@ -546,12 +552,12 @@ func (agg *usageAggregation) appendTaskLogPiece(pieces *usageTaskPieces, row usa
 	if usageRowTokensMissing(row) {
 		pieces.missingTokens++
 	}
-	if row.parsed.billingMode != BillingReconciliationModeUnknown && pieces.billingMode == "" {
-		pieces.billingMode = row.parsed.billingMode
+	if row.parsed.billingMode != BillingReconciliationModeUnknown &&
+		(pieces.billingMode == "" || (row.id > 0 && row.id < pieces.billingModeSourceID)) {
+		pieces.billingMode, pieces.billingModeSourceID = row.parsed.billingMode, row.id
 	}
-	if pieces.tokenId == 0 && row.fact.TokenId > 0 {
-		pieces.tokenId = row.fact.TokenId
-		pieces.tokenName = row.fact.TokenName
+	if row.fact.TokenId > 0 && (pieces.tokenId == 0 || (row.id > 0 && row.id < pieces.tokenSourceID)) {
+		pieces.tokenId, pieces.tokenName, pieces.tokenSourceID = row.fact.TokenId, row.fact.TokenName, row.id
 	}
 	if original, reasons, known := usageCustomerOriginalRow(row); known {
 		pieces.customerOriginal = pieces.customerOriginal.Add(original)
@@ -602,7 +608,7 @@ func (agg *usageAggregation) applyStandalone(row usageLogRow, bundle *usageDisco
 	}
 	acc := agg.buildCustomerStandalone(row, calls, result, mode, imageCount, imageKnown)
 	key := usageCustomerKey{day: day, token: row.fact.TokenId, model: row.parsed.customerModel, billingMode: mode}
-	agg.mergeCustomer(row.fact.UserId, key, acc)
+	agg.mergeCustomer(row.fact.UserId, key, acc, true)
 	if agg.opts.WantOverview {
 		agg.mergeOverview(usageOverviewKey{user: row.fact.UserId, day: day}, acc)
 	}
@@ -719,13 +725,13 @@ func (agg *usageAggregation) applyUnlinkedRefund(row usageLogRow) {
 	acc := &usageMetricsAcc{}
 	acc.m.UnlinkedRefundQuota += quota
 	key := usageCustomerKey{day: day, token: row.fact.TokenId, model: row.parsed.customerModel, billingMode: BillingReconciliationModeUnknown}
-	agg.mergeCustomer(row.fact.UserId, key, acc)
+	agg.mergeCustomer(row.fact.UserId, key, acc, false)
 	if agg.opts.WantOverview {
 		agg.mergeOverview(usageOverviewKey{user: row.fact.UserId, day: day}, acc)
 	}
 }
 
-func (agg *usageAggregation) mergeCustomer(userID int, key usageCustomerKey, acc *usageMetricsAcc) {
+func (agg *usageAggregation) mergeCustomer(userID int, key usageCustomerKey, acc *usageMetricsAcc, fromLogScan bool) {
 	if !agg.opts.WantCustomer {
 		return
 	}
@@ -746,7 +752,7 @@ func (agg *usageAggregation) mergeCustomer(userID int, key usageCustomerKey, acc
 		if existing.discounts == nil {
 			existing.discounts = newBillingDiscountCombinationAccumulator()
 		}
-		existing.discounts.mergeUsageDiscounts(acc.discounts)
+		existing.discounts.mergeUsageDiscounts(acc.discounts, fromLogScan)
 	}
 }
 
@@ -781,7 +787,7 @@ func (agg *usageAggregation) loadTasks(ctx context.Context) error {
 	if agg.opts.UserID > 0 {
 		query = query.Where("user_id = ?", agg.opts.UserID)
 	}
-	const batchSize = 500
+	batchSize := dailyReportReadBatchSize(ctx, 500)
 	var lastID int64
 	for {
 		if err := usageReportBeforeBatch(ctx); err != nil {
@@ -791,9 +797,11 @@ func (agg *usageAggregation) loadTasks(ctx context.Context) error {
 			return err
 		}
 		var batch []usageTaskRecord
-		err := query.Session(&gorm.Session{}).
+		readCtx, cancel := withDailyReportReadDeadline(ctx)
+		err := query.Session(&gorm.Session{}).WithContext(readCtx).
 			Select("id, task_id, user_id, channel_id, status, finish_time, billing_state, properties, quota, private_data, video_refund_state, video_refund_requested_at, video_refund_completed_at").
 			Where("id > ?", lastID).Order("id asc").Limit(batchSize).Scan(&batch).Error
+		cancel()
 		if err != nil {
 			return err
 		}
@@ -840,13 +848,16 @@ func (agg *usageAggregation) loadDeliveryLogs(ctx context.Context) error {
 	if bundle == nil {
 		bundle = &usageDiscountBundle{}
 	}
-	const chunk = 200
+	chunk := dailyReportReadBatchSize(ctx, 200)
 	for start := 0; start < len(rowIDs); start += chunk {
 		if err := usageReportBeforeBatch(ctx); err != nil {
 			return err
 		}
 		var pending []TaskBillingDelivery
-		if err := usageReportMainDB(ctx).WithContext(ctx).Select("task_row_id").Where("task_row_id IN ? AND (delivered_at = 0 OR suppress_log = ?)", rowIDs[start:min(start+chunk, len(rowIDs))], true).Find(&pending).Error; err != nil {
+		readCtx, cancel := withDailyReportReadDeadline(ctx)
+		err := usageReportMainDB(ctx).WithContext(readCtx).Select("task_row_id").Where("task_row_id IN ? AND (delivered_at = 0 OR suppress_log = ?)", rowIDs[start:min(start+chunk, len(rowIDs))], true).Find(&pending).Error
+		cancel()
+		if err != nil {
 			return err
 		}
 		for _, event := range pending {
@@ -865,9 +876,11 @@ func (agg *usageAggregation) loadDeliveryLogs(ctx context.Context) error {
 			Log       `gorm:"embedded"`
 			GroupName string
 		}
-		err := usageReportLogDB(ctx).WithContext(ctx).Model(&Log{}).
+		readCtx, cancel := withDailyReportReadDeadline(ctx)
+		err := usageReportLogDB(ctx).WithContext(readCtx).Model(&Log{}).
 			Select("id, request_id, user_id, token_id, token_name, channel_id, model_name, type, created_at, prompt_tokens, completion_tokens, quota, content, other, "+billingStatementGroupSelect()).
 			Where("request_id IN ?", requestIDs[start:end]).Find(&logs).Error
+		cancel()
 		if err != nil {
 			return err
 		}
@@ -1040,7 +1053,7 @@ func (agg *usageAggregation) applyTaskCustomer(task *usageTaskRecord, pieces *us
 	mode, imageCount, imageKnown := customerUsageTaskMeter(task, pieces, settled)
 	setCustomerUsageMeter(&acc.m, mode, imageCount, imageKnown)
 	key := usageCustomerKey{day: day, token: tokenId, model: model, billingMode: mode}
-	agg.mergeCustomer(task.UserID, key, acc)
+	agg.mergeCustomer(task.UserID, key, acc, false)
 	if agg.opts.WantOverview {
 		agg.mergeOverview(usageOverviewKey{user: task.UserID, day: day}, acc)
 	}

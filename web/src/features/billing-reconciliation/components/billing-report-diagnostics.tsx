@@ -17,13 +17,21 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import { amountUnavailableReasonText } from '../estimate-display'
 import type { resolveShanghaiMonth } from '../lib'
+import { formatShanghaiTimestamp } from '../upstream-reconciliation-utils'
 
 type BillingPeriod = ReturnType<typeof resolveShanghaiMonth>
 
 type ReportDay = {
   date: string
   kind: 'usage' | 'billing'
-  status: 'current' | 'rebuilding' | 'review' | 'coverage_issue'
+  status: 'current' | 'rebuilding' | 'review' | 'coverage_issue' | 'retrying'
+  failure_reason?:
+    | 'timeout'
+    | 'resources'
+    | 'related_day'
+    | 'failed'
+    | 'coverage'
+  retry_at?: number
   source?: 'frozen_details' | 'frozen_summary' | 'unavailable'
   published_source_rows?: number
   candidate_source_rows?: number
@@ -78,6 +86,14 @@ export function BillingReportDiagnostics(props: { period: BillingPeriod }) {
     rebuilding: t('Rebuilding'),
     review: t('Needs review'),
     coverage_issue: t('Source coverage check failed'),
+    retrying: t('Waiting to retry'),
+  }
+  const retryReasons = {
+    timeout: t('Report generation timed out'),
+    resources: t('Waiting for resources'),
+    related_day: t('Waiting for a related report'),
+    failed: t('Report generation failed'),
+    coverage: t('Source coverage check failed'),
   }
   const sourceLabels = {
     frozen_details: t('Frozen line items'),
@@ -121,14 +137,28 @@ export function BillingReportDiagnostics(props: { period: BillingPeriod }) {
                     <TableCell>
                       {row.kind === 'billing' ? t('Billing') : t('Usage')}
                     </TableCell>
-                    <TableCell>{statusLabels[row.status]}</TableCell>
+                    <TableCell>
+                      <p>{statusLabels[row.status]}</p>
+                      {row.status === 'retrying' && row.failure_reason && (
+                        <p className='text-muted-foreground text-xs'>
+                          {retryReasons[row.failure_reason]}
+                        </p>
+                      )}
+                      {!!row.retry_at && (
+                        <p className='text-muted-foreground text-xs'>
+                          {t('Eligible to retry at {{time}}', {
+                            time: formatShanghaiTimestamp(row.retry_at),
+                          })}
+                        </p>
+                      )}
+                    </TableCell>
                     <TableCell>
                       {row.source && sourceLabels[row.source]}
                       {row.candidate_source_rows !== undefined &&
                         t(
                           'Published source rows: {{previous}} · Rebuild: {{current}}',
                           {
-                            previous: row.published_source_rows,
+                            previous: row.published_source_rows ?? '—',
                             current: row.candidate_source_rows,
                           }
                         )}

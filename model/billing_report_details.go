@@ -49,7 +49,11 @@ func (row billingReportLine) customerDetail() (billingReportCustomerLine, error)
 }
 
 func (report *BillingReportManifest) customerLines(ctx context.Context, filter BillingStatementLogFilter) *gorm.DB {
-	query := report.lines(ctx).Where("user_id = ? AND fund_group <> ? AND created_at BETWEEN ? AND ?", filter.UserId, "", filter.Start, filter.End)
+	return billingReportCustomerLines(report.lines(ctx), filter)
+}
+
+func billingReportCustomerLines(query *gorm.DB, filter BillingStatementLogFilter) *gorm.DB {
+	query = query.Where("user_id = ? AND fund_group <> ? AND created_at BETWEEN ? AND ?", filter.UserId, "", filter.Start, filter.End)
 	if filter.TokenId != nil {
 		query = query.Where("token_id = ?", *filter.TokenId)
 	}
@@ -292,18 +296,16 @@ func (report *BillingReportManifest) scanUpstreamDetails(ctx context.Context, fi
 }
 
 func (report *BillingReportManifest) customerExportBatch(ctx context.Context, userID int, filters CustomerExportFilters, cursor int64, limit int) ([]billingReportLine, error) {
-	query := report.customerLines(ctx, BillingStatementLogFilter{
+	return readFrozenCustomerExportLines(ctx, DB, report.ids(), userID, filters, cursor, 0, limit)
+}
+
+func customerExportLineFilter(userID int, filters CustomerExportFilters) BillingStatementLogFilter {
+	return BillingStatementLogFilter{
 		UserId: userID, Start: filters.StartTimestamp, End: filters.EndTimestamp - 1, TokenId: filters.TokenId,
 		ChannelId: filters.ChannelId, ModelName: filters.ModelName, BillingMode: filters.BillingMode,
 		TokenName: filters.TokenName, Group: filters.Group, Username: filters.Username, RequestId: filters.RequestId,
 		UpstreamRequestId: filters.UpstreamRequestId,
-	})
-	if len(filters.LogTypes) > 0 {
-		query = query.Where("log_type IN ?", filters.LogTypes)
 	}
-	var rows []billingReportLine
-	err := query.Select("source_id, customer").Where("source_id > ?", cursor).Order("source_id ASC").Limit(limit).Find(&rows).Error
-	return rows, err
 }
 
 func ReadBillingReportCustomerExportBatch(ctx context.Context, userID int, filters CustomerExportFilters, cursor int64, limit int) ([]CustomerExportRow, int64, error) {

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"errors"
 	"sort"
 	"strings"
@@ -61,10 +62,14 @@ func activeDailyReportExports(db *gorm.DB, generation string) *gorm.DB {
 
 // Job records have their own retention. Release orphan references in bounded
 // writes even when the corresponding published generation stays current.
-func PruneDailyReportExportReferences(db *gorm.DB) error {
+func PruneDailyReportExportReferences(ctx context.Context) error {
+	db := usageReportMainDB(ctx).WithContext(ctx)
 	var refs []dailyReportExportReference
-	err := db.Where("NOT EXISTS (SELECT 1 FROM customer_export_jobs job WHERE job.job_id = daily_report_export_references.job_id)").Limit(100).Find(&refs).Error
+	err := db.Where("NOT EXISTS (SELECT 1 FROM customer_export_jobs job WHERE job.job_id = daily_report_export_references.job_id)").Limit(dailyReportWriteBatchSize(ctx, 100)).Find(&refs).Error
 	if err != nil || len(refs) == 0 {
+		return err
+	}
+	if err := beforeDailyReportWrite(ctx, len(refs)); err != nil {
 		return err
 	}
 	return db.Delete(&refs).Error

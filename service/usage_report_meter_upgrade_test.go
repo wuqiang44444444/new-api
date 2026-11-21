@@ -77,7 +77,7 @@ func TestDailyReportWorkerAutomaticallyRebuildsOldUsageMeterVersions(t *testing.
 		"release_version": model.CustomerOriginalReplayVersion, "retry_at": now.Unix() + 60,
 	}).Error)
 
-	require.NoError(t, runDailyReport(ctx, task, runner, func(ctx context.Context) error { return ctx.Err() }, false))
+	require.NoError(t, runDailyReport(ctx, task, runner, func(ctx context.Context) error { return ctx.Err() }))
 
 	updated, err := model.FreezeUsageReportReferences(ctx, period, nil)
 	require.NoError(t, err)

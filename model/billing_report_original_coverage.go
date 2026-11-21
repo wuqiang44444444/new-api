@@ -2,7 +2,6 @@ package model
 
 import (
 	"context"
-	"time"
 )
 
 // A source row count cannot detect replacement of a known customer original
@@ -34,34 +33,50 @@ func compareCustomerBillingGenerations(ctx context.Context, previous, candidate 
 		columns = append(columns, "customer")
 	}
 	var cursor int64
+	size := dailyReportReadBatchSize(ctx, 500)
+	var pacing reportLogCursor
 	for {
+		if err := pacing.pace(ctx); err != nil {
+			return err
+		}
+		if err := usageReportBeforeBatch(ctx); err != nil {
+			return err
+		}
 		var prior []billingReportLine
 		var next []billingReportLine
-		batch, cancel := context.WithTimeout(ctx, 5*time.Second)
-		err := db.WithContext(batch).Select(columns).
-			Where("generation = ? AND source_id > ?", previous, cursor).
-			Order("source_id").Limit(500).Find(&prior).Error
-		if err == nil && len(prior) != 0 {
+		err := executeDailyReportBatch(ctx, func(ctx context.Context) error {
+			batch, cancel := context.WithTimeout(ctx, dailyReportBatchTimeout(ctx))
+			defer cancel()
+			err := db.WithContext(batch).Select(columns).
+				Where("generation = ? AND source_id > ?", previous, cursor).
+				Order("source_id").Limit(size).Find(&prior).Error
+			if err != nil || len(prior) == 0 {
+				return err
+			}
 			cursor = prior[len(prior)-1].SourceID
-			err = db.WithContext(batch).Select(columns).
-				Where("generation = ? AND source_id BETWEEN ? AND ?", candidate, prior[0].SourceID, cursor).
+			sourceIDs := make([]int64, len(prior))
+			for i := range prior {
+				sourceIDs[i] = prior[i].SourceID
+			}
+			return db.WithContext(batch).Select(columns).
+				Where("generation = ? AND source_id IN ?", candidate, sourceIDs).
 				Order("source_id").Find(&next).Error
-		}
-		cancel()
+		})
 		if err != nil || len(prior) == 0 {
 			return err
 		}
-		for _, old := range prior {
-			for len(next) > 0 && next[0].SourceID < old.SourceID {
-				next = next[1:]
-			}
-			if len(next) == 0 || next[0].SourceID != old.SourceID ||
-				next[0].UserID != old.UserID || next[0].LogType != old.LogType ||
-				next[0].TokenID != old.TokenID || next[0].ChannelID != old.ChannelID || next[0].CreatedAt != old.CreatedAt ||
-				next[0].CustomerModel != old.CustomerModel || next[0].FundGroup != old.FundGroup {
+		if len(next) != len(prior) {
+			return errDailyReportCoverageDecreased
+		}
+		for i, old := range prior {
+			current := &next[i]
+			if current.SourceID != old.SourceID ||
+				current.UserID != old.UserID || current.LogType != old.LogType ||
+				current.TokenID != old.TokenID || current.ChannelID != old.ChannelID || current.CreatedAt != old.CreatedAt ||
+				current.CustomerModel != old.CustomerModel || current.FundGroup != old.FundGroup {
 				return errDailyReportCoverageDecreased
 			}
-			if next[0].CustomerCharge != old.CustomerCharge {
+			if current.CustomerCharge != old.CustomerCharge {
 				return errDailyReportCoverageDecreased
 			}
 			if !preserveOriginal || old.Customer == "" {
@@ -71,8 +86,8 @@ func compareCustomerBillingGenerations(ctx context.Context, previous, candidate 
 			if err != nil {
 				return err
 			}
-			if detail.Export.RecordedOriginal != "" {
-				current, err := next[0].customerDetail()
+			if detail.Export.RecordedOriginal != "" && current.Customer != old.Customer {
+				current, err := current.customerDetail()
 				if err != nil {
 					return err
 				}
@@ -89,7 +104,7 @@ func compareCustomerBillingGenerations(ctx context.Context, previous, candidate 
 				}
 			}
 		}
-		if len(prior) < 500 {
+		if len(prior) < size {
 			return nil
 		}
 	}

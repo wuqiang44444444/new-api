@@ -7,6 +7,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const customerExportArchiveRoute = "/:job_id/archive.zip"
+
 func registerBillingReconciliationRoutes(apiRouter *gin.RouterGroup) {
 	billingRoute := apiRouter.Group("/billing")
 	billingRoute.GET("/statement/self", middleware.UserAuth(), controller.GetSelfBillingReconciliation)
@@ -24,6 +26,10 @@ func registerBillingReconciliationRoutes(apiRouter *gin.RouterGroup) {
 		exportRoute.GET("/:job_id", middleware.UserAuth(), controller.GetSelfCustomerExport)
 		exportRoute.POST("/:job_id/cancel", middleware.UserAuth(), controller.CancelSelfCustomerExport)
 		exportRoute.GET("/:job_id/download", middleware.UserAuth(), controller.DownloadSelfCustomerExport)
+		exportRoute.POST(customerExportArchiveRoute, middleware.DisableCache(), middleware.UserAuth(), controller.PrepareSelfCustomerExportArchive)
+		exportRoute.GET(customerExportArchiveRoute, middleware.DisableCache(), controller.DownloadSelfCustomerExportArchive)
+		exportRoute.POST("/:job_id/share-archive", middleware.DisableCache(), middleware.UserAuth(), controller.CreateSelfCustomerExportShareArchive)
+		exportRoute.GET("/:job_id/share-link", middleware.DisableCache(), middleware.UserAuth(), controller.GetSelfCustomerExportShareLink)
 	}
 
 	adminRoute := billingRoute.Group("/admin")

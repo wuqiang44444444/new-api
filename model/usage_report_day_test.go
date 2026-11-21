@@ -202,14 +202,14 @@ func TestUsageReportHonorsShanghaiPublicationWindow(t *testing.T) {
 	before, _, due, _, err := NextDailyReportDay(ctx, today, today+3*3600-1)
 	require.NoError(t, err)
 	assert.True(t, due)
-	assert.Equal(t, today, before)
+	assert.Equal(t, today-2*86400, before)
 	after, _, due, _, err := NextDailyReportDay(ctx, today, today+3*3600)
 	require.NoError(t, err)
 	assert.True(t, due)
 	assert.Equal(t, today-86400, after)
 }
 
-func TestUsageReportDoesNotStarveHistoryWhenTodayBuildRunsLong(t *testing.T) {
+func TestUsageReportLeavesOpenDayAloneAfterHistoryIsCurrent(t *testing.T) {
 	db := setupUsageAnalyticsTestDB(t)
 	require.NoError(t, MigrateDailyReports(db))
 	ctx := context.Background()
@@ -222,15 +222,21 @@ func TestUsageReportDoesNotStarveHistoryWhenTodayBuildRunsLong(t *testing.T) {
 		{Start: today - 86400, AsOf: today + 3*3600},
 		{Start: today, AsOf: today + 4*3600},
 	}).Error)
-	now := today + 4*3600 + dailyReportRefreshSeconds + 1
+	now := today + 15*3600
 	next, _, due, _, err := NextDailyReportDay(ctx, today, now)
 	require.NoError(t, err)
-	assert.True(t, due)
+	require.True(t, due)
 	assert.Equal(t, today-2*86400, next)
-	require.NoError(t, db.Create(&usageReportDay{Start: next, AsOf: now, MeterVersion: usageReportMeterVersion}).Error)
-	require.NoError(t, db.Create(&billingReportHead{Start: next, AsOf: now}).Error)
-	next, _, due, _, err = NextDailyReportDay(ctx, today, now+1)
+
+	usage := make([]usageReportDay, 0, 89)
+	billing := make([]billingReportHead, 0, 89)
+	for day := today - 2*86400; day >= today-90*86400; day -= 86400 {
+		usage = append(usage, usageReportDay{Start: day, AsOf: now, MeterVersion: usageReportMeterVersion})
+		billing = append(billing, billingReportHead{Start: day, AsOf: now})
+	}
+	require.NoError(t, db.Create(&usage).Error)
+	require.NoError(t, db.Create(&billing).Error)
+	_, _, due, _, err = NextDailyReportDay(ctx, today, now+1)
 	require.NoError(t, err)
-	assert.True(t, due)
-	assert.Equal(t, today, next)
+	assert.False(t, due)
 }

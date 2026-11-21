@@ -70,7 +70,11 @@ func (s *azureBlobArtifactStore) putObjectFile(ctx context.Context, objectKey st
 	if mimeType != "" {
 		httpHeaders.BlobContentType = &mimeType
 	}
-	putCtx, cancel := context.WithTimeout(ctx, azurePutTimeout)
+	timeout := azurePutTimeout
+	if stage == "customer_export_archive" {
+		timeout = customerExportJobBudget
+	}
+	putCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	if _, err := s.blockBlobClient(objectKey).UploadFile(putCtx, file, &blockblob.UploadFileOptions{
 		HTTPHeaders: httpHeaders,

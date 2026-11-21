@@ -70,6 +70,7 @@ type customerExportCsvWriter struct {
 	dir               string
 	prefix            string
 	maxShardBytes     int64
+	statementPart     bool
 	files             []model.CustomerExportArtifactFile
 	writer            *csv.Writer
 	buffered          *bufio.Writer
@@ -274,10 +275,13 @@ func (w *customerExportCsvWriter) AppendRecord(record []string) error {
 		return err
 	}
 	rowBytes := int64(encoded.Len())
-	if rowBytes > 1<<20 || w.totalBytes+w.bytesInShard+rowBytes > customerExportTotalBytes {
+	if rowBytes > 1<<20 || (!w.statementPart && w.totalBytes+w.bytesInShard+rowBytes > customerExportTotalBytes) {
 		return errCustomerExportBudgetExceeded
 	}
 	if w.shardLines > 0 && w.bytesInShard+rowBytes > w.maxShardBytes {
+		if w.statementPart {
+			return errCustomerStatementExportPartFull
+		}
 		if err := w.rotateShard(); err != nil {
 			return err
 		}
@@ -285,7 +289,7 @@ func (w *customerExportCsvWriter) AppendRecord(record []string) error {
 			return err
 		}
 	}
-	if w.totalBytes+w.bytesInShard+rowBytes > customerExportTotalBytes {
+	if !w.statementPart && w.totalBytes+w.bytesInShard+rowBytes > customerExportTotalBytes {
 		return errCustomerExportBudgetExceeded
 	}
 	if err := w.writer.Write(record); err != nil {

@@ -212,5 +212,9 @@ func TestBillingReportUpgradePublishesAmbiguousDerivedOriginalAsMissing(t *testi
 	require.Len(t, lines, 1)
 	assert.Equal(t, "100", lines[0].PreviousOriginal)
 	assert.Equal(t, BillingOriginalReplayMissingContext, lines[0].ReplayIssue)
+	days, err := BillingReportDiagnosticDays(ctx, start, start+billingReportDaySeconds)
+	require.NoError(t, err)
+	require.Len(t, days, 1)
+	assert.EqualValues(t, 1, days[0].IssueRows, "multiple issue markers on one row are counted once")
 	assert.EqualValues(t, 10, view.Summary.NetQuota)
 }

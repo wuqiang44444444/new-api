@@ -12,8 +12,9 @@ const evidenceObjectRoute = "/:id/events/:event_id/object"
 func apiGzip() gin.HandlerFunc {
 	compress := gzip.Gzip(gzip.DefaultCompression)
 	return func(c *gin.Context) {
-		// Keep Content-Length on downloads so clients detect a short transfer.
-		if c.FullPath() != "/api/task_request_evidence"+evidenceObjectRoute {
+		// Preserve evidence Content-Length and avoid compressing ZIP twice.
+		if c.FullPath() != "/api/task_request_evidence"+evidenceObjectRoute &&
+			c.FullPath() != "/api/billing/exports"+customerExportArchiveRoute {
 			compress(c)
 		}
 	}

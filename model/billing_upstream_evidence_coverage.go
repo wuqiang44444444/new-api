@@ -26,10 +26,11 @@ type upstreamRecoveredSecondsKey struct {
 }
 
 type upstreamEvidenceCoverage struct {
-	rows      []UpstreamBillingDetailItem
-	keys      []providerBillingSummaryKey
-	recovered map[upstreamRecoveredSecondsKey]billingRecoveredSeconds
-	onRow     func(UpstreamBillingDetailItem, providerBillingSummaryKey) error
+	rows                 []UpstreamBillingDetailItem
+	keys                 []providerBillingSummaryKey
+	recovered            map[upstreamRecoveredSecondsKey]billingRecoveredSeconds
+	preferLowestSourceID bool
+	onRow                func(UpstreamBillingDetailItem, providerBillingSummaryKey) error
 }
 
 type billingRecoveredSeconds struct {
@@ -65,12 +66,16 @@ func (coverage *upstreamEvidenceCoverage) flush(ctx context.Context, items map[p
 			if coverage.recovered == nil {
 				coverage.recovered = make(map[upstreamRecoveredSecondsKey]billingRecoveredSeconds)
 			}
-			if _, found := coverage.recovered[key]; row.Seconds != nil && !found {
-				value := *row.Seconds
-				if item.Usage.Seconds != nil {
-					value = value.Add(*item.Usage.Seconds)
+			prior, found := coverage.recovered[key]
+			if row.Seconds != nil && (!found || (coverage.preferLowestSourceID && row.RowId < prior.SourceID)) {
+				delta := *row.Seconds
+				if found {
+					delta = delta.Sub(prior.Value)
 				}
-				item.Usage.Seconds = &value
+				if item.Usage.Seconds != nil {
+					delta = delta.Add(*item.Usage.Seconds)
+				}
+				item.Usage.Seconds = &delta
 				coverage.recovered[key] = billingRecoveredSeconds{*row.Seconds, row.RowId}
 			}
 		}

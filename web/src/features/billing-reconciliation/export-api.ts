@@ -31,6 +31,7 @@ export type ExportJobType =
   | 'upstream_summary'
   | 'usage_logs'
   | 'statement_details'
+  | 'statement_archive'
   | 'statement_summary'
   | 'customer_statements'
 
@@ -83,6 +84,7 @@ export type CustomerExportArtifactFileDto = {
 
 export type CustomerExportArtifactDto = {
   files: CustomerExportArtifactFileDto[]
+  missing_report_dates?: string[]
   line_count: number
   size_bytes: number
   generated_at: number
@@ -101,6 +103,7 @@ export type CustomerExportJobView = {
     matched: number
     written: number
     files: number
+    last_committed_at?: number
     waiting_for_resources?: boolean
   }
   cancel_requested: boolean
@@ -308,12 +311,35 @@ export async function requestExportDownload(jobId: string) {
   }
 }
 
-export function downloadExportFile(url: string) {
+export async function downloadExportArchive(jobId: string) {
+  const url = `/api/billing/exports/${encodeURIComponent(jobId)}/archive.zip`
+  await api.post(url, undefined, { skipErrorHandler: true })
+  downloadExportFile(url, true)
+}
+
+export async function createExportShareArchive(jobId: string) {
+  return submitBillingExport(
+    `/api/billing/exports/${encodeURIComponent(jobId)}/share-archive`
+  )
+}
+
+export async function requestExportShareLink(jobId: string) {
+  const { data } = await api.get<
+    ApiResponse<{ url: string; expires_at: number }>
+  >(`/api/billing/exports/${encodeURIComponent(jobId)}/share-link`, {
+    skipErrorHandler: true,
+  })
+  if (!data.success || !data.data?.url) throw new Error('Missing download link')
+  return data.data.url
+}
+
+export function downloadExportFile(url: string, attachment = false) {
   // The signed GET serves an attachment. A same-tab link also works after
   // awaiting the signing request, when a new window may be blocked.
   const link = document.createElement('a')
   link.href = url
   link.rel = 'noreferrer'
+  if (attachment) link.download = ''
   link.click()
 }
 
@@ -342,7 +368,7 @@ export async function createUpstreamExport(
 // so new submissions and regeneration preserve the server's specific reason.
 async function submitBillingExport(
   path: string,
-  payload: CustomerExportSubmitPayload | { source_job_id: string }
+  payload?: CustomerExportSubmitPayload | { source_job_id: string }
 ) {
   try {
     const response = await api.post<ExportEnvelope>(path, payload, {

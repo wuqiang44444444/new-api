@@ -8,7 +8,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const dailyReportRefreshSeconds = 180 * 60
+const dailyReportCloseDelay = 3 * 3600
 
 func DailyReportSourceSupported() bool {
 	return !common.UsingLogDatabase(common.DatabaseTypeClickHouse)

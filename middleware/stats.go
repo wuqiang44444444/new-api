@@ -3,6 +3,7 @@ package middleware
 import (
 	"sync/atomic"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/gin-gonic/gin"
 )
 
@@ -16,6 +17,8 @@ var globalStats = &HTTPStats{}
 // StatsMiddleware 统计中间件
 func StatsMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		sample := common.BeginReportForeground(common.ReportForegroundRequest)
+		defer func() { sample.Finish(c.Writer.Status() >= 500) }()
 		// 增加活跃连接数
 		atomic.AddInt64(&globalStats.activeConnections, 1)
 

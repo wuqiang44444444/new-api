@@ -36,14 +36,14 @@ func (a *billingCustomerSummary) observe(dimension string, log billingReconcilia
 	groupID := int64(log.TokenId)
 	if dimension == "channel" {
 		groupID = int64(log.ChannelId)
-	} else if log.TokenName != "" {
+	} else if log.TokenName != "" && (sourceID == 0 || sourceID >= a.nameSource[groupID]) {
 		a.names[groupID], a.nameSource[groupID] = log.TokenName, sourceID
 	}
 	a.combinations.observe(log, groupID, parsed, sourceID)
 	acc := a.model(billingCustomerModelKey{groupID, parsed.customerModel, parsed.billingMode})
 	accumulateBillingReconciliationLog(&acc.model.Usage, log, parsed)
 	accumulateCustomerBillingQuality(&acc.model.DataQuality, parsed)
-	accumulateBillingReconciliationPrice(acc, log, parsed)
+	accumulateBillingReconciliationPrice(acc, log, parsed, sourceID)
 }
 
 func (a *billingCustomerSummary) model(key billingCustomerModelKey) *billingReconciliationModelAccumulator {

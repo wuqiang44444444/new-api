@@ -89,6 +89,9 @@ export function AdminBillingReconciliation(
           period={period}
           userId={props.search.userId}
           reportVersion={props.search.reportVersion}
+          onViewLatest={() =>
+            props.onSearchChange({ reportVersion: undefined })
+          }
           dimension={dimension}
           toolbar={monthPicker}
           onBack={() =>

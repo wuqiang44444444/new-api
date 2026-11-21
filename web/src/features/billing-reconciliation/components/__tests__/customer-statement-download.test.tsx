@@ -16,9 +16,14 @@ import { afterEach, expect, it, vi } from 'vitest'
 import zh from '@/i18n/locales/zh.json'
 import { api } from '@/lib/api'
 
+import { AdminBillingReconciliation } from '../../admin-billing-reconciliation'
 import type { CustomerExportJobView } from '../../export-api'
 import { MyBilling } from '../../my-billing'
-import type { BillingEnvelope, CustomerStatement } from '../../types'
+import type {
+  AdminBillingSearch,
+  BillingEnvelope,
+  CustomerStatement,
+} from '../../types'
 import { CustomerStatementView } from '../customer-statement'
 
 vi.mock('@/lib/api', () => ({ api: { get: vi.fn(), post: vi.fn() } }))
@@ -106,6 +111,25 @@ function MyBillingWithFilter() {
   )
 }
 
+function AdminBillingWithSnapshot(props: {
+  userId: number
+  reportVersion: string
+}) {
+  const [search, setSearch] = useState<AdminBillingSearch>({
+    userId: props.userId,
+    month: '2026-09',
+    reportVersion: props.reportVersion,
+  })
+  return (
+    <AdminBillingReconciliation
+      search={search}
+      onSearchChange={(patch) =>
+        setSearch((current) => ({ ...current, ...patch }))
+      }
+    />
+  )
+}
+
 async function mount(
   options: {
     envelope?: BillingEnvelope<CustomerStatement>
@@ -113,6 +137,7 @@ async function mount(
     userId?: number
     selfPage?: boolean
     language?: string
+    reportVersion?: string
   } = {}
 ) {
   const i18n = createInstance().use(initReactI18next)
@@ -153,21 +178,27 @@ async function mount(
   vi.mocked(api.post).mockResolvedValue({
     data: { success: true, data: queuedExport },
   })
+  let page = (
+    <CustomerStatementView
+      isAdmin={options.isAdmin === true}
+      userId={options.userId}
+      dimension='api_key'
+      period={period}
+      onDimensionChange={vi.fn()}
+    />
+  )
+  if (options.selfPage) page = <MyBillingWithFilter />
+  if (options.reportVersion && options.userId != null) {
+    page = (
+      <AdminBillingWithSnapshot
+        userId={options.userId}
+        reportVersion={options.reportVersion}
+      />
+    )
+  }
   const view = render(
     <I18nextProvider i18n={i18n}>
-      <QueryClientProvider client={client}>
-        {options.selfPage ? (
-          <MyBillingWithFilter />
-        ) : (
-          <CustomerStatementView
-            isAdmin={options.isAdmin === true}
-            userId={options.userId}
-            dimension='api_key'
-            period={period}
-            onDimensionChange={vi.fn()}
-          />
-        )}
-      </QueryClientProvider>
+      <QueryClientProvider client={client}>{page}</QueryClientProvider>
     </I18nextProvider>
   )
   return { view, i18n, client, queuedExport }
@@ -178,6 +209,93 @@ async function openExportDrawer() {
   await user.click(screen.getByRole('button', { name: 'Export and download' }))
   return screen.findByRole('dialog', { name: 'Export and download' })
 }
+
+it('switches a pinned customer bill to fresh coverage, totals, detail links, and exports', async () => {
+  const old = statementEnvelope()
+  old.billing_report = {
+    version: 'report-before-rebuild',
+    published_days: 29,
+    expected_days: 30,
+    missing_days: ['2026-09-10'],
+    as_of: period.end_timestamp,
+  }
+  const latest = statementEnvelope()
+  latest.billing_report = {
+    version: 'report-after-rebuild',
+    published_days: 30,
+    expected_days: 30,
+    as_of: period.end_timestamp,
+  }
+  latest.result.summary = {
+    ...usage,
+    gross_quota: 1_000_000,
+    refund_quota: 0,
+    net_quota: 1_000_000,
+  }
+  vi.mocked(api.get).mockImplementation(async (url, config) => {
+    if (url === '/api/billing/admin/customer-summary') {
+      const params = config?.params as { report_version?: string } | undefined
+      return {
+        data: {
+          success: true,
+          data: params?.report_version ? old : latest,
+        },
+      }
+    }
+    return { data: { success: true, data: { versions: [], items: [] } } }
+  })
+  await mount({
+    envelope: old,
+    isAdmin: true,
+    userId: 7,
+    reportVersion: old.billing_report.version,
+  })
+
+  expect(
+    await screen.findByText('Current snapshot does not cover · 2026-09-10')
+  ).toBeVisible()
+  expect(screen.getAllByText('-$0.00016').length).toBeGreaterThan(0)
+  const detailVersion = () => {
+    const modelBill = screen.getByRole('region', { name: 'Model billing' })
+    const href = within(modelBill)
+      .getByRole('button', { name: 'View details' })
+      .getAttribute('href')
+    return new URL(href ?? '', 'http://localhost').searchParams.get(
+      'billingReportVersion'
+    )
+  }
+  expect(detailVersion()).toBe(old.billing_report.version)
+
+  await userEvent.click(
+    screen.getByRole('button', { name: 'View latest bill' })
+  )
+
+  expect(await screen.findByText(/30 of 30 days published/)).toBeVisible()
+  expect(screen.getAllByText('$2').length).toBeGreaterThan(0)
+  expect(
+    screen.queryByText('Current snapshot does not cover · 2026-09-10')
+  ).toBeNull()
+  expect(detailVersion()).toBe(latest.billing_report.version)
+  expect(api.get).toHaveBeenCalledWith('/api/billing/admin/customer-summary', {
+    params: {
+      ...period,
+      user_id: 7,
+      dimension: 'api_key',
+      include_pending_refunds: true,
+      version: undefined,
+    },
+  })
+
+  const drawer = await openExportDrawer()
+  await userEvent.click(
+    within(drawer).getByRole('button', { name: 'Export CSV' })
+  )
+  expect(api.post).toHaveBeenCalledWith(
+    '/api/billing/admin/customer-exports',
+    expect.objectContaining({ report_version: latest.billing_report.version }),
+    { params: { user_id: 7 } }
+  )
+})
 
 it('submits a server-side statement export with the frozen month and language', async () => {
   await mount({ envelope: statementEnvelope() })

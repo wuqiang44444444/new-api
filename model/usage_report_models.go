@@ -44,14 +44,11 @@ func writeUsageReportModels(ctx context.Context, db *gorm.DB, generation string,
 	if err != nil {
 		return err
 	}
-	if err := usageReportBeforeBatch(ctx); err != nil {
-		return err
-	}
-	payload, err := writeDailyReportPayload(ctx, db, usageReportBeforeBatch, generation, reportUsagePayload, usageReportModelScope, raw)
+	payload, err := writeDailyReportPayload(ctx, db, generation, reportUsagePayload, usageReportModelScope, raw)
 	if err != nil {
 		return err
 	}
-	return db.Create(&usageReportDayRow{Generation: generation, UserID: usageReportModelScope, Payload: payload}).Error
+	return writeBillingReportProjection(ctx, db, len(payload), &usageReportDayRow{Generation: generation, UserID: usageReportModelScope, Payload: payload})
 }
 
 func mergeUsageReportModel(totals map[usageReportModelKey]*usageMetricsAcc, key usageReportModelKey, acc *usageMetricsAcc) {

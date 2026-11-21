@@ -205,7 +205,7 @@ func GetBillingCustomerStatementList(ctx context.Context,
 			applyCustomerOriginalReplay(log, &parsed)
 			accumulateBillingReconciliationLog(&accumulator.item.Usage, log, parsed)
 			accumulateCustomerBillingQuality(&accumulator.price.model.DataQuality, parsed)
-			accumulateBillingReconciliationPrice(&accumulator.price, log, parsed)
+			accumulateBillingReconciliationPrice(&accumulator.price, log, parsed, 0)
 			if log.CreatedAt > accumulator.item.LastActivityAt {
 				accumulator.item.LastActivityAt = log.CreatedAt
 			}

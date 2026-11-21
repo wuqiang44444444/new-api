@@ -2,7 +2,8 @@ package model
 
 import (
 	"context"
-	"strings"
+	"errors"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
@@ -26,7 +27,6 @@ func MigrateHistoricalDailyReport(ctx context.Context, scope DailyReportScope, t
 	}
 	var billing billingReportGeneration
 	var usage usageReportDay
-	types := []int{LogTypeConsume, LogTypeRefund}
 	if scope.Kind == DailyReportUsage {
 		if err := db.Where("start = ?", scope.Start).Limit(1).Find(&usage).Error; err != nil {
 			return false, err
@@ -39,7 +39,6 @@ func MigrateHistoricalDailyReport(ctx context.Context, scope DailyReportScope, t
 		if usage.HistoricalSource != "" {
 			stage.HistoricalMeterVersion = usage.HistoricalMeterVersion
 		}
-		types = usageScanLogTypes(usageViewOptions{WantCustomer: true, WantUpstream: true})
 	} else {
 		if err := db.Table("billing_report_generations AS g").Select("g.*").
 			Joins("JOIN billing_report_heads AS h ON h.generation = g.id").
@@ -59,9 +58,14 @@ func MigrateHistoricalDailyReport(ctx context.Context, scope DailyReportScope, t
 	if err != nil {
 		return false, err
 	}
-	query := dailyReportLogQuery(ctx, stage.Start, stage.Start+billingReportDaySeconds, upper, types)
+	query := dailyReportLogQuery(ctx, stage.Start, stage.Start+billingReportDaySeconds, upper, dailyReportLogTypes(scope.Kind))
 	var first int64
-	err = query.Session(&gorm.Session{}).WithContext(ctx).Select("id").Limit(1).Scan(&first).Error
+	if err := usageReportBeforeBatch(ctx); err != nil {
+		return false, err
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	err = query.WithContext(probeCtx).Select("id").Order("created_at, id").Limit(1).Scan(&first).Error
+	cancel()
 	if err != nil {
 		return false, err
 	}
@@ -75,22 +79,27 @@ func MigrateHistoricalDailyReport(ctx context.Context, scope DailyReportScope, t
 		}
 		if billing.HistoricalSource == dailyReportSourceDetails && priorRows == 0 {
 			var boundary struct{ Rows, Upper int64 }
-			err := db.Model(&billingReportLine{}).Where("generation = ?", billing.ID).
+			if err := usageReportBeforeBatch(ctx); err != nil {
+				return false, err
+			}
+			readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			err := db.WithContext(readCtx).Model(&billingReportLine{}).Where("generation = ?", billing.ID).
 				Select("COUNT(*) AS rows, COALESCE(MAX(source_id), 0) AS upper").Scan(&boundary).Error
+			cancel()
 			if err != nil {
 				return false, err
 			}
 			priorRows, priorUpper = boundary.Rows, boundary.Upper
 		}
 		if priorRows > 0 && priorUpper > 0 {
-			priorCoverage, err := readDailyReportCoverage(ctx, query.Session(&gorm.Session{}).Where("id <= ?", priorUpper))
+			priorCoverage, err := readDailyReportDateCoverage(ctx, stage.Start, stage.Kind, min(upper, priorUpper))
 			if err != nil || priorCoverage.Rows >= priorRows {
 				return false, err
 			}
 		} else if usage.HistoricalSource != dailyReportSourceSummary && billing.HistoricalSource != dailyReportSourceSummary {
 			return false, nil
 		}
-		coverage, err = readDailyReportCoverage(ctx, query)
+		coverage, err = readDailyReportDateCoverage(ctx, stage.Start, stage.Kind, upper)
 		if err != nil {
 			return false, err
 		}
@@ -110,66 +119,108 @@ func MigrateHistoricalDailyReport(ctx context.Context, scope DailyReportScope, t
 	if err != nil {
 		return false, err
 	}
-	err = db.Transaction(func(tx *gorm.DB) error {
+	// The old generation stays pinned by the public head. A change of head
+	// or release version invalidates the checkpoint, including its cursors.
+	var checkpoint dailyReportStage
+	err = db.Where("start = ? AND kind = ?", scope.Start, scope.Kind).Take(&checkpoint).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, err
+	}
+	resume := checkpoint.copyingHistory() && dailyReportStageVersionCurrent(checkpoint) &&
+		checkpoint.Previous == stage.Previous && checkpoint.HistoricalMeterVersion == stage.HistoricalMeterVersion &&
+		stage.AsOf-checkpoint.AsOf < 8*billingReportDaySeconds
+	var initialize any
+	if resume {
+		stage.Generation, stage.CopyingStartedAt = checkpoint.Generation, checkpoint.CopyingStartedAt
+		stage.HistoricalSource, stage.HistoricalCopiesDone = checkpoint.HistoricalSource, checkpoint.HistoricalCopiesDone
+		stage.IssueRows, stage.IssueRowsGeneration = checkpoint.IssueRows, checkpoint.IssueRowsGeneration
+	} else {
+		stage.CopyingStartedAt = time.Now().UnixNano()
 		if scope.Kind == DailyReportUsage {
-			hasSummary, err := historicalUsageHasSummary(ctx, tx, stage.Previous)
+			hasSummary, err := historicalUsageHasSummary(ctx, db, stage.Previous)
 			if err != nil {
-				return err
+				return false, err
 			}
 			if hasSummary {
 				stage.HistoricalSource = dailyReportSourceSummary
 			}
-			// Pending refunds remain readable even when this day has no usage evidence.
-			if _, err := copyDailyReportProjection(tx, &usageReportDayRow{}, stage, true); err != nil {
-				return err
-			}
-			if _, err := copyDailyReportProjection(tx, &dailyReportPayloadPart{}, stage, false); err != nil {
-				return err
-			}
-			return tx.Create(&usageReportDayRow{Generation: stage.Generation, UserID: -1, CreatedAt: common.GetTimestamp()}).Error
+			initialize = &usageReportDayRow{Generation: stage.Generation, UserID: -1, CreatedAt: stage.AsOf}
+		} else {
+			initialize = &billingReportGeneration{ID: stage.Generation, Start: stage.Start,
+				OriginalReplayVersion: CustomerOriginalReplayVersion, AsOf: stage.AsOf, UpperLogID: upper,
+				CreatedAt: stage.AsOf, Incomplete: true, HistoricalSource: stage.HistoricalSource}
 		}
-		details, err := copyDailyReportProjection(tx, &billingReportLine{}, stage, false)
-		if err != nil {
-			return err
-		}
-		customer, err := copyDailyReportProjection(tx, &billingReportCustomerDay{}, stage, false)
-		if err != nil {
-			return err
-		}
-		upstream, err := copyDailyReportProjection(tx, &billingReportUpstreamDay{}, stage, false)
-		if err != nil {
-			return err
-		}
-		if details > 0 {
-			stage.HistoricalSource = dailyReportSourceDetails
-		} else if customer > 0 || upstream > 0 {
-			stage.HistoricalSource = dailyReportSourceSummary
-		}
-		if _, err := copyDailyReportProjection(tx, &dailyReportPayloadPart{}, stage, false); err != nil {
-			return err
-		}
-		if details > 0 {
-			if err := rebuildMissingHistoricalBillingCustomers(ctx, tx, stage.Generation); err != nil {
-				return err
-			}
-		}
-		return tx.Create(&billingReportGeneration{ID: stage.Generation, Start: stage.Start,
-			OriginalReplayVersion: stage.OriginalReplayVersion, AsOf: stage.AsOf, UpperLogID: upper,
-			CreatedAt: common.GetTimestamp(), Incomplete: true, HistoricalSource: stage.HistoricalSource}).Error
-	})
-	if err != nil {
+	}
+	stage.CopyingGeneration = stage.Generation
+	if err := persistDailyReportStage(ctx, db, stage, taskID, runnerID, initialize); err != nil {
 		return false, err
+	}
+	if !stage.HistoricalCopiesDone {
+		if err := copyHistoricalDailyReport(ctx, db, &stage); err != nil {
+			return false, err
+		}
+		stage.HistoricalCopiesDone = true
+		if err := persistDailyReportStage(ctx, db, stage, taskID, runnerID, nil); err != nil {
+			return false, err
+		}
+	}
+	if scope.Kind == DailyReportBilling && stage.HistoricalSource == dailyReportSourceDetails {
+		if err := rebuildMissingHistoricalBillingCustomers(ctx, db, stage.Generation); err != nil {
+			return false, err
+		}
 	}
 	return true, saveDailyReportStage(ctx, db, stage, taskID, runnerID)
 }
 
-func historicalUsageHasSummary(ctx context.Context, tx *gorm.DB, generation string) (bool, error) {
+func copyHistoricalDailyReport(ctx context.Context, db *gorm.DB, stage *dailyReportStage) error {
+	if stage.Kind == DailyReportUsage {
+		// Pending refunds remain readable even when this day has no usage evidence.
+		if _, err := copyDailyReportProjection(ctx, db, &usageReportDayRow{}, *stage, 8); err != nil {
+			return err
+		}
+	} else {
+		details, err := copyDailyReportProjection(ctx, db, &billingReportLine{}, *stage, 100)
+		if err != nil {
+			return err
+		}
+		if details.resumed {
+			details.issues, err = countDailyReportDiagnosticRows(ctx, stage.Generation)
+			if err != nil {
+				return err
+			}
+		}
+		stage.IssueRows, stage.IssueRowsGeneration = &details.issues, stage.Generation
+		customers, err := copyDailyReportProjection(ctx, db, &billingReportCustomerDay{}, *stage, 8)
+		if err != nil {
+			return err
+		}
+		upstream, err := copyDailyReportProjection(ctx, db, &billingReportUpstreamDay{}, *stage, 8)
+		if err != nil {
+			return err
+		}
+		if details.hasRows {
+			stage.HistoricalSource = dailyReportSourceDetails
+		} else if customers.hasRows || upstream.hasRows {
+			stage.HistoricalSource = dailyReportSourceSummary
+		}
+	}
+	_, err := copyDailyReportProjection(ctx, db, &dailyReportPayloadPart{}, *stage, 4)
+	return err
+}
+
+func historicalUsageHasSummary(ctx context.Context, db *gorm.DB, generation string) (bool, error) {
 	// Older generations may have only detail leaves. A customer row can also
 	// contain just pending refunds, and the global row may contain only discounts.
 	for after := -1; ; {
+		if err := usageReportBeforeBatch(ctx); err != nil {
+			return false, err
+		}
 		var rows []usageReportDayRow
-		if err := tx.Select("user_id", "overview", "payload").Where("generation = ? AND user_id > ?", generation, after).
-			Order("user_id").Limit(16).Find(&rows).Error; err != nil {
+		readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		err := db.WithContext(readCtx).Select("user_id", "overview", "payload").Where("generation = ? AND user_id > ?", generation, after).
+			Order("user_id").Limit(16).Find(&rows).Error
+		cancel()
+		if err != nil {
 			return false, err
 		}
 		for _, row := range rows {
@@ -183,7 +234,9 @@ func historicalUsageHasSummary(ctx context.Context, tx *gorm.DB, generation stri
 					return true, nil
 				}
 			}
-			raw, err := dailyReportPayload(ctx, tx, generation, reportUsagePayload, row.UserID, row.Payload)
+			readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			raw, err := dailyReportPayload(readCtx, db, generation, reportUsagePayload, row.UserID, row.Payload)
+			cancel()
 			if err != nil {
 				return false, err
 			}
@@ -227,33 +280,6 @@ func historicalPendingRefunds(ctx context.Context, userID int, generations []str
 		refunds = append(refunds, data.PendingRefunds...)
 	}
 	return refunds, nil
-}
-
-// Copy existing immutable evidence without unmarshaling it or deriving facts
-// from current configuration. The schema and predicate are code-owned.
-func copyDailyReportProjection(tx *gorm.DB, projection any, stage dailyReportStage, excludeUsageMarker bool) (int64, error) {
-	statement := &gorm.Statement{DB: tx}
-	if err := statement.Parse(projection); err != nil {
-		return 0, err
-	}
-	columns := make([]string, 0, len(statement.Schema.DBNames))
-	values := make([]string, 0, len(statement.Schema.DBNames))
-	for _, name := range statement.Schema.DBNames {
-		quoted := statement.Quote(name)
-		columns = append(columns, quoted)
-		if name == "generation" {
-			quoted = "?"
-		}
-		values = append(values, quoted)
-	}
-	table := statement.Quote(statement.Schema.Table)
-	query := "INSERT INTO " + table + " (" + strings.Join(columns, ", ") + ") SELECT " +
-		strings.Join(values, ", ") + " FROM " + table + " WHERE generation = ?"
-	if excludeUsageMarker {
-		query += " AND user_id <> -1"
-	}
-	result := tx.Exec(query, stage.Generation, stage.Previous)
-	return result.RowsAffected, result.Error
 }
 
 func replacesHistoricalReportWithoutSource(stage dailyReportStage, previousSource string, previousRows, previousUpper int64) bool {

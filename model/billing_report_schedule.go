@@ -24,27 +24,37 @@ func RequestBillingReportRebuild(ctx context.Context, date string) error {
 	if err != nil || day.Unix() <= 0 || day.After(time.Now()) {
 		return common.NewMessage("Invalid billing report date")
 	}
-	return upsertBillingReportRebuilds(DB.WithContext(ctx), []billingReportRebuild{{Start: day.Unix(), RequestedAt: time.Now().UnixNano()}})
-}
-
-func upsertBillingReportRebuilds(tx *gorm.DB, rows []billingReportRebuild) error {
-	if len(rows) == 0 {
-		return nil
-	}
-	return tx.Clauses(clause.OnConflict{
+	return DB.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "start"}}, DoUpdates: clause.AssignmentColumns([]string{"requested_at", "original_replay_version"}),
-	}).CreateInBatches(rows, 100).Error
+	}).Create(&billingReportRebuild{Start: day.Unix(), RequestedAt: time.Now().UnixNano()}).Error
 }
 
-func CompleteBillingReportRebuild(ctx context.Context, date, revision int64) error {
-	return usageReportMainDB(ctx).WithContext(ctx).Where("start = ? AND requested_at = ?", date, revision).Delete(&billingReportRebuild{}).Error
+// DailyReportRebuildRevisions captures the requests this set of candidates can
+// cover. A manual correction queued during the build must remain pending.
+func DailyReportRebuildRevisions(ctx context.Context, scopes []DailyReportScope) (map[int64]int64, error) {
+	byDay := make(map[int64]int64, len(scopes))
+	dates := make([]int64, 0, len(scopes))
+	for _, scope := range scopes {
+		if _, seen := byDay[scope.Start]; !seen {
+			dates = append(dates, scope.Start)
+			byDay[scope.Start] = 0
+		}
+	}
+	var rows []billingReportRebuild
+	err := usageReportMainDB(ctx).WithContext(ctx).Select("start", "requested_at").Where("start IN ?", dates).Find(&rows).Error
+	for _, row := range rows {
+		byDay[row.Start] = row.RequestedAt
+	}
+	return byDay, err
 }
 
 func PruneBillingReportGenerations(ctx context.Context, now int64) (bool, error) {
 	db := usageReportMainDB(ctx).WithContext(ctx)
 	cutoff := now - 8*billingReportDaySeconds
 	var row billingReportGeneration
-	err := db.Where("(retired_at > 0 AND retired_at < ?) OR (published = ? AND created_at < ? AND retired_at < ?)", cutoff, false, cutoff, now-60).
+	err := db.Where("(retired_at > 0 AND retired_at < ?) OR (published = ? AND created_at < ? AND retired_at < ?)",
+		cutoff, false, now-dailyReportAbandonedGraceSeconds, now-60).
+		Where("NOT EXISTS (SELECT 1 FROM billing_report_heads head WHERE head.generation = billing_report_generations.id)").
 		Where("NOT EXISTS (SELECT 1 FROM daily_report_stages stage WHERE stage.generation = billing_report_generations.id AND stage.as_of >= ?)", cutoff).
 		Take(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -76,10 +86,13 @@ func PruneBillingReportGenerations(ctx context.Context, now int64) (bool, error)
 		})
 	}
 	var ids []int64
-	if err := db.Model(&billingReportLine{}).Where("generation = ?", row.ID).Limit(500).Pluck("source_id", &ids).Error; err != nil {
+	if err := db.Model(&billingReportLine{}).Where("generation = ?", row.ID).Limit(dailyReportWriteBatchSize(ctx, 500)).Pluck("source_id", &ids).Error; err != nil {
 		return false, err
 	}
 	if len(ids) > 0 {
+		if err := beforeDailyReportWrite(ctx, len(ids)); err != nil {
+			return false, err
+		}
 		return true, db.Where("generation = ? AND source_id IN ?", row.ID, ids).Delete(&billingReportLine{}).Error
 	}
 	for _, table := range []struct {
@@ -89,10 +102,13 @@ func PruneBillingReportGenerations(ctx context.Context, now int64) (bool, error)
 		{&billingReportCustomerDay{}, "user_id"}, {&billingReportUpstreamDay{}, "channel_id"},
 	} {
 		var ids []int
-		if err := db.Model(table.model).Where("generation = ?", row.ID).Limit(200).Pluck(table.key, &ids).Error; err != nil {
+		if err := db.Model(table.model).Where("generation = ?", row.ID).Limit(dailyReportWriteBatchSize(ctx, 200)).Pluck(table.key, &ids).Error; err != nil {
 			return false, err
 		}
 		if len(ids) > 0 {
+			if err := beforeDailyReportWrite(ctx, len(ids)); err != nil {
+				return false, err
+			}
 			return true, db.Where("generation = ? AND "+table.key+" IN ?", row.ID, ids).Delete(table.model).Error
 		}
 	}

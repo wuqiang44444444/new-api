@@ -1,7 +1,10 @@
 """Exercise start.sh in an isolated checkout with local fixture servers only."""
+import errno
 import http.server
 import os
 from pathlib import Path
+import pty
+import select
 import shlex
 import shutil
 import signal
@@ -17,7 +20,7 @@ def fixture(role, serve=False):
     port = int(os.environ["BACKEND_PORT" if role == "backend" else "FRONTEND_PORT"])
     mode = os.environ.get(role.upper() + "_MODE", "ready")
     if not serve:
-        Path(role + ".started").touch()
+        Path(role + ".started").write_text(str(os.getpid()))
         if mode == "fail":
             sys.exit(2)
         child = subprocess.Popen([sys.executable, __file__, "--serve", role], stdout=subprocess.PIPE, text=True)
@@ -67,6 +70,7 @@ class StartScriptTest(unittest.TestCase):
         self.env = dict(os.environ, PATH=str(self.root / "bin") + os.pathsep + os.environ["PATH"],
                         BACKEND_PORT=str(self.ports[0]), FRONTEND_PORT=str(self.ports[1]), STARTUP_TIMEOUT="3",
                         SQL_DSN="postgresql://localhost/yuan_start_test")
+        self.env.pop("LOCAL_DEV_HTTPS", None)
 
     def launch(self, **modes):
         log = open(self.root / "output", "w+")
@@ -84,7 +88,7 @@ class StartScriptTest(unittest.TestCase):
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
             output = (self.root / "output").read_text()
-            if "持续监控前后端日志" in output:
+            if "logs/frontend.log <==" in output:
                 return
             self.assertIsNone(proc.poll(), output)
             time.sleep(0.05)
@@ -94,10 +98,13 @@ class StartScriptTest(unittest.TestCase):
         for port in self.ports:
             with socket.socket() as connection:
                 self.assertNotEqual(connection.connect_ex(("127.0.0.1", port)), 0)
-        for pid_file in [self.root / "backend.pid", self.root / "web/frontend.pid"]:
-            if pid_file.exists():
-                state = subprocess.run(["ps", "-p", pid_file.read_text(), "-o", "stat="], capture_output=True, text=True).stdout.strip()
-                self.assertTrue(not state or state.startswith("Z"), f"fixture child survived: {state}")
+        for service in [self.root / "backend", self.root / "web/frontend"]:
+            for pid_file in [service.with_suffix(".started"), service.with_suffix(".pid")]:
+                if pid_file.exists():
+                    state = subprocess.run(
+                        ["ps", "-p", pid_file.read_text(), "-o", "stat="], capture_output=True, text=True
+                    ).stdout.strip()
+                    self.assertTrue(not state or state.startswith("Z"), f"{pid_file.name} survived: {state}")
 
     def test_backend_failure_does_not_launch_frontend(self):
         proc = self.launch(BACKEND_MODE="fail")
@@ -116,6 +123,18 @@ class StartScriptTest(unittest.TestCase):
         self.assertNotEqual(proc.wait(timeout=15), 0)
         self.assert_released()
 
+    def test_frontend_defaults_to_http_with_saved_tls_files(self):
+        tls_dir = self.root / "web/.tls.local"
+        tls_dir.mkdir()
+        for name in ["localhost.pem", "localhost-key.pem"]:
+            (tls_dir / name).touch()
+
+        proc = self.launch()
+        self.wait_ready(proc)
+        self.assertIn(f"前端 已启动：http://localhost:{self.ports[1]}", (self.root / "output").read_text())
+        self.stop(proc)
+        self.assert_released()
+
     def test_frontend_parent_failure_cleans_orphan_and_backend(self):
         proc = self.launch(FRONTEND_MODE="orphan")
         self.assertNotEqual(proc.wait(timeout=15), 0)
@@ -128,6 +147,57 @@ class StartScriptTest(unittest.TestCase):
             proc.send_signal(sig)
             self.assertEqual(proc.wait(timeout=15), 128 + sig)
             self.assert_released()
+
+    def test_terminal_ctrl_c_cleans_up_without_job_notices(self):
+        tail_pid_file = self.root / "tail.pid"
+        tail = self.root / "bin/tail"
+        tail.write_text(
+            "#!/bin/sh\n"
+            f'printf "%s\\n" "$$" > {shlex.quote(str(tail_pid_file))}\n'
+            f'exec {shlex.quote(shutil.which("tail"))} "$@"\n'
+        )
+        tail.chmod(0o700)
+        pid, terminal = pty.fork()
+        if pid == 0:
+            os.chdir(self.root)
+            os.execvpe("bash", ["bash", "start.sh"], self.env)
+
+        transcript = bytearray()
+        interrupted = False
+        deadline = time.monotonic() + 15
+        try:
+            while time.monotonic() < deadline:
+                if not select.select([terminal], [], [], 0.1)[0]:
+                    continue
+                try:
+                    chunk = os.read(terminal, 4096)
+                except OSError as exc:
+                    if exc.errno != errno.EIO:
+                        raise
+                    break  # The child closed the terminal.
+                if not chunk:
+                    break
+                transcript.extend(chunk)
+                if not interrupted and b"logs/frontend.log <==" in transcript:
+                    os.write(terminal, b"\x03")
+                    interrupted = True
+            else:
+                self.fail("timed out waiting for terminal shutdown")
+        except BaseException:
+            os.kill(pid, signal.SIGTERM)
+            raise
+        finally:
+            _, status = os.waitpid(pid, 0)
+            os.close(terminal)
+
+        self.assertTrue(interrupted)
+        self.assertEqual(os.waitstatus_to_exitcode(status), 130)
+        self.assert_released()
+        tail_state = subprocess.run(
+            ["ps", "-p", tail_pid_file.read_text().strip(), "-o", "stat="], capture_output=True, text=True
+        ).stdout.strip()
+        self.assertEqual(tail_state, "", "log monitor survived")
+        self.assertNotRegex(transcript.decode(), r"\b(?:Terminated|Killed)(?:: \d+)?[ \t]{2,}")
 
     def test_running_service_exit_stops_other_service(self):
         proc = self.launch()

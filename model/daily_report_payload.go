@@ -26,17 +26,21 @@ type dailyReportPayloadPart struct {
 
 // Keep small projections in their indexed row. Larger projections are split
 // at UTF-8 boundaries and each write stays under the batch budget.
-func writeDailyReportPayload(ctx context.Context, db *gorm.DB, gate func(context.Context) error, generation, kind string, id int, raw []byte) (BillingStatementJSON, error) {
-	if len(raw) <= dailyReportPayloadPartSize {
+func writeDailyReportPayload(ctx context.Context, db *gorm.DB, generation, kind string, id int, raw []byte) (BillingStatementJSON, error) {
+	partSize := dailyReportPayloadPartSize
+	if lowPriorityDailyReport(ctx) {
+		partSize = 64 * 1024
+	}
+	if len(raw) <= partSize {
 		return BillingStatementJSON(raw), nil
 	}
 	for part := 0; len(raw) > 0; part++ {
-		end := min(len(raw), dailyReportPayloadPartSize)
+		end := min(len(raw), partSize)
 		for end < len(raw) && !utf8.RuneStart(raw[end]) {
 			end--
 		}
 		row := dailyReportPayloadPart{Generation: generation, Kind: kind, ScopeID: id, Part: part, Payload: BillingStatementJSON(raw[:end])}
-		if err := writeBillingReportProjection(ctx, db, gate, end, &row); err != nil {
+		if err := writeBillingReportProjection(ctx, db, end, &row); err != nil {
 			return "", err
 		}
 		raw = raw[end:]
@@ -62,8 +66,15 @@ func dailyReportPayload(ctx context.Context, db *gorm.DB, generation, kind strin
 // Delete fragments in small writes before the owning generation is removed.
 func pruneDailyReportPayload(ctx context.Context, db *gorm.DB, generation string) (bool, error) {
 	var parts []dailyReportPayloadPart
-	err := db.WithContext(ctx).Where("generation = ?", generation).Select("generation, kind, scope_id, part").Limit(20).Find(&parts).Error
+	limit := 20
+	if lowPriorityDailyReport(ctx) {
+		limit = 4
+	}
+	err := db.WithContext(ctx).Where("generation = ?", generation).Select("generation, kind, scope_id, part").Limit(limit).Find(&parts).Error
 	if err != nil || len(parts) == 0 {
+		return false, err
+	}
+	if err := beforeDailyReportWrite(ctx, len(parts)); err != nil {
 		return false, err
 	}
 	return true, db.WithContext(ctx).Delete(&parts).Error

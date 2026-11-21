@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
@@ -136,11 +135,9 @@ func writeUsageReportRanks(ctx context.Context, db *gorm.DB, generation string, 
 			URLHash: providerURLGroupHash(key.url), Subject: usageRankSubject("", key.id, ""),
 			UsageReportRankItem: usageReportRankItem(names[key], key.id, acc.finalizeUpstream(), true)})
 	}
-	for start := 0; start < len(rows); start += 100 {
-		if err := usageReportBeforeBatch(ctx); err != nil {
-			return err
-		}
-		batch := rows[start:min(start+100, len(rows))]
+	batchSize := dailyReportWriteBatchSize(ctx, 100)
+	for start := 0; start < len(rows); start += batchSize {
+		batch := rows[start:min(start+batchSize, len(rows))]
 		for i := range batch {
 			raw, err := common.Marshal(batch[i].NonToken)
 			if err != nil {
@@ -148,10 +145,7 @@ func writeUsageReportRanks(ctx context.Context, db *gorm.DB, generation string, 
 			}
 			batch[i].NonTokenPayload = string(raw)
 		}
-		writeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		err := db.WithContext(writeCtx).Create(batch).Error
-		cancel()
-		if err != nil {
+		if err := createDailyReportRows(ctx, db, len(batch), batch); err != nil {
 			return err
 		}
 	}

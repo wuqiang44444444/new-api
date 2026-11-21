@@ -119,7 +119,7 @@ func (a *billingReportCustomerBuild) observe(log billingReconciliationLog, parse
 	a.channel.observe("channel", log, parsed, sourceID)
 	accumulateBillingReconciliationLog(&a.overview.model.Usage, log, parsed)
 	accumulateCustomerBillingQuality(&a.overview.model.DataQuality, parsed)
-	accumulateBillingReconciliationPrice(&a.overview, log, parsed)
+	accumulateBillingReconciliationPrice(&a.overview, log, parsed, sourceID)
 	a.lastActivityAt = max(a.lastActivityAt, log.CreatedAt)
 	if a.key.combinations.overflow != nil || a.channel.combinations.overflow != nil {
 		return errors.New("billing report combination budget exceeded")

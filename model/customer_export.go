@@ -19,6 +19,7 @@ import (
 const (
 	CustomerExportJobTypeUsageLogs          = "usage_logs"
 	CustomerExportJobTypeStatementDetails   = "statement_details"
+	CustomerExportJobTypeStatementArchive   = "statement_archive"
 	CustomerExportJobTypeStatementSummary   = "statement_summary"
 	CustomerExportJobTypeCustomerStatements = "customer_statements"
 
@@ -56,6 +57,7 @@ var (
 // CustomerExportFilters is the normalized, versioned submission scope. It is
 // frozen at acceptance and never re-resolved from current settings.
 type CustomerExportFilters struct {
+	ArchiveSourceJobID    string                    `json:"archive_source_job_id,omitempty"`
 	BillingReportCoverage *BillingExportCoverage    `json:"billing_report_coverage,omitempty"`
 	BillingReportVersion  string                    `json:"billing_report_version,omitempty"`
 	UsageReportDays       []UsageReportDayReference `json:"usage_report_days,omitempty"`
@@ -96,24 +98,28 @@ type BillingExportCoverage struct {
 // CustomerExportProgress is throttled persisted scan state. Counts are
 // candidate/matched/written facts, never a percentage of an unknown total.
 type CustomerExportProgress struct {
-	Scanned  int64 `json:"scanned"`
-	Matched  int64 `json:"matched"`
-	Written  int64 `json:"written"`
-	Files    int64 `json:"files"`
-	WaitingE bool  `json:"waiting_for_resources,omitempty"`
+	Scanned     int64 `json:"scanned"`
+	Matched     int64 `json:"matched"`
+	Written     int64 `json:"written"`
+	Files       int64 `json:"files"`
+	CommittedAt int64 `json:"last_committed_at,omitempty"`
+	WaitingE    bool  `json:"waiting_for_resources,omitempty"`
 }
 
 // CustomerExportArtifact describes published deliverables. Objects stay in the
 // private export namespace; the database stores references, never signed URLs.
 type CustomerExportArtifact struct {
-	SourceVersion  string                       `json:"source_version,omitempty"`
-	StoreIdentity  string                       `json:"store_identity,omitempty"`
-	Files          []CustomerExportArtifactFile `json:"files"`
-	LineCount      int64                        `json:"line_count"`
-	SizeBytes      int64                        `json:"size_bytes"`
-	GeneratedAt    int64                        `json:"generated_at"`
-	ExpiresAt      int64                        `json:"expires_at"`
-	AutoReuseMatch bool                         `json:"-"`
+	SourceVersion   string                             `json:"source_version,omitempty"`
+	StoreIdentity   string                             `json:"store_identity,omitempty"`
+	Files           []CustomerExportArtifactFile       `json:"files"`
+	LineCount       int64                              `json:"line_count"`
+	SizeBytes       int64                              `json:"size_bytes"`
+	GeneratedAt     int64                              `json:"generated_at"`
+	ExpiresAt       int64                              `json:"expires_at"`
+	AutoReuseMatch  bool                               `json:"-"`
+	StatementTotals *CustomerStatementExportTotals     `json:"statement_totals,omitempty"`
+	Checkpoint      *CustomerStatementExportCheckpoint `json:"checkpoint,omitempty"`
+	MissingDates    []string                           `json:"missing_report_dates,omitempty"`
 }
 
 type CustomerExportArtifactFile struct {
@@ -276,6 +282,8 @@ func (job *CustomerExportJob) ToView() CustomerExportJobView {
 		}
 		artifact.StoreIdentity = ""
 		artifact.SourceVersion = ""
+		artifact.Checkpoint = nil
+		artifact.StatementTotals = nil
 		view.Artifact = artifact
 	}
 	return view
@@ -545,17 +553,25 @@ func freeCustomerExportSlot(tx *gorm.DB, jobID string) error {
 // 全站唯一的源数据读取器（SystemTask 类型租约），认领同时校验槽位仍然在握。
 func ClaimNextQueuedCustomerExportJob(executor string, leaseUntil int64, maxQueueWaitSeconds int64) (*CustomerExportJob, error) {
 	var jobs []*CustomerExportJob
-	if err := DB.Where("status = ?", CustomerExportJobStatusQueued).Order("id asc").Limit(5).Find(&jobs).Error; err != nil {
+	if err := DB.Where("status = ?", CustomerExportJobStatusQueued).Order("updated_at asc, id asc").Limit(5).Find(&jobs).Error; err != nil {
 		return nil, err
 	}
 	now := common.GetTimestamp()
 	for _, job := range jobs {
-		if maxQueueWaitSeconds > 0 && now-job.CreatedAt > maxQueueWaitSeconds {
+		queueBudget := maxQueueWaitSeconds
+		if job.JobType == CustomerExportJobTypeStatementDetails && queueBudget > 0 {
+			queueBudget = max(queueBudget, 48*3600)
+		}
+		if queueBudget > 0 && now-job.CreatedAt > queueBudget {
 			// 排队超时明确失败，不误报仍在运行；槽位与配额同事务释放。
 			if _, err := FailCustomerExportJobById(job.JobID, "queue_timeout", "export queue wait budget exceeded"); err != nil {
 				return nil, err
 			}
 			continue
+		}
+		startedAt := job.StartedAt
+		if startedAt == 0 {
+			startedAt = now
 		}
 		err := DB.Transaction(func(tx *gorm.DB) error {
 			if job.SlotId <= 0 {
@@ -567,7 +583,7 @@ func ClaimNextQueuedCustomerExportJob(executor string, leaseUntil int64, maxQueu
 					"status":      CustomerExportJobStatusRunning,
 					"executor":    executor,
 					"lease_until": leaseUntil,
-					"started_at":  now,
+					"started_at":  startedAt,
 					"updated_at":  now,
 				})
 			if result.Error != nil {
@@ -726,8 +742,8 @@ func FailCustomerExportJobById(jobID string, errorCode string, errorMessage stri
 	return failed, err
 }
 
-// RecoverInterruptedCustomerExportJobs 是进程恢复路径：租约过期的 running
-// 任务在第一版直接标为失败，允许用户重新生成；不做断点续传。
+// RecoverInterruptedCustomerExportJobs requeues statement details with their
+// persisted checkpoints and terminates other interrupted exports.
 func RecoverInterruptedCustomerExportJobs(now int64) (int64, error) {
 	var expired []*CustomerExportJob
 	if err := DB.Where("status IN ? AND lease_until > 0 AND lease_until < ?", []CustomerExportJobStatus{CustomerExportJobStatusRunning, CustomerExportJobStatusCancelWait}, now).Limit(100).Find(&expired).Error; err != nil {
@@ -735,6 +751,19 @@ func RecoverInterruptedCustomerExportJobs(now int64) (int64, error) {
 	}
 	var recovered int64
 	for _, job := range expired {
+		if job.JobType == CustomerExportJobTypeStatementDetails && job.Status == CustomerExportJobStatusRunning && !job.CancelRequested {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			err := PauseCustomerStatementExport(ctx, job.JobID, job.Executor, now, true, false)
+			cancel()
+			if err == nil {
+				recovered++
+				continue
+			}
+			if !errors.Is(err, ErrCustomerExportStateConflict) {
+				return recovered, err
+			}
+			continue
+		}
 		failed, err := FailCustomerExportJobById(job.JobID, "lease_expired", "export executor lease expired")
 		if err != nil {
 			return recovered, err
@@ -790,9 +819,21 @@ func RecordCustomerExportCleanupAttempt(ctx context.Context, jobID string, now i
 // DeleteCustomerExportArtifactRecord 在对象删除成功（或确认不存在）后清空
 // 引用；行本身按任务记录保留期另行清理。
 func DeleteCustomerExportArtifactRecord(jobID string) error {
-	result := DB.Model(&CustomerExportJob{}).
+	return SaveCustomerExportCleanupRemainder(context.Background(), jobID, nil)
+}
+
+func SaveCustomerExportCleanupRemainder(ctx context.Context, jobID string, remaining *CustomerExportArtifact) error {
+	artifact := ""
+	if remaining != nil && len(remaining.Files) > 0 {
+		raw, err := common.Marshal(remaining)
+		if err != nil {
+			return err
+		}
+		artifact = string(raw)
+	}
+	result := DB.WithContext(ctx).Model(&CustomerExportJob{}).
 		Where("job_id = ? AND status IN ?", jobID, []CustomerExportJobStatus{CustomerExportJobStatusExpired, CustomerExportJobStatusFailed, CustomerExportJobStatusCancelled}).
-		Updates(map[string]any{"artifact": "", "updated_at": common.GetTimestamp()})
+		Updates(map[string]any{"artifact": artifact, "updated_at": common.GetTimestamp()})
 	if result.Error != nil {
 		return result.Error
 	}

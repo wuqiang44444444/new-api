@@ -27,11 +27,29 @@ type dailyReportStage struct {
 	SourceRows            int64
 	SourceRevision        string
 	Dependencies          string
+	IssueRows             *int64
+	IssueRowsGeneration   string `gorm:"size:32"`
 	Incomplete            bool
 	RankReady             bool
 
 	HistoricalSource       string `gorm:"size:24"`
 	HistoricalMeterVersion int
+	CopyingGeneration      string `gorm:"size:32"`
+	CopyingStartedAt       int64
+	CopyingReleaseVersion  int
+	HistoricalCopiesDone   bool
+	BillingBuildVersion    int
+	BillingBuildRows       int64
+	BillingBuildDigest     string `gorm:"size:64"`
+	BillingBuildSummaries  bool
+}
+
+func (stage dailyReportStage) copyingHistory() bool {
+	return stage.unfinished() && stage.BillingBuildVersion == 0
+}
+
+func (stage dailyReportStage) unfinished() bool {
+	return stage.Generation != "" && stage.CopyingGeneration == stage.Generation
 }
 
 type dailyReportStageKey struct{}
@@ -48,7 +66,50 @@ func dailyReportStageOnly(ctx context.Context) bool {
 // Save a completed projection independently of its publication. The shared
 // worker can resume the other projections without rescanning this one.
 func saveDailyReportStage(ctx context.Context, db *gorm.DB, stage dailyReportStage, taskID, runnerID string) error {
-	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := loadDailyReportIssueRows(ctx, &stage); err != nil {
+		return err
+	}
+	stage.CopyingGeneration = ""
+	stage.CopyingStartedAt = 0
+	stage.CopyingReleaseVersion = 0
+	stage.HistoricalCopiesDone = false
+	if err := persistDailyReportStage(ctx, db, stage, taskID, runnerID, nil); err != nil {
+		return err
+	}
+	if dailyReportStageOnly(ctx) {
+		return nil
+	}
+	return PublishDailyReportStages(ctx, []DailyReportScope{{Start: stage.Start, Kind: stage.Kind}}, taskID, runnerID)
+}
+
+func persistDailyReportStage(ctx context.Context, db *gorm.DB, stage dailyReportStage, taskID, runnerID string, initialize any) error {
+	if err := usageReportBeforeBatch(ctx); err != nil {
+		return err
+	}
+	if stage.unfinished() {
+		// A worker without checkpoint support must reject an unfinished
+		// stage even if it can take over the lease after a rollback.
+		if stage.copyingHistory() {
+			stage.CopyingReleaseVersion = dailyReportReleaseVersion(stage.Kind)
+		}
+		stage.OriginalReplayVersion, stage.UsageMeterVersion = 0, 0
+	}
+	return dailyReportStageTransaction(ctx, db, taskID, runnerID, func(tx *gorm.DB) error {
+		if initialize != nil {
+			if err := tx.Create(initialize).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "start"}, {Name: "kind"}}, UpdateAll: true,
+		}).Create(&stage).Error
+	})
+}
+
+func dailyReportStageTransaction(ctx context.Context, db *gorm.DB, taskID, runnerID string, write func(*gorm.DB) error) error {
+	writeCtx, cancel := context.WithTimeout(ctx, dailyReportBatchTimeout(ctx))
+	defer cancel()
+	return db.WithContext(writeCtx).Transaction(func(tx *gorm.DB) error {
 		var lease SystemTaskLock
 		if err := lockForUpdate(tx).Where("type = ? AND task_id = ? AND locked_by = ? AND locked_until >= ?",
 			UsageReportTaskType, taskID, runnerID, common.GetTimestamp()).Take(&lease).Error; err != nil {
@@ -57,16 +118,8 @@ func saveDailyReportStage(ctx context.Context, db *gorm.DB, stage dailyReportSta
 			}
 			return err
 		}
-		return tx.Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "start"}, {Name: "kind"}}, UpdateAll: true,
-		}).Create(&stage).Error
-	}); err != nil {
-		return err
-	}
-	if dailyReportStageOnly(ctx) {
-		return nil
-	}
-	return PublishDailyReportStages(ctx, []DailyReportScope{{Start: stage.Start, Kind: stage.Kind}}, taskID, runnerID)
+		return write(tx)
+	})
 }
 
 func GetDailyReportStage(ctx context.Context, scope DailyReportScope, requestedAt int64) (bool, error) {
@@ -79,52 +132,64 @@ func GetDailyReportStage(ctx context.Context, scope DailyReportScope, requestedA
 	if err != nil {
 		return false, err
 	}
-	if !dailyReportStageVersionCurrent(stage) ||
-		time.Since(time.Unix(stage.AsOf, 0)) > 2*time.Hour ||
-		(requestedAt > 0 && stage.AsOf <= requestedAt/int64(time.Second)) {
-		return false, db.Delete(&stage).Error
+	keep := 2 * time.Hour
+	if lowPriorityDailyReport(ctx) {
+		// The paired projection may need several quiet windows to finish.
+		keep = 48 * time.Hour
 	}
-	err = checkDailyReportStage(ctx, stage)
+	expired := time.Since(time.Unix(stage.AsOf, 0)) > keep
+	superseded := requestedAt > 0 && stage.AsOf <= requestedAt/int64(time.Second)
+	if stage.unfinished() {
+		expired = common.GetTimestamp()-stage.AsOf >= 8*billingReportDaySeconds
+		superseded = requestedAt > stage.CopyingStartedAt
+	}
+	if !dailyReportStageVersionCurrent(stage) || stage.AsOf < stage.Start+billingReportDaySeconds+dailyReportCloseDelay || expired || superseded {
+		return false, db.Where("generation = ?", stage.Generation).Delete(&stage).Error
+	}
+	if stage.unfinished() {
+		return false, nil
+	}
+	checks, err := readDailyReportStageLogChecks(ctx, []dailyReportStage{stage})
+	if err == nil {
+		err = checkDailyReportStageSource(stage, checks[0])
+	}
+	if err == nil {
+		err = checkDailyReportStageDependencies(ctx, stage)
+	}
 	if errors.Is(err, errDailyReportCoverageDecreased) {
 		// The publisher owns the decision to preserve a related date.
 		return true, nil
 	}
 	if errors.Is(err, errDailyReportSourceChanged) {
-		return false, db.Delete(&stage).Error
+		return false, db.Where("generation = ?", stage.Generation).Delete(&stage).Error
 	}
 	return err == nil, err
 }
 
 func dailyReportStageVersionCurrent(stage dailyReportStage) bool {
+	if stage.unfinished() && stage.BillingBuildVersion != 0 {
+		return stage.Kind == DailyReportBilling && stage.BillingBuildVersion == billingReportCheckpointVersion
+	}
+	if stage.unfinished() {
+		return stage.CopyingReleaseVersion == dailyReportReleaseVersion(stage.Kind)
+	}
 	if stage.Kind == DailyReportUsage {
 		return stage.UsageMeterVersion == usageReportMeterVersion
 	}
 	return stage.OriginalReplayVersion == CustomerOriginalReplayVersion
 }
 
-func checkDailyReportStage(ctx context.Context, stage dailyReportStage) error {
-	if !dailyReportStageVersionCurrent(stage) {
+func checkDailyReportStageSource(stage dailyReportStage, logCheck dailyReportStageLogCheck) error {
+	if logCheck.current.Rows != stage.SourceRows || logCheck.current.Revision != stage.SourceRevision {
 		return errDailyReportSourceChanged
 	}
-	types := []int{LogTypeConsume, LogTypeRefund}
-	if stage.Kind == DailyReportUsage {
-		types = usageScanLogTypes(usageViewOptions{WantCustomer: true, WantUpstream: true})
+	if logCheck.previousRows < logCheck.previous.rows {
+		return errDailyReportCoverageDecreased
 	}
-	upper := stage.UpperLogID
-	if current, ok := ctx.Value(dailyReportLogBoundaryKey{}).(int64); ok {
-		upper = current
-	}
-	query := dailyReportLogQuery(ctx, stage.Start, stage.Start+billingReportDaySeconds, upper, types)
-	coverage, err := readDailyReportCoverage(ctx, query)
-	if err != nil {
-		return err
-	}
-	if coverage.Rows != stage.SourceRows || coverage.Revision != stage.SourceRevision {
-		return errDailyReportSourceChanged
-	}
-	if err := verifyPreviousDailyReportCoverage(ctx, stage, types); err != nil {
-		return err
-	}
+	return nil
+}
+
+func checkDailyReportStageDependencies(ctx context.Context, stage dailyReportStage) error {
 	dependencies, err := dailyReportDependencies(ctx, stage.Start, stage.Kind)
 	if err != nil {
 		return err
@@ -132,17 +197,14 @@ func checkDailyReportStage(ctx context.Context, stage dailyReportStage) error {
 	if dependencies != stage.Dependencies {
 		return errDailyReportSourceChanged
 	}
-	if stage.Kind == DailyReportBilling && stage.Previous != "" {
-		return verifyCustomerOriginalCoverage(ctx, stage.Previous, stage.Generation)
-	}
 	return nil
 }
 
 // Compare against the previous boundary as well. New inserts above that
 // boundary can otherwise hide deletion of older facts while totals look full.
-func verifyPreviousDailyReportCoverage(ctx context.Context, stage dailyReportStage, types []int) error {
+func previousDailyReportBoundary(ctx context.Context, stage dailyReportStage) (dailyReportPreviousBoundary, error) {
 	if stage.Previous == "" {
-		return nil
+		return dailyReportPreviousBoundary{}, nil
 	}
 	db := usageReportMainDB(ctx).WithContext(ctx)
 	var old struct {
@@ -158,38 +220,28 @@ func verifyPreviousDailyReportCoverage(ctx context.Context, stage dailyReportSta
 			Where("id = ?", stage.Previous).Take(&old).Error
 	}
 	if err != nil {
-		return err
+		return dailyReportPreviousBoundary{}, err
 	}
 	if stage.HistoricalSource != "" || old.SourceRows == 0 || old.UpperLogID == 0 ||
 		(old.HistoricalSource == "" && (stage.SourceRows < old.SourceRows || stage.UpperLogID <= old.UpperLogID)) {
-		return nil
+		return dailyReportPreviousBoundary{}, nil
 	}
-	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	var rows int64
-	if err := dailyReportLogQuery(ctx, stage.Start, stage.Start+billingReportDaySeconds, old.UpperLogID, types).
-		WithContext(checkCtx).Count(&rows).Error; err != nil {
-		return err
-	}
-	if rows < old.SourceRows {
-		return errDailyReportCoverageDecreased
-	}
-	return nil
+	return dailyReportPreviousBoundary{upper: old.UpperLogID, rows: old.SourceRows}, nil
 }
 
 // PublishDailyReportStages changes the complete set of public references in
 // one short transaction. Source checks finish before taking the report lease.
 func PublishDailyReportStages(ctx context.Context, scopes []DailyReportScope, taskID, runnerID string) error {
-	return publishDailyReportStages(ctx, scopes, taskID, runnerID, 0)
+	return publishDailyReportStages(ctx, scopes, taskID, runnerID, 0, nil)
 }
 
 // PublishScheduledDailyReport preserves a related historical head on verified
 // coverage loss, marking it for review in the same commit as the other heads.
-func PublishScheduledDailyReport(ctx context.Context, scopes []DailyReportScope, taskID, runnerID string, start int64) error {
-	return publishDailyReportStages(ctx, scopes, taskID, runnerID, start)
+func PublishScheduledDailyReport(ctx context.Context, scopes []DailyReportScope, taskID, runnerID string, start int64, revisions map[int64]int64) error {
+	return publishDailyReportStages(ctx, scopes, taskID, runnerID, start, revisions)
 }
 
-func publishDailyReportStages(ctx context.Context, scopes []DailyReportScope, taskID, runnerID string, primaryStart int64) error {
+func publishDailyReportStages(ctx context.Context, scopes []DailyReportScope, taskID, runnerID string, primaryStart int64, revisions map[int64]int64) error {
 	db := usageReportMainDB(ctx).WithContext(ctx)
 	stages := make([]dailyReportStage, 0, len(scopes))
 	coverageLost := make(map[DailyReportScope]bool)
@@ -199,55 +251,130 @@ func publishDailyReportStages(ctx context.Context, scopes []DailyReportScope, ta
 	}
 	for _, scope := range scopes {
 		var stage dailyReportStage
-		if err := db.Where("start = ? AND kind = ?", scope.Start, scope.Kind).Take(&stage).Error; err != nil {
+		if err := usageReportBeforeBatch(ctx); err != nil {
 			return err
 		}
-		if err := checkDailyReportStage(ctx, stage); err != nil {
-			if !canPreserve(stage, err) {
-				return recordDailyReportCoverageIssue(ctx, stage, err)
-			}
-			coverageLost[scope] = true
+		readCtx, cancel := context.WithTimeout(ctx, dailyReportBatchTimeout(ctx))
+		err := db.WithContext(readCtx).Where("start = ? AND kind = ?", scope.Start, scope.Kind).Take(&stage).Error
+		cancel()
+		if err != nil {
+			return err
 		}
 		stages = append(stages, stage)
 	}
-	publishCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	var failed dailyReportStage
-	err := db.WithContext(publishCtx).Transaction(func(tx *gorm.DB) error {
-		var lease SystemTaskLock
-		if err := lockForUpdate(tx).Where("type = ? AND task_id = ? AND locked_by = ? AND locked_until >= ?",
-			UsageReportTaskType, taskID, runnerID, common.GetTimestamp()).Take(&lease).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrSystemTaskLockLost
+	originalChecks := make([]error, len(stages))
+	for i := range stages {
+		stage := &stages[i]
+		if stage.unfinished() || !dailyReportStageVersionCurrent(*stage) {
+			return errDailyReportSourceChanged
+		}
+		// Stage reuse only establishes that the candidate is worth retaining.
+		// Finish the immutable checks before sampling volatile source coverage.
+		if stage.Kind == DailyReportBilling && stage.Previous != "" {
+			originalChecks[i] = verifyCustomerOriginalCoverage(ctx, stage.Previous, stage.Generation)
+			if err := originalChecks[i]; err != nil && !errors.Is(err, errDailyReportCoverageDecreased) {
+				return err
 			}
+		}
+		if originalChecks[i] == nil {
+			if err := loadDailyReportIssueRows(ctx, stage); err != nil {
+				return err
+			}
+		}
+	}
+	// The mutable verification phase never waits for capacity. If any batch
+	// yields, the next publication attempt takes fresh witnesses for all dates.
+	ctx = context.WithValue(ctx, dailyReportFinalValidationKey{}, true)
+	if primaryStart != 0 && lowPriorityDailyReport(ctx) {
+		if err := usageReportBeforeBatch(ctx); err != nil {
 			return err
 		}
-		for _, stage := range stages {
-			err := errDailyReportCoverageDecreased
-			if !coverageLost[DailyReportScope{Start: stage.Start, Kind: stage.Kind}] {
-				err = publishDailyReportStage(tx, stage)
-			}
-			if canPreserve(stage, err) {
-				if err := deferDailyReportDate(tx, stage.Start, stage.Kind, err, &stage.SourceRows); err != nil {
-					return err
-				}
-				if err := tx.Delete(&stage).Error; err != nil {
-					return err
-				}
-				continue
-			}
-			if err != nil {
-				failed = stage
-				return err
-			}
-			if err := tx.Delete(&stage).Error; err != nil {
-				return err
-			}
-			if err := tx.Where("start = ? AND kind = ?", stage.Start, stage.Kind).Delete(&dailyReportRetry{}).Error; err != nil {
-				return err
-			}
+		upper, err := readDailyReportLogUpperBound(ctx)
+		if err != nil {
+			return err
 		}
-		return nil
+		// Scheduled scopes are closed dates. Check arrivals while a candidate was parked.
+		ctx = context.WithValue(ctx, dailyReportLogBoundaryKey{}, upper)
+	}
+	dependencyChecks := make([]error, len(stages))
+	for i, stage := range stages {
+		dependencyChecks[i] = checkDailyReportStageDependencies(ctx, stage)
+		if err := dependencyChecks[i]; err != nil && !errors.Is(err, errDailyReportSourceChanged) {
+			return err
+		}
+	}
+	checks, err := readDailyReportStageLogChecks(ctx, stages)
+	if err != nil {
+		return err
+	}
+	for i, stage := range stages {
+		err := checkDailyReportStageSource(stage, checks[i])
+		if err == nil {
+			err = dependencyChecks[i]
+		}
+		if err == nil {
+			err = originalChecks[i]
+		}
+		if err != nil {
+			if !canPreserve(stage, err) {
+				return recordDailyReportCoverageIssue(ctx, stage, err)
+			}
+			coverageLost[DailyReportScope{Start: stage.Start, Kind: stage.Kind}] = true
+		}
+	}
+	if err := usageReportBeforeBatch(ctx); err != nil {
+		return err
+	}
+	var failed dailyReportStage
+	err = executeDailyReportBatch(ctx, func(ctx context.Context) error {
+		publishCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		return db.WithContext(publishCtx).Transaction(func(tx *gorm.DB) error {
+			var lease SystemTaskLock
+			if err := lockForUpdate(tx).Where("type = ? AND task_id = ? AND locked_by = ? AND locked_until >= ?",
+				UsageReportTaskType, taskID, runnerID, common.GetTimestamp()).Take(&lease).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return ErrSystemTaskLockLost
+				}
+				return err
+			}
+			published := make(map[int64]int, len(revisions))
+			for _, stage := range stages {
+				removed := tx.Where("generation = ?", stage.Generation).Delete(&stage)
+				if removed.Error != nil {
+					return removed.Error
+				}
+				if removed.RowsAffected != 1 {
+					return errDailyReportSourceChanged
+				}
+				err := errDailyReportCoverageDecreased
+				if !coverageLost[DailyReportScope{Start: stage.Start, Kind: stage.Kind}] {
+					err = publishDailyReportStage(tx, stage)
+				}
+				if canPreserve(stage, err) {
+					if err := deferDailyReportDate(tx, stage.Start, stage.Kind, err, &stage.SourceRows); err != nil {
+						return err
+					}
+					continue
+				}
+				if err != nil {
+					failed = stage
+					return err
+				}
+				if err := tx.Where("start = ? AND kind = ?", stage.Start, stage.Kind).Delete(&dailyReportRetry{}).Error; err != nil {
+					return err
+				}
+				if revision := revisions[stage.Start]; revision > 0 {
+					published[stage.Start]++
+					if published[stage.Start] == 2 {
+						if err := tx.Where("start = ? AND requested_at = ?", stage.Start, revision).Delete(&billingReportRebuild{}).Error; err != nil {
+							return err
+						}
+					}
+				}
+			}
+			return nil
+		})
 	})
 	return recordDailyReportCoverageIssue(ctx, failed, err)
 }
@@ -295,12 +422,19 @@ func publishDailyReportStage(tx *gorm.DB, stage dailyReportStage) error {
 		if err != nil {
 			return err
 		}
-		if err := tx.Model(&usageReportDayRow{}).Where("generation = ? AND user_id = -1", stage.Generation).
-			Update("payload", string(metadata)).Error; err != nil {
-			return err
+		stored := tx.Model(&usageReportDayRow{}).Where("generation = ? AND user_id = -1", stage.Generation).
+			Update("payload", string(metadata))
+		if stored.Error != nil {
+			return stored.Error
+		}
+		if stored.RowsAffected != 1 {
+			return errDailyReportSourceChanged
 		}
 		return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "start"}},
 			DoUpdates: clause.AssignmentColumns([]string{"generation", "as_of", "source_rows", "upper_log_id", "incomplete", "rank_ready", "meter_version", "historical_source", "historical_meter_version", "historical_coverage_complete"})}).Create(&head).Error
+	}
+	if stage.IssueRows == nil || stage.IssueRowsGeneration != stage.Generation {
+		return errDailyReportSourceChanged
 	}
 	var current billingReportHead
 	err := lockForUpdate(tx).Where("start = ?", stage.Start).Take(&current).Error
@@ -328,11 +462,6 @@ func publishDailyReportStage(tx *gorm.DB, stage dailyReportStage) error {
 			return err
 		}
 	}
-	var issues int64
-	if err := tx.Model(&billingReportLine{}).Where("generation = ?", stage.Generation).
-		Where("replay_issue <> '' OR price_issue <> '' OR previous_original <> '' OR previous_original_missing = ?", true).Count(&issues).Error; err != nil {
-		return err
-	}
 	rows, upper, incomplete, historicalCoverageComplete := stage.SourceRows, stage.UpperLogID, stage.Incomplete, false
 	if stage.HistoricalSource != "" && old.ID != "" {
 		rows, upper = old.Rows, old.UpperLogID
@@ -341,10 +470,14 @@ func publishDailyReportStage(tx *gorm.DB, stage dailyReportStage) error {
 	} else if old.HistoricalCoverageComplete {
 		incomplete = false
 	}
-	if err := tx.Model(&billingReportGeneration{}).Where("id = ?", stage.Generation).
-		Updates(map[string]any{"published": true, "rows": rows, "upper_log_id": upper, "incomplete": incomplete, "historical_source": stage.HistoricalSource,
-			"historical_coverage_complete": historicalCoverageComplete, "issue_rows": issues}).Error; err != nil {
-		return err
+	stored := tx.Model(&billingReportGeneration{}).Where("id = ?", stage.Generation).
+		Updates(map[string]any{"published": true, "as_of": stage.AsOf, "rows": rows, "upper_log_id": upper, "incomplete": incomplete, "historical_source": stage.HistoricalSource,
+			"historical_coverage_complete": historicalCoverageComplete, "issue_rows": *stage.IssueRows})
+	if stored.Error != nil {
+		return stored.Error
+	}
+	if stored.RowsAffected != 1 {
+		return errDailyReportSourceChanged
 	}
 	head := billingReportHead{Start: stage.Start, Generation: stage.Generation, AsOf: stage.AsOf}
 	return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "start"}},

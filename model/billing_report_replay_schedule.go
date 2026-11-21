@@ -21,6 +21,7 @@ func DiscoverCustomerOriginalReplayDays(ctx context.Context, today, now int64) (
 	db := usageReportMainDB(ctx).WithContext(ctx)
 	var ready []int64
 	if err := db.Model(&billingReportRebuild{}).
+		Where("start < ?", today).
 		Where("NOT EXISTS (SELECT 1 FROM daily_report_retries retry WHERE retry.start = billing_report_rebuilds.start AND "+currentDailyReportRetry+" AND retry.retry_at > ?)", usageReportMeterVersion, CustomerOriginalReplayVersion, now).
 		Limit(1).Pluck("start", &ready).Error; err != nil || len(ready) > 0 {
 		return len(ready) > 0, err

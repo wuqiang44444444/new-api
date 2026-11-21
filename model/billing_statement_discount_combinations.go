@@ -77,6 +77,13 @@ type billingDiscountCombinationEntry struct {
 	firstSourceID    int64
 }
 
+func (entry *billingDiscountCombinationEntry) observeFirstSource(sourceID int64, contractName string) {
+	if sourceID > 0 && (entry.firstSourceID == 0 || sourceID < entry.firstSourceID) {
+		entry.firstSourceID = sourceID
+		entry.combo.ContractName = contractName
+	}
+}
+
 type billingDiscountCombinationAccumulator struct {
 	combinations map[billingDiscountCombinationKey]*billingDiscountCombinationEntry
 	overflow     *billingDiscountCombinationEntry
@@ -107,13 +114,14 @@ func billingContractApplicableState(parsed parsedBillingReconciliationLog) strin
 }
 
 // Observe independently recorded factors even if the amount cannot be reconstructed.
-func observeBillingDiscountFactors(acc *billingReconciliationModelAccumulator, parsed parsedBillingReconciliationLog) {
+func observeBillingDiscountFactors(acc *billingReconciliationModelAccumulator, parsed parsedBillingReconciliationLog, sourceID int64) {
 	if parsed.discountRatio != nil {
 		ratio := *parsed.discountRatio
-		if !acc.discountSeen {
-			acc.discountSeen, acc.discountRatio = true, ratio
-		} else if acc.discountRatio != ratio {
+		if acc.discountSeen && acc.discountRatio != ratio {
 			acc.model.MultipleDiscounts = true
+		}
+		if !acc.discountSeen || (sourceID > 0 && sourceID < acc.discountSourceID) {
+			acc.discountSeen, acc.discountRatio, acc.discountSourceID = true, ratio, sourceID
 		}
 	}
 
@@ -126,10 +134,11 @@ func observeBillingDiscountFactors(acc *billingReconciliationModelAccumulator, p
 		contractRatio = *parsed.contractDiscountRatio
 		acc.hasContractDiscountFact = true
 	}
-	if !acc.contractDiscountSeen {
-		acc.contractDiscountSeen, acc.contractDiscountRatio = true, contractRatio
-	} else if acc.contractDiscountRatio != contractRatio {
+	if acc.contractDiscountSeen && acc.contractDiscountRatio != contractRatio {
 		acc.multipleContractDiscounts = true
+	}
+	if !acc.contractDiscountSeen || (sourceID > 0 && sourceID < acc.contractDiscountSourceID) {
+		acc.contractDiscountSeen, acc.contractDiscountRatio, acc.contractDiscountSourceID = true, contractRatio, sourceID
 	}
 }
 
@@ -186,10 +195,10 @@ func (a *billingDiscountCombinationAccumulator) observe(log billingReconciliatio
 			},
 			originalComplete: true,
 		}
-		if len(sourceIDs) > 0 {
-			entry.firstSourceID = sourceIDs[0]
-		}
 		a.combinations[key] = entry
+	}
+	if len(sourceIDs) > 0 {
+		entry.observeFirstSource(sourceIDs[0], parsed.contractName)
 	}
 	if parsed.inputTokensUnavailable {
 		entry.combo.InputTokensKnown = false

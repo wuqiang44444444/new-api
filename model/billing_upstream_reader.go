@@ -71,16 +71,12 @@ func scanUpstreamBillingFacts(ctx context.Context, filter UpstreamBillingDetailF
 			return err
 		}
 	}
-	var cursor int64
-	if policy.ReadOnlySource {
-		var err error
-		cursor, err = dailyReportFirstLogCursor(ctx, query, upper, 5*time.Second)
-		if err != nil {
-			return err
-		}
+	cursor, err := newReportLogCursor(ctx, query, upper, policy.ReadOnlySource)
+	if err != nil {
+		return err
 	}
-	for cursor < upper {
-		if err := ctx.Err(); err != nil {
+	for cursor.more(upper) {
+		if err := cursor.pace(ctx); err != nil {
 			return err
 		}
 		if policy.BeforeBatch != nil {
@@ -92,7 +88,6 @@ func scanUpstreamBillingFacts(ctx context.Context, filter UpstreamBillingDetailF
 		if timeout <= 0 {
 			timeout = 5 * time.Second
 		}
-		batchCtx, stop := context.WithTimeout(ctx, timeout)
 		var logs []struct {
 			Log           `gorm:"embedded"`
 			GroupName     string
@@ -105,25 +100,31 @@ func scanUpstreamBillingFacts(ctx context.Context, filter UpstreamBillingDetailF
 		if policy.ObserveLogRevision != nil && db.Dialector.Name() == "postgres" {
 			columns += ", " + dailyReportTupleRevision + " AS tuple_revision"
 		}
-		err := query.Session(&gorm.Session{}).WithContext(batchCtx).Select(columns).
-			Where("id > ? AND id <= ?", cursor, upper).Order("id ASC").Limit(500).Find(&logs).Error
-		facts := make([]billingReconciliationLog, len(logs))
-		parsed := make([]parsedBillingReconciliationLog, len(logs))
-		var refunds []billingReconciliationLog
-		var refundParsed []parsedBillingReconciliationLog
-		for i, log := range logs {
-			facts[i] = upstreamBillingLogFact(log.Log, log.GroupName)
-			parsed[i] = parseBillingReconciliationLog(facts[i])
-			if log.Type == LogTypeRefund {
-				refunds = append(refunds, facts[i])
-				refundParsed = append(refundParsed, parsed[i])
-			}
-		}
+		var facts []billingReconciliationLog
+		var parsed []parsedBillingReconciliationLog
 		var evidence billingStatementRefundEvidence
-		if err == nil {
+		err := executeDailyReportBatch(ctx, func(ctx context.Context) error {
+			batchCtx, stop := context.WithTimeout(ctx, timeout)
+			defer stop()
+			if err := cursor.batch(query.Session(&gorm.Session{}).WithContext(batchCtx).Select(columns), upper).Find(&logs).Error; err != nil {
+				return err
+			}
+			facts = make([]billingReconciliationLog, len(logs))
+			parsed = make([]parsedBillingReconciliationLog, len(logs))
+			var refunds []billingReconciliationLog
+			var refundParsed []parsedBillingReconciliationLog
+			for i, log := range logs {
+				facts[i] = upstreamBillingLogFact(log.Log, log.GroupName)
+				parsed[i] = parseBillingReconciliationLog(facts[i])
+				if log.Type == LogTypeRefund {
+					refunds = append(refunds, facts[i])
+					refundParsed = append(refundParsed, parsed[i])
+				}
+			}
+			var err error
 			evidence, err = buildBillingStatementRefundEvidence(batchCtx, refunds, refundParsed)
-		}
-		stop()
+			return err
+		})
 		if err != nil {
 			return err
 		}
@@ -149,7 +150,8 @@ func scanUpstreamBillingFacts(ctx context.Context, filter UpstreamBillingDetailF
 				return err
 			}
 		}
-		cursor = int64(logs[len(logs)-1].Id)
+		last := logs[len(logs)-1]
+		cursor.id, cursor.createdAt = int64(last.Id), last.CreatedAt
 	}
 	return nil
 }

@@ -10,14 +10,18 @@ const reportBadgeClassName =
 
 export function BillingReportStatus({
   report,
+  snapshot,
 }: {
   report?: BillingReportManifest
+  snapshot?: boolean
 }) {
   const { t } = useTranslation()
   if (!report) return null
   let status = t('Published')
   if (report.published_days === 0) {
-    status = report.rebuilding_days?.length ? t('Rebuilding') : t('Not published')
+    status = report.rebuilding_days?.length
+      ? t('Rebuilding')
+      : t('Not published')
   } else if (
     report.published_days < report.expected_days ||
     report.incomplete_days
@@ -28,11 +32,20 @@ export function BillingReportStatus({
   return (
     <div className='flex min-w-0 flex-wrap items-center gap-2'>
       <Badge variant='outline' className={reportBadgeClassName}>
-        {status} ·{' '}
-        {t('{{published}} of {{expected}} days published', {
-          published: report.published_days,
-          expected: report.expected_days,
-        })}
+        {snapshot ? (
+          t('Snapshot covers {{published}} of {{expected}} days', {
+            published: report.published_days,
+            expected: report.expected_days,
+          })
+        ) : (
+          <>
+            {status} ·{' '}
+            {t('{{published}} of {{expected}} days published', {
+              published: report.published_days,
+              expected: report.expected_days,
+            })}
+          </>
+        )}
         {!!report.incomplete_days && (
           <>
             {' · '}
@@ -42,6 +55,17 @@ export function BillingReportStatus({
           </>
         )}
       </Badge>
+      {!!report.missing_days?.length && (
+        <Badge variant='outline' className={reportBadgeClassName}>
+          {snapshot
+            ? t('Current snapshot does not cover · {{days}}', {
+                days: report.missing_days.join(', '),
+              })
+            : t('Unpublished days · {{days}}', {
+                days: report.missing_days.join(', '),
+              })}
+        </Badge>
+      )}
       {!!report.rebuilding_days?.length && (
         <Badge variant='secondary' className={reportBadgeClassName}>
           {t('Rebuilding days · {{days}}', {

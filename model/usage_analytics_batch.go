@@ -122,7 +122,7 @@ func (agg *usageAggregation) applyBatchJobs(ctx context.Context) error {
 				}
 			}
 			upstream.m.GrossQuota, upstream.m.RefundQuota = customer.m.GrossQuota, customer.m.RefundQuota
-			agg.mergeCustomer(job.UserId, usageCustomerKey{day: day, token: job.TokenId, model: job.PublicModel, billingMode: BillingReconciliationModeToken}, &customer)
+			agg.mergeCustomer(job.UserId, usageCustomerKey{day: day, token: job.TokenId, model: job.PublicModel, billingMode: BillingReconciliationModeToken}, &customer, false)
 			if agg.opts.WantOverview {
 				agg.mergeOverview(usageOverviewKey{user: job.UserId, day: day}, &customer)
 			}

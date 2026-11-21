@@ -49,7 +49,7 @@ func selectUsageReportDays(ctx context.Context, period UsageAnalyticsPeriod, ref
 			}
 			continue
 		}
-		if len(refs) == 0 && day.End <= now && head.AsOf < day.End+3*3600 {
+		if len(refs) == 0 && day.End <= now && head.AsOf < day.End+dailyReportCloseDelay {
 			continue
 		}
 		if head.Incomplete || issues[day.Start] {

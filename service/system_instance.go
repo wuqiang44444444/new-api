@@ -16,7 +16,7 @@ import (
 	"github.com/bytedance/gopkg/util/gopool"
 )
 
-const systemInstanceReportInterval = 30 * time.Second
+const systemInstanceReportInterval = 5 * time.Second
 
 var systemInstanceReporterOnce sync.Once
 
@@ -25,12 +25,13 @@ var systemInstanceReporterOnce sync.Once
 var systemInstanceReportMu sync.Mutex
 
 type SystemInstanceInfo struct {
-	SchemaVersion int                       `json:"schema_version"`
-	Node          common.NodeIdentity       `json:"node"`
-	Role          SystemInstanceRoleInfo    `json:"role"`
-	Runtime       SystemInstanceRuntimeInfo `json:"runtime"`
-	Host          SystemInstanceHostInfo    `json:"host"`
-	Resources     SystemInstanceResources   `json:"resources"`
+	SchemaVersion    int                              `json:"schema_version"`
+	Node             common.NodeIdentity              `json:"node"`
+	Role             SystemInstanceRoleInfo           `json:"role"`
+	Runtime          SystemInstanceRuntimeInfo        `json:"runtime"`
+	Host             SystemInstanceHostInfo           `json:"host"`
+	Resources        SystemInstanceResources          `json:"resources"`
+	ReportForeground *common.ReportForegroundSnapshot `json:"report_foreground,omitempty"`
 	// Sync is what this node has applied of each sync topic.
 	Sync  map[string]NodeSyncTopicState `json:"sync,omitempty"`
 	Extra map[string]any                `json:"extra,omitempty"`
@@ -98,6 +99,7 @@ func ReportCurrentSystemInstance() error {
 	}
 	systemStatus := common.GetSystemStatus()
 	diskInfo := common.GetDiskSpaceInfo()
+	foreground := common.CurrentReportForeground()
 	info := SystemInstanceInfo{
 		SchemaVersion: 1,
 		Node:          identity,
@@ -127,7 +129,8 @@ func ReportCurrentSystemInstance() error {
 				UsedPercent: diskInfo.UsedPercent,
 			},
 		},
-		Sync: NodeSyncStates(),
+		Sync:             NodeSyncStates(),
+		ReportForeground: &foreground,
 	}
 	return model.UpsertSystemInstance(identity.Name, info, common.StartTime, common.GetTimestamp())
 }

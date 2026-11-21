@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/collapsible'
 
 import {
+  downloadExportArchive,
   downloadExportFile,
   requestExportDownload,
   type CustomerExportArtifactFileDto,
@@ -56,18 +57,21 @@ export function ExportArtifactFiles(props: {
         fileButton(props.files[0])
       ) : (
         <Collapsible>
-          <CollapsibleTrigger
-            render={
-              <Button size='sm' variant='outline' className='group min-h-9' />
-            }
-          >
-            {t('View files ({{count}})', { count: props.files.length })}
-            <HugeiconsIcon
-              icon={ArrowDown01Icon}
-              aria-hidden='true'
-              className='transition-transform group-aria-expanded:rotate-180'
-            />
-          </CollapsibleTrigger>
+          <div className='flex flex-wrap items-start gap-2'>
+            <ExportArchiveDownload jobId={props.jobId} />
+            <CollapsibleTrigger
+              render={
+                <Button size='sm' variant='outline' className='group min-h-9' />
+              }
+            >
+              {t('View files ({{count}})', { count: props.files.length })}
+              <HugeiconsIcon
+                icon={ArrowDown01Icon}
+                aria-hidden='true'
+                className='transition-transform group-aria-expanded:rotate-180'
+              />
+            </CollapsibleTrigger>
+          </div>
           <CollapsibleContent>
             <ul className='mt-2 space-y-2'>
               {props.files.map((file) => (
@@ -78,6 +82,31 @@ export function ExportArtifactFiles(props: {
         </Collapsible>
       )}
       {download.isError && (
+        <p role='alert' className='text-destructive text-sm'>
+          {t('Unable to download export.')}
+        </p>
+      )}
+    </div>
+  )
+}
+
+export function ExportArchiveDownload(props: { jobId: string }) {
+  const { t } = useTranslation()
+  const archive = useMutation({
+    mutationFn: () => downloadExportArchive(props.jobId),
+  })
+  return (
+    <div className='space-y-1'>
+      <Button
+        size='sm'
+        className='min-h-9'
+        disabled={archive.isPending}
+        aria-busy={archive.isPending}
+        onClick={() => archive.mutate()}
+      >
+        {archive.isPending ? t('Loading...') : t('Download all (ZIP)')}
+      </Button>
+      {archive.isError && (
         <p role='alert' className='text-destructive text-sm'>
           {t('Unable to download export.')}
         </p>

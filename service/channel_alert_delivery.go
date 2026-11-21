@@ -77,7 +77,9 @@ func deliverChannelAlertMail(owner string, send mailSendFunc, now func() time.Ti
 	at := now()
 	delivery, err := model.ClaimChannelAlertDelivery(ctx, owner, at.UnixMilli(), at.Add(30*time.Second).UnixMilli())
 	if err == nil && delivery == nil {
-		if err = model.RetryIncidentMail(ctx, true); err == nil {
+		var prepared bool
+		prepared, err = model.PrepareChannelAlertMail(ctx)
+		if err == nil && prepared {
 			delivery, err = model.ClaimChannelAlertDelivery(ctx, owner, at.UnixMilli(), at.Add(30*time.Second).UnixMilli())
 		}
 	}

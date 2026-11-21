@@ -22,55 +22,19 @@ func usageDiscountSource(record ProviderChannelBillingDiscount) string {
 // Look outside the selected period so a retry across midnight is not counted
 // once on each day. The log high-water mark also bounds these lookups.
 func (agg *usageAggregation) applyFinalErrors(ctx context.Context) error {
-	for start := 0; start < len(agg.errorRows); start += 200 {
+	batchSize := dailyReportReadBatchSize(ctx, 200)
+	for start := 0; start < len(agg.errorRows); start += batchSize {
 		if err := usageReportBeforeBatch(ctx); err != nil {
 			return err
 		}
-		batch := agg.errorRows[start:min(start+200, len(agg.errorRows))]
-		ids := make([]string, 0, len(batch))
-		for _, row := range batch {
-			if row.fact.RequestId != "" {
-				ids = append(ids, row.fact.RequestId)
-			}
+		batch := agg.errorRows[start:min(start+batchSize, len(agg.errorRows))]
+		queryCtx, cancel := context.WithTimeout(ctx, dailyReportBatchTimeout(ctx))
+		outcomes, sentIDs, err := agg.readFinalErrorEvidence(queryCtx, batch)
+		cancel()
+		if err != nil {
+			return err
 		}
-		type outcome struct {
-			UserId    int
-			RequestId string
-			LastID    int64
-			Consumed  int
-		}
-		outcomes := make(map[string]outcome)
-		if len(ids) > 0 {
-			query := usageReportLogDB(ctx).WithContext(ctx).Model(&Log{}).Where("request_id IN ? AND type IN ?", ids, []int{LogTypeConsume, LogTypeError})
-			if agg.opts.LogUpper != nil || agg.logUpper > 0 {
-				query = query.Where("id <= ?", agg.logUpper)
-			}
-			if agg.opts.UserID > 0 {
-				query = query.Where("user_id = ?", agg.opts.UserID)
-			}
-			var rows []outcome
-			if err := query.Select("user_id, request_id, MAX(id) AS last_id, MAX(CASE WHEN type = ? THEN 1 ELSE 0 END) AS consumed", LogTypeConsume).Group("user_id, request_id").Scan(&rows).Error; err != nil {
-				return err
-			}
-			for _, row := range rows {
-				outcomes[usageTaskIdentity(row.UserId, row.RequestId)] = row
-			}
-		}
-		// A recorded provider request ID proves an upstream interaction. Local
-		// validation/routing errors cannot be promoted to provider failures.
 		if agg.opts.WantUpstream {
-			logIDs := make([]int64, 0, len(batch))
-			for _, row := range batch {
-				logIDs = append(logIDs, row.id)
-			}
-			var sent []Log
-			if err := usageReportLogDB(ctx).WithContext(ctx).Select("id").Where("id IN ? AND upstream_request_id <> ''", logIDs).Find(&sent).Error; err != nil {
-				return err
-			}
-			sentIDs := make(map[int64]bool, len(sent))
-			for _, row := range sent {
-				sentIDs[int64(row.Id)] = true
-			}
 			for _, row := range batch {
 				if sentIDs[row.id] && row.fact.ChannelId > 0 {
 					acc := agg.buildUpstreamStandalone(row, agg.bundle, 1, usageResultFailure, false, BillingReconciliationModeUnknown, 0, false)
@@ -99,4 +63,55 @@ func (agg *usageAggregation) applyFinalErrors(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+type usageFinalErrorOutcome struct {
+	UserID    int
+	RequestID string
+	LastID    int64
+	Consumed  int
+}
+
+// Both lookups share the batch deadline. Apply the evidence only after both
+// have completed so a timeout cannot leave a partial batch result.
+func (agg *usageAggregation) readFinalErrorEvidence(ctx context.Context, batch []usageLogRow) (map[string]usageFinalErrorOutcome, map[int64]bool, error) {
+	db := usageReportLogDB(ctx).WithContext(ctx)
+	requestIDs := make([]string, 0, len(batch))
+	logIDs := make([]int64, 0, len(batch))
+	for _, row := range batch {
+		if row.fact.RequestId != "" {
+			requestIDs = append(requestIDs, row.fact.RequestId)
+		}
+		logIDs = append(logIDs, row.id)
+	}
+	outcomes := make(map[string]usageFinalErrorOutcome)
+	if len(requestIDs) > 0 {
+		query := db.Model(&Log{}).Where("request_id IN ? AND type IN ?", requestIDs, []int{LogTypeConsume, LogTypeError})
+		if agg.opts.LogUpper != nil || agg.logUpper > 0 {
+			query = query.Where("id <= ?", agg.logUpper)
+		}
+		if agg.opts.UserID > 0 {
+			query = query.Where("user_id = ?", agg.opts.UserID)
+		}
+		var rows []usageFinalErrorOutcome
+		if err := query.Select("user_id, request_id, MAX(id) AS last_id, MAX(CASE WHEN type = ? THEN 1 ELSE 0 END) AS consumed",
+			LogTypeConsume).Group("user_id, request_id").Scan(&rows).Error; err != nil {
+			return nil, nil, err
+		}
+		for _, row := range rows {
+			outcomes[usageTaskIdentity(row.UserID, row.RequestID)] = row
+		}
+	}
+	if !agg.opts.WantUpstream {
+		return outcomes, nil, nil
+	}
+	var sent []int64
+	if err := db.Model(&Log{}).Where("id IN ? AND upstream_request_id <> ''", logIDs).Pluck("id", &sent).Error; err != nil {
+		return nil, nil, err
+	}
+	sentIDs := make(map[int64]bool, len(sent))
+	for _, id := range sent {
+		sentIDs[id] = true
+	}
+	return outcomes, sentIDs, nil
 }

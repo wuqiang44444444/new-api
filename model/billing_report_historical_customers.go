@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"strconv"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
@@ -10,19 +11,30 @@ import (
 
 // Build only the missing projections from frozen line evidence. A frozen
 // summary can cover records whose individual details have already been lost.
-func rebuildMissingHistoricalBillingCustomers(ctx context.Context, tx *gorm.DB, generation string) error {
+func rebuildMissingHistoricalBillingCustomers(ctx context.Context, db *gorm.DB, generation string) error {
 	customers := make(map[int]*billingReportCustomerBuild)
 	var cursor int64
 	for {
+		if err := usageReportBeforeBatch(ctx); err != nil {
+			return err
+		}
 		var rows []billingReportLine
-		err := tx.Where("generation = ? AND user_id > 0 AND source_id > ? AND customer <> ''", generation, cursor).
-			Where("NOT EXISTS (SELECT 1 FROM billing_report_customer_days d WHERE d.generation = billing_report_lines.generation AND d.user_id = billing_report_lines.user_id)").
+		readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		err := db.WithContext(readCtx).Select(`source_id, user_id, token_id, channel_id, created_at, log_type, replay_issue,
+			CASE WHEN user_id <= 0 OR EXISTS (SELECT 1 FROM billing_report_customer_days d
+			WHERE d.generation = billing_report_lines.generation AND d.user_id = billing_report_lines.user_id)
+			THEN '' ELSE customer END AS customer`).
+			Where("generation = ? AND source_id > ?", generation, cursor).
 			Order("source_id").Limit(500).Find(&rows).Error
+		cancel()
 		if err != nil {
 			return err
 		}
 		for _, line := range rows {
 			cursor = line.SourceID
+			if line.Customer == "" {
+				continue
+			}
 			detail, err := line.customerDetail()
 			if err != nil {
 				return err
@@ -66,14 +78,44 @@ func rebuildMissingHistoricalBillingCustomers(ctx context.Context, tx *gorm.DB, 
 		}
 	}
 	for userID, customer := range customers {
-		if err := writeBillingReportCustomerDay(ctx, tx, usageReportBeforeBatch, generation, userID, customer); err != nil {
+		if err := discardIncompleteHistoricalCustomerPayload(ctx, db, generation, userID); err != nil {
+			return err
+		}
+		if err := writeBillingReportCustomerDay(ctx, db, generation, userID, customer); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func writeBillingReportCustomerDay(ctx context.Context, db *gorm.DB, gate func(context.Context) error, generation string, userID int, customer *billingReportCustomerBuild) error {
+// A customer row marks the whole projection complete. When it is absent,
+// discard orphan fragments for just this customer before regenerating it.
+func discardIncompleteHistoricalCustomerPayload(ctx context.Context, db *gorm.DB, generation string, userID int) error {
+	for {
+		if err := usageReportBeforeBatch(ctx); err != nil {
+			return err
+		}
+		var parts []dailyReportPayloadPart
+		readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		err := db.WithContext(readCtx).Select("generation", "kind", "scope_id", "part").
+			Where("generation = ? AND kind = ? AND scope_id = ?", generation, reportBillingCustomerPayload, userID).Limit(4).Find(&parts).Error
+		cancel()
+		if err != nil || len(parts) == 0 {
+			return err
+		}
+		if err := beforeDailyReportWrite(ctx, len(parts)); err != nil {
+			return err
+		}
+		writeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		err = db.WithContext(writeCtx).Delete(&parts).Error
+		cancel()
+		if err != nil || len(parts) < 4 {
+			return err
+		}
+	}
+}
+
+func writeBillingReportCustomerDay(ctx context.Context, db *gorm.DB, generation string, userID int, customer *billingReportCustomerBuild) error {
 	summary, err := common.Marshal(billingReportCustomerOverview{projectBillingReportPrice(&customer.overview), customer.lastActivityAt})
 	if err != nil {
 		return err
@@ -82,10 +124,10 @@ func writeBillingReportCustomerDay(ctx context.Context, db *gorm.DB, gate func(c
 	if err != nil {
 		return err
 	}
-	payload, err := writeDailyReportPayload(ctx, db, gate, generation, reportBillingCustomerPayload, userID, leaves)
+	payload, err := writeDailyReportPayload(ctx, db, generation, reportBillingCustomerPayload, userID, leaves)
 	if err != nil {
 		return err
 	}
 	row := billingReportCustomerDay{Generation: generation, UserID: userID, Summary: BillingStatementJSON(summary), Leaves: payload}
-	return writeBillingReportProjection(ctx, db, gate, len(summary)+len(payload), &row)
+	return writeBillingReportProjection(ctx, db, len(summary)+len(payload), &row)
 }

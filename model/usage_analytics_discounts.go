@@ -8,12 +8,12 @@ func (a *usageMetricsAcc) observeCustomerDiscount(row usageLogRow) {
 	}
 	fact := row.fact
 	fact.ModelName = ""
-	a.discounts.observe(fact, 0, row.parsed)
+	a.discounts.observe(fact, 0, row.parsed, row.id)
 }
 
 // mergeUsageDiscounts 保留未舍入金额。跨日/任务合并超出组合上限时，整组收敛
 // 为明确的“其他组合”，避免 map 遍历顺序决定哪些折扣被保留。
-func (a *billingDiscountCombinationAccumulator) mergeUsageDiscounts(source *billingDiscountCombinationAccumulator) {
+func (a *billingDiscountCombinationAccumulator) mergeUsageDiscounts(source *billingDiscountCombinationAccumulator, fromLogScan bool) {
 	if source == nil {
 		return
 	}
@@ -49,6 +49,9 @@ func (a *billingDiscountCombinationAccumulator) mergeUsageDiscounts(source *bill
 			a.combinations[key] = &copy
 			continue
 		}
+		if fromLogScan {
+			entry.observeFirstSource(sourceEntry.firstSourceID, sourceEntry.combo.ContractName)
+		}
 		accumulateBillingReconciliationUsage(&entry.combo.Usage, sourceEntry.combo.Usage)
 		entry.originalQuota = entry.originalQuota.Add(sourceEntry.originalQuota)
 		entry.originalComplete = entry.originalComplete && sourceEntry.originalComplete
@@ -64,7 +67,7 @@ func (a *usageMetricsAcc) mergeCustomerUsageDiscounts(source *usageMetricsAcc) {
 	if a.discounts == nil {
 		a.discounts = newBillingDiscountCombinationAccumulator()
 	}
-	a.discounts.mergeUsageDiscounts(source.discounts)
+	a.discounts.mergeUsageDiscounts(source.discounts, false)
 }
 
 func (a *usageMetricsAcc) customerModelDiscounts(token int, row *UsageCustomerModelRow) {

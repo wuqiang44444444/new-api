@@ -11,6 +11,7 @@ BACKEND_PORT="${BACKEND_PORT:-3501}"
 STARTUP_TIMEOUT="${STARTUP_TIMEOUT:-300}"
 FRONTEND_LOG="$LOG_DIR/frontend.log"
 BACKEND_LOG="$LOG_DIR/backend.log"
+DEV_TLS_DIR="$FRONTEND_DIR/.tls.local"
 FRONTEND_PID=""
 BACKEND_PID=""
 TAIL_PID=""
@@ -74,6 +75,13 @@ stop_port_occupiers() {
 
 wait_for_health() {
   local name="$1" port="$2" pid="$3" log_file="$4" endpoint="$5"
+  local certificate="${6:-}" scheme=http host=127.0.0.1
+  local curl_options=(--noproxy '*' --fail --silent --max-time 1)
+  if [[ -n "$certificate" ]]; then
+    scheme=https
+    host=localhost
+    curl_options+=(--cacert "$certificate" --resolve "localhost:$port:127.0.0.1")
+  fi
   local deadline=$((SECONDS + STARTUP_TIMEOUT))
   local response
   while (( SECONDS < deadline )); do
@@ -82,9 +90,9 @@ wait_for_health() {
       tail -n 80 "$log_file" >&2 || true
       return 1
     fi
-    if response=$(curl --noproxy '*' --fail --silent --max-time 1 "http://127.0.0.1:$port$endpoint"); then
+    if response=$(curl "${curl_options[@]}" "$scheme://$host:$port$endpoint"); then
       if [[ "$endpoint" != "/api/status" ]] || [[ "$response" =~ \"success\"[[:space:]]*:[[:space:]]*true ]]; then
-        echo "$name 已启动：http://localhost:$port"
+        echo "$name 已启动：$scheme://localhost:$port"
         return 0
       fi
     fi
@@ -171,6 +179,18 @@ if [[ "$BACKEND_PORT" == "$FRONTEND_PORT" ]]; then
   exit 1
 fi
 
+# Only enable local TLS on explicit request, even if certificates are present.
+frontend_certificate=""
+frontend_private_key=""
+if [[ "${LOCAL_DEV_HTTPS:-0}" == 1 ]]; then
+  frontend_certificate="$DEV_TLS_DIR/localhost.pem"
+  frontend_private_key="$DEV_TLS_DIR/localhost-key.pem"
+  if [[ ! -r "$frontend_certificate" || ! -r "$frontend_private_key" ]]; then
+    echo "本地 HTTPS 需要可读取的 localhost.pem 和 localhost-key.pem：$DEV_TLS_DIR" >&2
+    exit 1
+  fi
+fi
+
 # Use the same .env parser and environment precedence as the Go backend.
 if [[ ! ${SQL_DSN+x} && -f "$ROOT_DIR/.env" ]]; then
   if ! SQL_DSN=$(
@@ -194,7 +214,8 @@ for port in "$BACKEND_PORT" "$FRONTEND_PORT"; do
   stop_port_occupiers "$port"
 done
 
-trap 'cleanup' EXIT
+# Bash can report signal exits between cleanup commands when job control is on.
+trap 'cleanup 2>/dev/null' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 set -m
@@ -209,7 +230,7 @@ echo "正在启动后端，端口：$BACKEND_PORT"
 (
   cd "$ROOT_DIR"
   export SQL_DSN
-  exec env PORT="$BACKEND_PORT" LOCAL_DEV_FAST_BILLING_REPORTS="${LOCAL_DEV_FAST_BILLING_REPORTS:-true}" go run .
+  exec env PORT="$BACKEND_PORT" go run .
 ) >>"$BACKEND_LOG" 2>&1 &
 BACKEND_PID=$!
 
@@ -218,12 +239,13 @@ wait_for_health "后端" "$BACKEND_PORT" "$BACKEND_PID" "$BACKEND_LOG" "/api/sta
 echo "正在启动前端，端口：$FRONTEND_PORT"
 (
   cd "$FRONTEND_DIR"
-  exec env VITE_REACT_APP_SERVER_URL="http://localhost:$BACKEND_PORT" \
-    bun run dev -- --host 0.0.0.0 --port "$FRONTEND_PORT"
+  exec env VITE_REACT_APP_SERVER_URL="http://127.0.0.1:$BACKEND_PORT" \
+    LOCAL_DEV_HTTPS_CERT="$frontend_certificate" LOCAL_DEV_HTTPS_KEY="$frontend_private_key" \
+    bun run dev -- --host 127.0.0.1 --port "$FRONTEND_PORT"
 ) >>"$FRONTEND_LOG" 2>&1 &
 FRONTEND_PID=$!
 
-wait_for_health "前端" "$FRONTEND_PORT" "$FRONTEND_PID" "$FRONTEND_LOG" "/"
+wait_for_health "前端" "$FRONTEND_PORT" "$FRONTEND_PID" "$FRONTEND_LOG" "/" "$frontend_certificate"
 
 echo "持续监控前后端日志，按 Ctrl+C 停止服务。"
 tail -n 100 -F "$BACKEND_LOG" "$FRONTEND_LOG" &

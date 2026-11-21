@@ -47,16 +47,22 @@ import {
 } from '@/components/ui/sheet'
 import { LOG_TYPES } from '@/features/usage-logs/constants'
 import { toIntlLocale } from '@/i18n/languages'
+import { copyToClipboard } from '@/lib/copy-to-clipboard'
 import { formatTimestampToDate } from '@/lib/format'
 
 import { BillingPagination } from './components/billing-pagination'
-import { ExportArtifactFiles } from './components/export-artifact-files'
+import {
+  ExportArchiveDownload,
+  ExportArtifactFiles,
+} from './components/export-artifact-files'
 import {
   cancelExport,
+  createExportShareArchive,
   getExport,
   isExportJobActive,
   listSelfExports,
   requestExportDownload,
+  requestExportShareLink,
   resubmitExport,
   type CustomerExportJobView,
 } from './export-api'
@@ -141,10 +147,15 @@ export function ExportJobsDrawer(props: ExportJobsDrawerProps) {
     }
   }
 
-  const handleResubmit = async (job: CustomerExportJobView) => {
+  const handleResubmit = async (
+    job: CustomerExportJobView,
+    createShareArchive = false
+  ) => {
     setBusyJobId(job.job_id)
     try {
-      const submitted = await resubmitExport(job)
+      const submitted = createShareArchive
+        ? await createExportShareArchive(job.job_id)
+        : await resubmitExport(job)
       queryClient.setQueryData(
         ['customer-export-job', submitted.job_id],
         submitted
@@ -216,6 +227,7 @@ export function ExportJobsDrawer(props: ExportJobsDrawerProps) {
                 busy={!!busyJobId}
                 onCancel={() => handleCancel(focusedQuery.data)}
                 onResubmit={() => handleResubmit(focusedQuery.data)}
+                onCreateArchive={() => handleResubmit(focusedQuery.data, true)}
               />
             </section>
           )}
@@ -252,6 +264,7 @@ export function ExportJobsDrawer(props: ExportJobsDrawerProps) {
                   busy={!!busyJobId}
                   onCancel={() => handleCancel(job)}
                   onResubmit={() => handleResubmit(job)}
+                  onCreateArchive={() => handleResubmit(job, true)}
                 />
               ))}
         </div>
@@ -288,12 +301,23 @@ function exportStatusLabel(
   }
   switch (job.status) {
     case 'queued':
-      return translate('Queued')
     case 'running':
-      return job.progress.waiting_for_resources
-        ? translate('Waiting for resources')
+      if (job.progress.waiting_for_resources) {
+        return translate('Waiting for resources')
+      }
+      if (job.status === 'queued') {
+        return translate('Queued')
+      }
+      return job.job_type === 'statement_archive'
+        ? translate('Packaging ZIP')
         : translate('Generating')
     case 'succeeded':
+      if (
+        job.artifact?.missing_report_dates?.length &&
+        !job.artifact.files.length
+      ) {
+        return translate('Partial data')
+      }
       return translate('Ready to download')
     case 'failed':
       return translate('Failed')
@@ -325,6 +349,8 @@ function exportTypeLabel(
       return translate('Statement summary')
     case 'statement_details':
       return translate('Statement details')
+    case 'statement_archive':
+      return translate('Statement archive (ZIP)')
     default:
       return translate('Usage records')
   }
@@ -360,10 +386,12 @@ function ExportJobCard(props: {
   adminCustomerUsage?: boolean
   onCancel: () => void
   onResubmit: () => void
+  onCreateArchive: () => void
   busy: boolean
 }) {
   const { t, i18n } = useTranslation()
   const { job } = props
+  const shareArchive = job.job_type === 'statement_archive'
   const usageRecords = job.job_type === 'usage_logs'
   const allStatements = job.job_type === 'customer_statements'
   const summary = job.job_type === 'statement_summary'
@@ -388,6 +416,7 @@ function ExportJobCard(props: {
       (props.showCustomer || job.user_id === job.target_user_id) &&
       (summary ||
         job.job_type === 'statement_details' ||
+        shareArchive ||
         (props.showCustomer && usageRecords)))
   const locale = compact ? toIntlLocale(i18n.language) : undefined
   const dateFormat = new Intl.DateTimeFormat(locale, {
@@ -428,12 +457,14 @@ function ExportJobCard(props: {
     csvRows = t('CSV · {{rows}} summary rows', rowCount)
   } else if (job.job_type === 'statement_details') {
     csvRows = t('CSV · {{rows}} billing entries', rowCount)
+  } else if (shareArchive) {
+    csvRows = t('ZIP · {{rows}} billing entries', rowCount)
   }
   const expiresAt = job.expires_at ?? job.artifact?.expires_at
   const [expiredAt, setExpiredAt] = useState<number>()
   useEffect(() => {
     if (
-      !compact ||
+      (!compact && !shareArchive) ||
       job.status !== 'succeeded' ||
       !expiresAt ||
       !files?.length
@@ -447,7 +478,7 @@ function ExportJobCard(props: {
     }
     const timer = window.setTimeout(() => setExpiredAt(expiresAt), remaining)
     return () => window.clearTimeout(timer)
-  }, [compact, expiresAt, files?.length, job.status])
+  }, [compact, expiresAt, files?.length, job.status, shareArchive])
 
   const status =
     expiredAt != null && expiredAt === expiresAt && job.status === 'succeeded'
@@ -455,7 +486,12 @@ function ExportJobCard(props: {
       : job.status
   let statusLabel = exportStatusLabel(job, t)
   if (status === 'expired') statusLabel = t('Expired')
-  if (compact && status === 'succeeded' && !files?.length) {
+  if (
+    compact &&
+    status === 'succeeded' &&
+    !files?.length &&
+    !job.artifact?.missing_report_dates?.length
+  ) {
     statusLabel = t('No data')
   }
   const showAudience =
@@ -514,13 +550,31 @@ function ExportJobCard(props: {
               {t('Model')}: {job.filters.model_name || t('All models')}
             </p>
           )}
-        {(job.status === 'running' || job.status === 'cancelling') && (
+        {shareArchive && isExportJobActive(job) && (
+          <p>{t('Reusing existing CSV files')}</p>
+        )}
+        {job.job_type === 'statement_details' &&
+        isExportJobActive(job) &&
+        job.progress.files > 0 ? (
           <p>
-            {t('Scanned {{scanned}} records · {{matched}} matched', {
-              scanned: formatInteger(job.progress.scanned),
-              matched: formatInteger(job.progress.matched),
+            {t('{{rows}} exported rows · {{parts}} CSV files', {
+              rows: formatInteger(job.progress.written),
+              parts: formatInteger(job.progress.files),
             })}
+            {job.progress.last_committed_at
+              ? ` · ${t('Last updated')} ${formatTimestampToDate(job.progress.last_committed_at)}`
+              : ''}
           </p>
+        ) : (
+          !shareArchive &&
+          (job.status === 'running' || job.status === 'cancelling') && (
+            <p>
+              {t('Scanned {{scanned}} records · {{matched}} matched', {
+                scanned: formatInteger(job.progress.scanned),
+                matched: formatInteger(job.progress.matched),
+              })}
+            </p>
+          )
         )}
         {compact &&
           status === 'succeeded' &&
@@ -549,9 +603,19 @@ function ExportJobCard(props: {
               })}
             </p>
           )}
-        {status === 'succeeded' && !files?.length && (
-          <p>{t('No records matched this export scope.')}</p>
-        )}
+        {status === 'succeeded' &&
+          !!job.artifact?.missing_report_dates?.length && (
+            <p>
+              {t('Days missing when requested · {{days}}', {
+                days: job.artifact.missing_report_dates.join(', '),
+              })}
+            </p>
+          )}
+        {status === 'succeeded' &&
+          !files?.length &&
+          !job.artifact?.missing_report_dates?.length && (
+            <p>{t('No records matched this export scope.')}</p>
+          )}
         {!compact &&
           status === 'succeeded' &&
           job.expires_at != null &&
@@ -584,7 +648,7 @@ function ExportJobCard(props: {
             {cancelling ? t('Cancelling') : t('Cancel')}
           </Button>
         )}
-        {(status === 'failed' || status === 'expired') && (
+        {!shareArchive && (status === 'failed' || status === 'expired') && (
           <Button
             size='sm'
             variant='outline'
@@ -598,6 +662,23 @@ function ExportJobCard(props: {
         )}
       </div>
       {status === 'succeeded' &&
+        job.job_type === 'statement_details' &&
+        (files?.length ?? 0) > 1 && (
+          <Button
+            className='mt-2'
+            size='sm'
+            variant='outline'
+            disabled={props.busy}
+            onClick={props.onCreateArchive}
+          >
+            {t('Create 7-day download link')}
+          </Button>
+        )}
+      {status === 'succeeded' && shareArchive && !!files?.length && (
+        <ExportShareLink jobId={job.job_id} />
+      )}
+      {status === 'succeeded' &&
+        !shareArchive &&
         !!files?.length &&
         (compact ? (
           <ExportArtifactFiles
@@ -606,9 +687,37 @@ function ExportJobCard(props: {
             files={files}
           />
         ) : (
-          <ExportFiles jobId={job.job_id} />
+          <ExportFiles jobId={job.job_id} fileCount={files.length} />
         ))}
     </ReportCard>
+  )
+}
+
+function ExportShareLink(props: { jobId: string }) {
+  const { t } = useTranslation()
+  const copy = useMutation({
+    mutationFn: async () => {
+      const url = await requestExportShareLink(props.jobId)
+      if (!(await copyToClipboard(url))) {
+        throw new Error('Clipboard unavailable')
+      }
+    },
+    onSuccess: () => toast.success(t('Copied to clipboard')),
+  })
+  return (
+    <div className='mt-2 space-y-1'>
+      <Button size='sm' disabled={copy.isPending} onClick={() => copy.mutate()}>
+        {copy.isPending ? t('Loading...') : t('Copy download link')}
+      </Button>
+      <p className='text-muted-foreground text-xs'>
+        {t('Anyone with the link can download the ZIP until it expires.')}
+      </p>
+      {copy.isError && (
+        <p role='alert' className='text-destructive text-sm'>
+          {t('Unable to copy download link.')}
+        </p>
+      )}
+    </div>
   )
 }
 
@@ -698,11 +807,11 @@ function ExportScope({
   )
 }
 
-function ExportFiles({ jobId }: { jobId: string }) {
+function ExportFiles(props: { jobId: string; fileCount: number }) {
   const { t } = useTranslation()
   const [expired, setExpired] = useState(false)
   const download = useMutation({
-    mutationFn: () => requestExportDownload(jobId),
+    mutationFn: () => requestExportDownload(props.jobId),
   })
   const files = download.data?.files
   useEffect(() => {
@@ -722,13 +831,17 @@ function ExportFiles({ jobId }: { jobId: string }) {
 
   return (
     <div className='mt-2 space-y-2' aria-live='polite'>
-      <Button
-        size='sm'
-        disabled={download.isPending}
-        onClick={() => download.mutate()}
-      >
-        {downloadLabel}
-      </Button>
+      <div className='flex flex-wrap items-start gap-2'>
+        {props.fileCount > 1 && <ExportArchiveDownload jobId={props.jobId} />}
+        <Button
+          size='sm'
+          variant={props.fileCount > 1 ? 'outline' : 'default'}
+          disabled={download.isPending}
+          onClick={() => download.mutate()}
+        >
+          {downloadLabel}
+        </Button>
+      </div>
       {download.isError && (
         <p className='text-destructive text-sm'>
           {t('Unable to download export.')}

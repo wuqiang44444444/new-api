@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-11-13
+last-reviewed: 2026-11-22
 ---
 
 # Seedance 专用渠道与 Link 架构
@@ -402,7 +402,7 @@ Token 计算。样片的任务身份、终态、结果地址及 `draft: true` �
 样片时，本站按 `PROVIDER_CONTRACT_FAILURE` 处理并退还该次费用，供应商成本单独记录。缺少确认或查询失败
 沿用轮询额度与对账，耗尽轮询额度只进入对账，整体超时仍未确认时按未知结果处理。
 
-隔离环境和生产验收状态见 [Seedance 样片模式接入方案](../80-dev/2026-11-18-Seedance样片模式接入方案.md)。
+样片与成片的交付、计费和发布验收见[视频与素材渠道运维手册](../40-operations/02-视频与素材渠道运维手册.md#样片模式验收)。
 
 ## 7. 视频创建与耐久执行
 

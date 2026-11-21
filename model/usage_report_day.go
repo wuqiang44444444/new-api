@@ -94,7 +94,9 @@ func BuildUsageReportDay(ctx context.Context, day string, taskID string, runnerI
 	if err != nil {
 		return err
 	}
-	ctx = context.WithValue(ctx, usageReportBatchGateKey{}, beforeBatch)
+	if beforeBatch != nil {
+		ctx = context.WithValue(ctx, usageReportBatchGateKey{}, beforeBatch)
+	}
 	upper, err := dailyReportLogUpperBound(ctx)
 	if err != nil {
 		return err
@@ -108,7 +110,7 @@ func BuildUsageReportDay(ctx context.Context, day string, taskID string, runnerI
 	if err != nil {
 		return err
 	}
-	agg, err := runUsageAggregation(ctx, period, opts)
+	agg, err := runUsageAggregation(withDailyReportLogOrder(ctx), period, opts)
 	if err != nil {
 		return err
 	}
@@ -197,7 +199,7 @@ func BuildUsageReportDay(ctx context.Context, day string, taskID string, runnerI
 	}
 
 	generation := common.GetUUID()
-	if err := db.Create(&usageReportDayRow{Generation: generation, UserID: -1}).Error; err != nil {
+	if err := createDailyReportRows(ctx, db, 1, &usageReportDayRow{Generation: generation, UserID: -1}); err != nil {
 		return err
 	}
 	if err := writeUsageReportModels(ctx, db, generation, modelTotals); err != nil {
@@ -211,18 +213,23 @@ func BuildUsageReportDay(ctx context.Context, day string, taskID string, runnerI
 		ids = append(ids, id)
 	}
 	sort.Ints(ids)
-	for start := 0; start < len(ids); start += 50 {
+	batchSize := dailyReportWriteBatchSize(ctx, 50)
+	byteLimit := 2 * 1024 * 1024
+	if lowPriorityDailyReport(ctx) {
+		byteLimit = 128 * 1024
+	}
+	for start := 0; start < len(ids); start += batchSize {
 		if err := usageReportBeforeBatch(ctx); err != nil {
 			return err
 		}
-		rows := make([]usageReportDayRow, 0, 50)
+		rows := make([]usageReportDayRow, 0, batchSize)
 		bytes := 0
-		for _, id := range ids[start:min(start+50, len(ids))] {
+		for _, id := range ids[start:min(start+batchSize, len(ids))] {
 			encoded, err := common.Marshal(data[id])
 			if err != nil {
 				return err
 			}
-			payload, err := writeDailyReportPayload(ctx, db, usageReportBeforeBatch, generation, reportUsagePayload, id, encoded)
+			payload, err := writeDailyReportPayload(ctx, db, generation, reportUsagePayload, id, encoded)
 			if err != nil {
 				return err
 			}
@@ -235,8 +242,8 @@ func BuildUsageReportDay(ctx context.Context, day string, taskID string, runnerI
 				row.Overview = BillingStatementJSON(projected)
 			}
 			size := len(payload) + len(row.Overview)
-			if len(rows) > 0 && bytes+size > 2*1024*1024 {
-				if err := db.Create(&rows).Error; err != nil {
+			if len(rows) > 0 && bytes+size > byteLimit {
+				if err := createDailyReportRows(ctx, db, len(rows), &rows); err != nil {
 					return err
 				}
 				rows = rows[:0]
@@ -245,7 +252,7 @@ func BuildUsageReportDay(ctx context.Context, day string, taskID string, runnerI
 			rows = append(rows, row)
 			bytes += size
 		}
-		if err := db.Create(&rows).Error; err != nil {
+		if err := createDailyReportRows(ctx, db, len(rows), &rows); err != nil {
 			return err
 		}
 	}
@@ -322,6 +329,11 @@ func FreezeUsageReportReferences(ctx context.Context, period UsageAnalyticsPerio
 }
 
 func usageReportBeforeBatch(ctx context.Context) error {
+	if final, _ := ctx.Value(dailyReportFinalValidationKey{}).(bool); final {
+		if gate, ok := ctx.Value(dailyReportValidationGateKey{}).(func(context.Context) error); ok && gate != nil {
+			return gate(ctx)
+		}
+	}
 	if gate, ok := ctx.Value(usageReportBatchGateKey{}).(func(context.Context) error); ok && gate != nil {
 		return gate(ctx)
 	}
@@ -406,7 +418,7 @@ func loadPublishedUsageReport(ctx context.Context, period UsageAnalyticsPeriod, 
 						mode = BillingReconciliationModeUnknown
 					}
 					key := usageCustomerKey{day: index, token: leaf.Token, model: leaf.Model, billingMode: mode}
-					agg.mergeCustomer(row.UserID, key, leaf.Metrics.accumulator())
+					agg.mergeCustomer(row.UserID, key, leaf.Metrics.accumulator(), false)
 				}
 			}
 			for _, leaf := range data.Upstream {
@@ -521,8 +533,10 @@ func PruneUsageReportRows(ctx context.Context, now int64) (bool, error) {
 	db := usageReportMainDB(ctx).WithContext(ctx)
 	cutoff := now - 8*86400
 	var marker usageReportDayRow
-	err := db.Where("user_id = -1 AND ((retired_at > 0 AND retired_at < ?) OR (payload = ? AND created_at < ?))", cutoff, "", cutoff).
+	err := db.Where("user_id = -1 AND ((retired_at > 0 AND retired_at < ?) OR (payload = ? AND created_at < ?))",
+		cutoff, "", now-dailyReportAbandonedGraceSeconds).
 		Where("COALESCE(unavailable_at, 0) < ?", now-60).
+		Where("NOT EXISTS (SELECT 1 FROM usage_report_days head WHERE head.generation = usage_report_day_rows.generation)").
 		Where("NOT EXISTS (SELECT 1 FROM daily_report_stages stage WHERE stage.generation = usage_report_day_rows.generation AND stage.as_of >= ?)", cutoff).Order("created_at").Take(&marker).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return false, nil
@@ -547,7 +561,7 @@ func PruneUsageReportRows(ctx context.Context, now int64) (bool, error) {
 	}
 	var userIDs []int
 	if err := db.Model(&usageReportDayRow{}).Where("generation = ? AND user_id <> -1", marker.Generation).
-		Limit(200).Pluck("user_id", &userIDs).Error; err != nil {
+		Limit(dailyReportWriteBatchSize(ctx, 200)).Pluck("user_id", &userIDs).Error; err != nil {
 		return false, err
 	}
 	if len(userIDs) == 0 {
@@ -555,10 +569,13 @@ func PruneUsageReportRows(ctx context.Context, now int64) (bool, error) {
 	}
 	if len(userIDs) == 1 && userIDs[0] == -1 {
 		var rankIDs []int64
-		if err := db.Model(&usageReportRank{}).Where("generation = ?", marker.Generation).Limit(500).Pluck("id", &rankIDs).Error; err != nil {
+		if err := db.Model(&usageReportRank{}).Where("generation = ?", marker.Generation).Limit(dailyReportWriteBatchSize(ctx, 500)).Pluck("id", &rankIDs).Error; err != nil {
 			return false, err
 		}
 		if len(rankIDs) > 0 {
+			if err := beforeDailyReportWrite(ctx, len(rankIDs)); err != nil {
+				return false, err
+			}
 			return true, db.Where("id IN ?", rankIDs).Delete(&usageReportRank{}).Error
 		}
 		if pruned, err := pruneDailyReportPayload(ctx, db, marker.Generation); err != nil || pruned {
@@ -570,6 +587,9 @@ func PruneUsageReportRows(ctx context.Context, now int64) (bool, error) {
 			}
 			return tx.Delete(&marker).Error
 		})
+	}
+	if err := beforeDailyReportWrite(ctx, len(userIDs)); err != nil {
+		return false, err
 	}
 	return true, db.Where("generation = ? AND user_id IN ?", marker.Generation, userIDs).Delete(&usageReportDayRow{}).Error
 }

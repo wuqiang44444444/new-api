@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"encoding/base64"
+	"sort"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -18,6 +19,8 @@ type BillingReportDiagnosticDay struct {
 	IssueRows     int64  `json:"issue_rows"`
 	PublishedRows *int64 `json:"published_source_rows,omitempty"`
 	CandidateRows *int64 `json:"candidate_source_rows,omitempty"`
+	RetryAt       int64  `json:"retry_at,omitempty"`
+	FailureReason string `json:"failure_reason,omitempty"`
 }
 
 type BillingReportDiagnosticLine struct {
@@ -34,6 +37,15 @@ type BillingReportDiagnosticLine struct {
 func BillingReportDiagnosticDays(ctx context.Context, start, end int64) ([]BillingReportDiagnosticDay, error) {
 	db := DB.WithContext(ctx)
 	days := make([]BillingReportDiagnosticDay, 0)
+	var retries []dailyReportRetry
+	if err := db.Where("start >= ? AND start < ? AND "+currentDailyReportRetry, start, end, usageReportMeterVersion, CustomerOriginalReplayVersion).
+		Find(&retries).Error; err != nil {
+		return nil, err
+	}
+	pending := make(map[DailyReportScope]dailyReportRetry, len(retries))
+	for _, retry := range retries {
+		pending[DailyReportScope{Start: retry.Start, Kind: retry.Kind}] = retry
+	}
 	for _, kind := range []string{DailyReportBilling, DailyReportUsage} {
 		var heads []struct {
 			Start            int64
@@ -45,27 +57,27 @@ func BillingReportDiagnosticDays(ctx context.Context, start, end int64) ([]Billi
 			CandidateRows    *int64
 		}
 		current := usageReportMeterVersion
-		query := db.Table("usage_report_days AS h").Select("h.start, h.generation, COALESCE(h.meter_version, 0) AS version, h.historical_source, h.source_rows AS published_rows, COALESCE(r.candidate_rows, s.source_rows) AS candidate_rows")
+		query := db.Table("usage_report_days AS h").Select("h.start, h.generation, COALESCE(h.meter_version, 0) AS version, h.historical_source, h.source_rows AS published_rows, s.source_rows AS candidate_rows")
 		if kind == DailyReportBilling {
 			current = CustomerOriginalReplayVersion
 			query = db.Table("billing_report_heads AS h").
-				Select("h.start, h.generation, COALESCE(g.original_replay_version, 0) AS version, g.historical_source, g.issue_rows, g.rows AS published_rows, COALESCE(r.candidate_rows, s.source_rows) AS candidate_rows").
+				Select("h.start, h.generation, COALESCE(g.original_replay_version, 0) AS version, g.historical_source, g.issue_rows, g.rows AS published_rows, s.source_rows AS candidate_rows").
 				Joins("JOIN billing_report_generations AS g ON g.id = h.generation")
 		}
-		query = query.Joins("LEFT JOIN daily_report_stages AS s ON s.start = h.start AND s.kind = ? AND s.previous = h.generation", kind).
-			Joins("LEFT JOIN daily_report_retries AS r ON r.start = h.start AND r.kind = ? AND r.release_version = ? AND r.coverage_issue = ?", kind, current, true)
+		query = query.Joins("LEFT JOIN daily_report_stages AS s ON s.start = h.start AND s.kind = ? AND s.previous = h.generation AND (s.copying_generation IS NULL OR s.copying_generation <> s.generation)", kind)
 		if err := query.Where("h.start >= ? AND h.start < ?", start, end).Order("h.start").Scan(&heads).Error; err != nil {
 			return nil, err
 		}
-		issues, err := dailyReportCoverageIssues(ctx, kind, start, end)
-		if err != nil {
-			return nil, err
-		}
 		for _, head := range heads {
+			key := DailyReportScope{Start: head.Start, Kind: kind}
+			retry, queued := pending[key]
+			delete(pending, key)
 			status := "current"
 			switch {
-			case issues[head.Start]:
+			case retry.CoverageIssue:
 				status = "coverage_issue"
+			case queued:
+				status = "retrying"
 			case head.Version != current:
 				status = "rebuilding"
 			case head.HistoricalSource != "" || head.IssueRows > 0:
@@ -74,13 +86,36 @@ func BillingReportDiagnosticDays(ctx context.Context, start, end int64) ([]Billi
 			result := BillingReportDiagnosticDay{
 				Date: time.Unix(head.Start, 0).In(UsageAnalyticsZone()).Format(time.DateOnly),
 				Kind: kind, Status: status, Source: head.HistoricalSource, IssueRows: head.IssueRows,
+				RetryAt: retry.RetryAt, FailureReason: retry.FailureReason,
 			}
-			if issues[head.Start] && head.CandidateRows != nil {
-				result.PublishedRows, result.CandidateRows = &head.PublishedRows, head.CandidateRows
+			if retry.CoverageIssue {
+				candidate := retry.CandidateRows
+				if candidate == nil {
+					candidate = head.CandidateRows
+				}
+				if candidate != nil {
+					result.PublishedRows, result.CandidateRows = &head.PublishedRows, candidate
+				}
 			}
 			days = append(days, result)
 		}
 	}
+	for _, retry := range pending {
+		status := "retrying"
+		if retry.CoverageIssue {
+			status = "coverage_issue"
+		}
+		days = append(days, BillingReportDiagnosticDay{
+			Date: time.Unix(retry.Start, 0).In(UsageAnalyticsZone()).Format(time.DateOnly),
+			Kind: retry.Kind, Status: status, CandidateRows: retry.CandidateRows, RetryAt: retry.RetryAt, FailureReason: retry.FailureReason,
+		})
+	}
+	sort.Slice(days, func(i, j int) bool {
+		if days[i].Kind != days[j].Kind {
+			return days[i].Kind < days[j].Kind
+		}
+		return days[i].Date < days[j].Date
+	})
 	return days, nil
 }
 

@@ -84,13 +84,14 @@ type billingReportLine struct {
 
 type BillingReportManifest struct {
 	UsageReportRebuildStatus
-	Version        string `json:"version"`
-	PublishedDays  int    `json:"published_days"`
-	IncompleteDays int    `json:"incomplete_days,omitempty"`
-	ExpectedDays   int    `json:"expected_days"`
-	AsOf           int64  `json:"as_of"`
-	EstimatedAt    int64  `json:"estimated_at,omitempty"`
-	Estimated      bool   `json:"estimated,omitempty"`
+	Version        string   `json:"version"`
+	PublishedDays  int      `json:"published_days"`
+	IncompleteDays int      `json:"incomplete_days,omitempty"`
+	ExpectedDays   int      `json:"expected_days"`
+	MissingDays    []string `json:"missing_days,omitempty"`
+	AsOf           int64    `json:"as_of"`
+	EstimatedAt    int64    `json:"estimated_at,omitempty"`
+	Estimated      bool     `json:"estimated,omitempty"`
 	generations    []billingReportGeneration
 }
 
@@ -158,6 +159,7 @@ func ResolveBillingReport(ctx context.Context, start, end int64, version string)
 		date := time.Unix(row.Start, 0).In(UsageAnalyticsZone()).Format(time.DateOnly)
 		if row.OriginalReplayVersion != CustomerOriginalReplayVersion {
 			report.RebuildingDays = append(report.RebuildingDays, date)
+			seen[row.Start] = true
 			continue
 		}
 		if row.HistoricalSource == dailyReportSourceMissing {
@@ -165,9 +167,10 @@ func ResolveBillingReport(ctx context.Context, start, end int64, version string)
 				return ctx, nil, common.NewMessage("Billing report version is unavailable")
 			}
 			report.SourceUnavailableDays = append(report.SourceUnavailableDays, date)
+			seen[row.Start] = true
 			continue
 		}
-		if version == "" && row.Start < todayStart && row.AsOf < row.Start+billingReportDaySeconds+3*3600 {
+		if version == "" && row.Start < todayStart && row.AsOf < row.Start+billingReportDaySeconds+dailyReportCloseDelay {
 			continue
 		}
 		selected = append(selected, row)
@@ -182,9 +185,15 @@ func ResolveBillingReport(ctx context.Context, start, end int64, version string)
 		if row.Incomplete || issues[row.Start] {
 			report.IncompleteDays++
 		}
-		if row.AsOf < row.Start+billingReportDaySeconds+3*3600 {
+		if row.AsOf < row.Start+billingReportDaySeconds+dailyReportCloseDelay {
 			report.Estimated = true
 			report.EstimatedAt = max(report.EstimatedAt, row.AsOf)
+		}
+	}
+	for day := range report.ExpectedDays {
+		at := start + int64(day)*billingReportDaySeconds
+		if !seen[at] {
+			report.MissingDays = append(report.MissingDays, time.Unix(at, 0).In(UsageAnalyticsZone()).Format(time.DateOnly))
 		}
 	}
 	if len(ids) > 0 {
