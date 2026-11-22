@@ -159,7 +159,9 @@ export function pricingOptions(
       if (key === 'billing_setting.billing_expr') {
         value = values.BillingExpr ?? value
       }
-      if (key === 'task_billing_setting.preconsume_tokens') value ??= values.TaskPreConsumeTokens
+      if (key === 'task_billing_setting.preconsume_tokens') {
+        value = values.TaskPreConsumeTokens ?? value
+      }
       if (key === 'billing_setting.plugin_billing_expr') {
         value = values.PluginBillingExpr ?? value
       }
@@ -181,6 +183,7 @@ export function pricingRows(options: PricingOptions): ModelPricingSnapshot[] {
     billingMode: options['billing_setting.billing_mode'],
     billingExpr: options['billing_setting.billing_expr'],
     pluginBillingExpr: options['billing_setting.plugin_billing_expr'],
+    taskPreConsumeTokens: options['task_billing_setting.preconsume_tokens'],
   })
 }
 
@@ -268,6 +271,9 @@ export function pricingFromDraft(data: ModelRatioData): PricingValues {
       data.requestRuleExpr || ''
     )
   }
+  if (data.taskPreConsumeTokens && data.taskPreConsumeTokens > 0) {
+    values['task_billing_setting.preconsume_tokens'] = data.taskPreConsumeTokens
+  }
   return values
 }
 
@@ -277,8 +283,9 @@ export function applyPricingDraft(
   names: string[] = [data.name]
 ): PricingOptions {
   const values = pricingFromDraft(data)
+  const clearTaskBudget = data.taskPreConsumeTokens === 0
   if (names.length === 1 && names[0] === data.name) {
-    return applyPricingValues(options, values, names)
+    return applyPricingValues(options, values, names, clearTaskBudget)
   }
   // Provider bindings belong to each model. Copy only the shared model price
   // to other models, while still committing the source provider draft.
@@ -286,17 +293,25 @@ export function applyPricingDraft(
   delete copied['billing_setting.plugin_billing_expr']
   const next = applyPricingValues(options, copied, names)
   return names.includes(data.name)
-    ? applyPricingValues(next, values, [data.name])
+    ? applyPricingValues(next, values, [data.name], clearTaskBudget)
     : next
 }
 
 function applyPricingValues(
   options: PricingOptions,
   values: PricingValues,
-  names: string[]
+  names: string[],
+  clearTaskBudget = false
 ): PricingOptions {
   return Object.fromEntries(
     PRICING_KEYS.map((key) => {
+      if (
+        key === 'task_billing_setting.preconsume_tokens' &&
+        values[key] === undefined &&
+        !clearTaskBudget
+      ) {
+        return [key, options[key]]
+      }
       const map = JSON.parse(options[key] ?? '{}') as Record<
         string,
         number | string

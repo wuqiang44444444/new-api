@@ -22,16 +22,11 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { toIntlLocale } from '@/i18n/languages'
 import { formatNumber } from '@/lib/format'
 
-import {
-  PLUGIN_KIND_LABELS,
-  PLUGIN_KINDS,
-  type PluginKind,
-} from '../lib/plugin-kinds'
-
-type PluginKindSwitchProps = {
-  value: PluginKind
-  counts: Record<PluginKind, number>
-  onValueChange: (kind: PluginKind) => void
+type PluginKindSwitchProps<Kind extends string> = {
+  value: Kind
+  options: readonly { value: Kind; label: string }[]
+  counts: Record<Kind, number>
+  onValueChange: (kind: Kind) => void
 }
 
 /** A segmented switch: the chosen item is raised on a muted track. */
@@ -40,30 +35,32 @@ export const SEGMENTED_SWITCH_CLASS =
 export const SEGMENTED_SWITCH_ITEM_CLASS =
   'text-muted-foreground hover:text-foreground aria-pressed:bg-background aria-pressed:text-foreground dark:aria-pressed:bg-input/40 h-full gap-1.5 rounded-md px-2.5 hover:bg-transparent aria-pressed:shadow-sm'
 
-/** Task / Provider / Request processing, each with its plugin count. */
-export function PluginKindSwitch(props: PluginKindSwitchProps) {
+export function PluginKindSwitch<Kind extends string>(
+  props: PluginKindSwitchProps<Kind>
+) {
   const { t, i18n } = useTranslation()
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   return (
     <ToggleGroup
       value={[props.value]}
       onValueChange={(value) => {
-        const next = PLUGIN_KINDS.find(
-          (kind) => kind !== props.value && value.includes(kind)
+        const next = props.options.find(
+          (option) =>
+            option.value !== props.value && value.includes(option.value)
         )
-        if (next) props.onValueChange(next)
+        if (next) props.onValueChange(next.value)
       }}
       aria-label={t('Plugin kind')}
       spacing={1}
       className={SEGMENTED_SWITCH_CLASS}
     >
-      {PLUGIN_KINDS.map((kind) => (
+      {props.options.map(({ value: kind, label }) => (
         <ToggleGroupItem
           key={kind}
           value={kind}
           className={SEGMENTED_SWITCH_ITEM_CLASS}
         >
-          {t(PLUGIN_KIND_LABELS[kind])}{' '}
+          {t(label)}{' '}
           <span className='bg-foreground/[0.06] group-aria-pressed/toggle:bg-primary/10 group-aria-pressed/toggle:text-primary min-w-5 rounded-full px-1.5 text-center text-xs tabular-nums'>
             {formatNumber(props.counts[kind], locale)}
           </span>

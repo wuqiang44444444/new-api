@@ -342,6 +342,8 @@ func TestPluginTaskPricesBesideAChatPrice(t *testing.T) {
 		t.Cleanup(func() { jsplugin.DefaultRegistry.Unregister(key) })
 	}
 	insertPricingEndpointChannel(t, 940, constant.ChannelTypeTaskPlugin, dto.ChannelOtherSettings{})
+	require.NoError(t, DB.Model(&Channel{}).Where("id = ?", 940).
+		UpdateColumn("setting", `{"task_plugin_key":"pricing-dual"}`).Error)
 	// A legacy channel type pricing-task claims, and an ordinary channel.
 	insertPricingEndpointChannel(t, 941, 9400, dto.ChannelOtherSettings{})
 	insertPricingEndpointChannel(t, 942, constant.ChannelTypeOpenAI, dto.ChannelOtherSettings{})
@@ -377,12 +379,16 @@ func TestPluginTaskPricesBesideAChatPrice(t *testing.T) {
 		// Ordinary requests reject a usage expression.
 		{model: "dual-usage", plugin: "pricing-dual", variantMode: billing_setting.BillingModeTieredExpr, variantExpr: usageExpr, compatible: true, relay: true, channels: []int{942}},
 		{model: "dual-split", plugin: "pricing-dual", variantMode: billing_setting.BillingModeTieredExpr, variantExpr: usageExpr, compatible: true, relay: true, ordinary: true},
-		{model: "task-tokens", plugin: "pricing-task", variantMode: billing_setting.BillingModeTieredExpr, issue: ModelPricingIssueUnconfigured, channels: []int{941}},
+		{model: "task-tokens", plugin: "pricing-task", variantMode: billing_setting.BillingModeTieredExpr, issue: ModelPricingIssueUnconfigured},
 		{model: "task-images", plugin: "pricing-task", variantMode: billing_setting.BillingModeTieredExpr, issue: ModelPricingIssueUnconfigured, channels: []int{942}, ordinary: true},
 		{model: "task-flat", plugin: "pricing-task", compatible: true},
 	}
 	for _, tc := range tests {
-		for _, channelID := range append([]int{940}, tc.channels...) {
+		pluginChannel := 940
+		if tc.plugin == "pricing-task" {
+			pluginChannel = 941
+		}
+		for _, channelID := range append([]int{pluginChannel}, tc.channels...) {
 			insertPricingEndpointAbility(t, channelID, tc.model)
 		}
 	}
@@ -498,7 +504,8 @@ func TestModelPricingIssuesFollowPluginChanges(t *testing.T) {
 	mapping := `{"ordinary-alias":"issue-ordinary"}`
 	require.NoError(t, DB.Create(&Channel{
 		Id: 940, Type: constant.ChannelTypeTaskPlugin, Key: "key-940", Status: common.ChannelStatusEnabled, Name: "channel-940",
-		Models: "ordinary-alias", ModelMapping: &mapping,
+		Models: "issue-priced,issue-per-call,Issue-Unpriced,ordinary-alias,issue-shared,issue-idle", ModelMapping: &mapping,
+		Setting: common.GetPointer(`{"task_plugin_key":"issue-alpha"}`),
 	}).Error)
 	for _, name := range []string{"issue-priced", "issue-per-call", "Issue-Unpriced", "ordinary-alias", "issue-shared"} {
 		insertPricingEndpointAbility(t, 940, name)
@@ -516,9 +523,17 @@ func TestModelPricingIssuesFollowPluginChanges(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { jsplugin.DefaultRegistry.Unregister("issue-beta") })
 	incompatible := ModelPricingIssue{ModelName: "issue-shared", PluginKey: "issue-beta", PluginName: "Beta", Reason: ModelPricingIssueIncompatible}
+	stale := ModelPricingIssue{ModelName: "issue-dropped", PluginKey: "issue-alpha", PluginName: "Alpha", Reason: ModelPricingIssueStale}
+	assert.Equal(t, []ModelPricingIssue{stale, ordinary, unpriced}, ownIssues())
+
+	require.NoError(t, DB.Create(&Channel{
+		Id: 941, Type: constant.ChannelTypeNewAPI, Key: "key-941", Status: common.ChannelStatusEnabled, Name: "channel-941",
+		Models: "issue-shared", Setting: common.GetPointer(`{"task_extend_plugin_keys":["issue-beta"]}`),
+	}).Error)
+	insertPricingEndpointAbility(t, 941, "issue-shared")
 
 	assert.Equal(t, []ModelPricingIssue{
-		{ModelName: "issue-dropped", PluginKey: "issue-alpha", PluginName: "Alpha", Reason: ModelPricingIssueStale},
+		stale,
 		ordinary,
 		incompatible,
 		unpriced,

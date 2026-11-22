@@ -201,8 +201,7 @@ func UploadTaskPlugin(c *gin.Context) {
 	if marketplaceKind == setting.TaskPluginMarketplaceKindCommunity {
 		reportCommunityPluginInstall(plugin.Key, plugin.Version)
 	}
-	detail := taskPluginDetail{Plugin: &plugin, Meta: loaded.Meta, Source: string(plugin.Source), Layer: "override", HasIcon: plugin.HasIcon(), SkippedRoutes: taskPluginSkippedRoutes(plugin.Key, plugin.Version),
-		taskPluginParts: servedTaskPluginParts(loaded.Meta, plugin.Active && plugin.Enabled)}
+	detail := storedTaskPluginDetail(&plugin, loaded.Meta)
 	if plugin.Active && plugin.Enabled {
 		detail.PricingIssues = taskPluginPricingIssues(plugin.Key)
 	}
@@ -219,6 +218,7 @@ func GetTaskPluginVersions(c *gin.Context) {
 }
 
 type taskPluginListItem struct {
+	Link          bool           `json:"link,omitempty"`
 	Meta          jsplugin.Meta  `json:"meta"`
 	Source        string         `json:"source"`
 	Enabled       bool           `json:"enabled"`
@@ -340,6 +340,8 @@ func ListTaskPlugins(c *gin.Context) {
 			item.Meta = jsplugin.Meta{Key: row.Key, Version: row.Version, APIVersion: row.APIVersion}
 			if compiled, compileErr := compileTaskPluginSource(string(row.Source), jsplugin.Options{Key: row.Key, Version: row.Version}); compileErr == nil {
 				item.Meta = compiled.Meta
+			} else if row.Enabled && isLinkExtensionPlugin(key) {
+				item.RuntimeError = compileErr.Error()
 			}
 			item.Enabled = row.Enabled
 			item.Active = row.Active
@@ -378,7 +380,7 @@ func ListTaskPlugins(c *gin.Context) {
 			}
 		}
 		if !hasFactory {
-			if key == taskseedance.SeedanceExtensionPluginKey || key == jsplugin.MinimaxPluginKey {
+			if isLinkExtensionPlugin(key) {
 				// 原生 registry 刻意不认识扩展：运行状态与执行引用从扩展
 				// 存储投影，避免健康扩展被显示为 not_registered。
 				if err := applySeedanceExtensionListItem(&item); err != nil {
@@ -455,6 +457,7 @@ func GetTaskPluginRuntime(c *gin.Context) {
 }
 
 type taskPluginDetail struct {
+	Link          bool              `json:"link,omitempty"`
 	Plugin        *model.TaskPlugin `json:"plugin,omitempty"`
 	Meta          jsplugin.Meta     `json:"meta"`
 	Source        string            `json:"source"`
@@ -526,8 +529,7 @@ func GetTaskPlugin(c *gin.Context) {
 			taskPluginCompileError(c, compileErr)
 			return
 		}
-		common.ApiSuccess(c, taskPluginDetail{Plugin: plugin, Meta: loaded.Meta, Source: string(plugin.Source), Layer: "override", HasIcon: plugin.HasIcon(), SkippedRoutes: taskPluginSkippedRoutes(plugin.Key, plugin.Version),
-			taskPluginParts: servedTaskPluginParts(loaded.Meta, plugin.Active && plugin.Enabled)})
+		common.ApiSuccess(c, storedTaskPluginDetail(plugin, loaded.Meta))
 		return
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) || version != "" {

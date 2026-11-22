@@ -46,6 +46,13 @@ import {
   TaskPluginUsageError,
 } from '../api'
 import {
+  countInstalledPluginKinds,
+  defaultInstalledPluginKind,
+  INSTALLED_PLUGIN_KIND_OPTIONS,
+  matchesInstalledPluginKind,
+  type InstalledPluginKind,
+} from '../lib/installed-plugin-kinds'
+import {
   COMMUNITY_MARKETPLACE_INDEX_URL,
   fetchMarketplaceIndex,
   findRevokedEntry,
@@ -53,11 +60,6 @@ import {
   marketplaceSourceKind,
 } from '../lib/marketplace'
 import { toastPluginChange } from '../lib/plugin-change-toast'
-import {
-  countPluginKinds,
-  defaultPluginKind,
-  type PluginKind,
-} from '../lib/plugin-kinds'
 import { localizedPluginName } from '../lib/plugin-name'
 import { resolvePluginParts } from '../lib/plugin-parts'
 import type { TaskPluginListItem, TaskPluginUsage } from '../types'
@@ -72,8 +74,8 @@ const VIEW_MODE_STORAGE_KEY = 'task-plugins-view-mode'
 
 type PluginsTableProps = {
   /** The kind the page URL names; without one the default kind is shown. */
-  kind?: PluginKind
-  onKindChange: (kind: PluginKind) => void
+  kind?: InstalledPluginKind
+  onKindChange: (kind: InstalledPluginKind) => void
   onDetails: (plugin: TaskPluginListItem) => void
   onUpload: (key: string) => void
 }
@@ -394,12 +396,15 @@ export function PluginsTable(props: PluginsTableProps) {
   )
   const plugins = pluginsQuery.data
   const kindCounts = useMemo(
-    () => countPluginKinds((plugins ?? []).map(resolvePluginParts)),
+    () => countInstalledPluginKinds(plugins ?? []),
     [plugins]
   )
-  const kind = props.kind ?? defaultPluginKind(kindCounts)
+  const kind = props.kind ?? defaultInstalledPluginKind(kindCounts)
   const kindPlugins = useMemo(
-    () => (plugins ?? []).filter((plugin) => resolvePluginParts(plugin)[kind]),
+    () =>
+      (plugins ?? []).filter((plugin) =>
+        matchesInstalledPluginKind(plugin, kind)
+      ),
     [plugins, kind]
   )
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
@@ -412,6 +417,7 @@ export function PluginsTable(props: PluginsTableProps) {
     onColumnFiltersChange: setColumnFilters,
     globalFilter,
     onGlobalFilterChange: setGlobalFilter,
+    globalFilterFn: 'includesString',
     withFilteredRowModel: true,
     withPaginationRowModel: true,
     withSortedRowModel: true,
@@ -466,6 +472,7 @@ export function PluginsTable(props: PluginsTableProps) {
           searchPlaceholder: t('Filter plugins...'),
           additionalSearch: (
             <PluginKindSwitch
+              options={INSTALLED_PLUGIN_KIND_OPTIONS}
               value={kind}
               counts={kindCounts}
               onValueChange={props.onKindChange}

@@ -16,8 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import z from 'zod'
-
 import type { TaskPluginParts } from '../types'
 
 /**
@@ -33,9 +31,10 @@ export const PLUGIN_KIND_LABELS: Record<PluginKind, string> = {
   transform: 'Request processing',
 }
 
-export const taskPluginsSearchSchema = z.object({
-  kind: z.enum(PLUGIN_KINDS).optional().catch(undefined),
-})
+export const PLUGIN_KIND_OPTIONS = PLUGIN_KINDS.map((value) => ({
+  value,
+  label: PLUGIN_KIND_LABELS[value],
+}))
 
 export function countPluginKinds(
   partsList: Required<TaskPluginParts>[]

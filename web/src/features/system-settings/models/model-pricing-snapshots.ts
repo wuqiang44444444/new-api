@@ -36,6 +36,7 @@ export type ModelPricingSnapshotInput = {
   billingMode: string
   billingExpr: string
   pluginBillingExpr?: string
+  taskPreConsumeTokens?: string
 }
 
 export type ModelPricingSnapshot = {
@@ -52,6 +53,7 @@ export type ModelPricingSnapshot = {
   billingMode?: string
   billingExpr?: string
   requestRuleExpr?: string
+  taskPreConsumeTokens?: number
   hasConflict: boolean
 }
 
@@ -178,6 +180,7 @@ export const buildModelSnapshots = ({
   billingMode,
   billingExpr,
   pluginBillingExpr = '{}',
+  taskPreConsumeTokens = '{}',
 }: ModelPricingSnapshotInput): ModelPricingSnapshot[] => {
   const priceMap = safeJsonParse<Record<string, number>>(modelPrice, {
     fallback: {},
@@ -219,6 +222,10 @@ export const buildModelSnapshots = ({
     fallback: {},
     context: 'billing expression',
   })
+  const taskBudgetMap = safeJsonParse<Record<string, number>>(
+    taskPreConsumeTokens,
+    { fallback: {}, context: 'task pre-consume tokens' }
+  )
 
   const pluginExprMap = safeJsonParse<Record<string, string>>(
     pluginBillingExpr,
@@ -246,6 +253,7 @@ export const buildModelSnapshots = ({
     ...Object.keys(audioCompletionMap),
     ...Object.keys(billingModeMap),
     ...Object.keys(billingExprMap),
+    ...Object.keys(taskBudgetMap),
   ])
 
   return [...modelNames].map((name) => {
@@ -257,6 +265,9 @@ export const buildModelSnapshots = ({
     const image = imageMap[name]?.toString() || ''
     const audio = audioMap[name]?.toString() || ''
     const audioCompletion = audioCompletionMap[name]?.toString() || ''
+    const taskBudget = Object.hasOwn(taskBudgetMap, name)
+      ? taskBudgetMap[name]
+      : undefined
 
     const modeForModel = billingModeMap[name]
     if (modeForModel === 'tiered_expr') {
@@ -269,6 +280,7 @@ export const buildModelSnapshots = ({
         billingMode: 'tiered_expr',
         billingExpr: pureExpr,
         requestRuleExpr,
+        taskPreConsumeTokens: taskBudget,
         price,
         ratio,
         cacheRatio: cache,
@@ -284,6 +296,7 @@ export const buildModelSnapshots = ({
     return {
       name,
       pluginBillingExpr: pluginExpressionsByModel.get(name),
+      taskPreConsumeTokens: taskBudget,
       price,
       ratio,
       cacheRatio: cache,
@@ -320,6 +333,7 @@ export const getSnapshotSignature = (snapshot?: ModelPricingSnapshot) => {
     billingMode: snapshot.billingMode || 'per-token',
     billingExpr: snapshot.billingExpr || '',
     requestRuleExpr: snapshot.requestRuleExpr || '',
+    taskPreConsumeTokens: snapshot.taskPreConsumeTokens,
     pluginBillingExpr: Object.entries(snapshot.pluginBillingExpr ?? {}).sort(
       ([a], [b]) => a.localeCompare(b)
     ),

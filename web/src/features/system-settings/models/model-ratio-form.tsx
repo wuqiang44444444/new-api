@@ -449,6 +449,7 @@ export const ModelRatioForm = memo(function ModelRatioForm({
               savedBillingMode={savedValues.BillingMode}
               savedBillingExpr={savedValues.BillingExpr}
               savedPluginBillingExpr={savedValues.PluginBillingExpr}
+              savedTaskPreConsumeTokens={savedValues.TaskPreConsumeTokens}
               modelPrice={form.watch('ModelPrice')}
               modelRatio={form.watch('ModelRatio')}
               cacheRatio={form.watch('CacheRatio')}
@@ -460,6 +461,7 @@ export const ModelRatioForm = memo(function ModelRatioForm({
               billingMode={form.watch('BillingMode')}
               billingExpr={form.watch('BillingExpr')}
               pluginBillingExpr={form.watch('PluginBillingExpr')}
+              taskPreConsumeTokens={form.watch('TaskPreConsumeTokens')}
               candidateModelNames={
                 isUnsetVariant ? enabledModelsQuery.data?.data : undefined
               }
@@ -475,6 +477,7 @@ export const ModelRatioForm = memo(function ModelRatioForm({
                   'billing_setting.billing_mode': 'BillingMode',
                   'billing_setting.billing_expr': 'BillingExpr',
                   'billing_setting.plugin_billing_expr': 'PluginBillingExpr',
+                  'task_billing_setting.preconsume_tokens': 'TaskPreConsumeTokens',
                 }
                 const formField =
                   fieldMap[field] || (field as keyof ModelFormValues)

@@ -29,7 +29,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, expect, test, vi } from 'vitest'
 
 import { TaskPlugins } from '..'
-import { taskPluginsSearchSchema } from '../lib/plugin-kinds'
+import { taskPluginsSearchSchema } from '../lib/installed-plugin-kinds'
 import type {
   MarketplaceIndex,
   TaskPluginListItem,
@@ -92,6 +92,7 @@ let client: QueryClient
 afterEach(() => {
   cleanup()
   client.clear()
+  localStorage.removeItem('task-plugins-view-mode')
   vi.unstubAllGlobals()
 })
 
@@ -193,4 +194,42 @@ test('marketplace items are split by the same kinds', async () => {
   await waitFor(() =>
     expect(router.state.location.search).toEqual({ kind: 'transform' })
   )
+})
+
+test('Link extensions are accessible from the installed list and stay out of the marketplace', async () => {
+  const linkParts = {
+    link: true,
+    task: false,
+    provider: false,
+    transform: false,
+  }
+  const { router, user } = await renderPluginsPage('/task-plugins', [
+    ...installedPlugins,
+    installed('seedance-link', 'Seedance Link', linkParts),
+    installed('minimax-link', 'MiniMax Link', linkParts),
+  ])
+
+  await user.click(
+    await screen.findByRole('button', { name: 'Link extensions 2' })
+  )
+  expect(await screen.findByText('Seedance Link')).toBeInTheDocument()
+  expect(screen.getByText('MiniMax Link')).toBeInTheDocument()
+  expect(screen.queryByText('Kling')).toBeNull()
+  expect(router.state.location.search).toEqual({ kind: 'link' })
+
+  await user.click(screen.getByRole('button', { name: 'Table view' }))
+  expect(await screen.findByRole('table')).toBeInTheDocument()
+  const filter = screen.getByPlaceholderText('Filter plugins...')
+  await user.type(filter, 'MiniMax')
+  expect(screen.getByText('MiniMax Link')).toBeInTheDocument()
+  await waitFor(() => expect(screen.queryByText('Seedance Link')).toBeNull())
+  await user.clear(filter)
+  await user.click(screen.getByRole('button', { name: 'Card view' }))
+
+  await user.click(screen.getByRole('tab', { name: 'Marketplace' }))
+  expect(await screen.findByText('Vidu')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /Link extensions/ })).toBeNull()
+
+  await user.click(screen.getByRole('tab', { name: 'Installed' }))
+  expect(await screen.findByText('Seedance Link')).toBeInTheDocument()
 })

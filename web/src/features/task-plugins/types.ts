@@ -231,6 +231,7 @@ export type TaskPluginParts = {
 }
 
 export type TaskPluginListItem = TaskPluginParts & {
+  link?: boolean
   meta: TaskPluginMeta
   source: 'factory' | 'override' | 'override_over_factory'
   enabled: boolean
@@ -260,6 +261,7 @@ export type TaskPluginUsage = {
 }
 
 export type TaskPluginDetail = TaskPluginParts & {
+  link?: boolean
   plugin?: TaskPluginRecord
   meta: TaskPluginMeta
   source: string

@@ -61,7 +61,7 @@ function makeItem(): TaskPluginListItem {
 function renderSheet(
   metaOverrides: Partial<TaskPluginMeta>,
   skippedRoutes?: string[],
-  parts?: TaskPluginParts & Pick<TaskPluginDetail, 'transform_hooks'>
+  parts?: TaskPluginParts & Pick<TaskPluginDetail, 'link' | 'transform_hooks'>
 ) {
   const item = makeItem()
   const detail: TaskPluginDetail = {
@@ -86,6 +86,23 @@ function renderSheet(
   )
   return { ...view, queryClient, item, detail }
 }
+
+test('shows Link classification and version tools in the detail sheet', () => {
+  renderSheet({ name: 'Seedance Link' }, [], {
+    link: true,
+    task: false,
+    provider: false,
+    transform: false,
+  })
+
+  expect(screen.getByText('Link extensions')).toBeInTheDocument()
+  expect(screen.getByRole('tab', { name: 'Plugin source' })).toBeInTheDocument()
+  expect(
+    screen.getByRole('tab', { name: 'Version history' })
+  ).toBeInTheDocument()
+  expect(screen.getByRole('tab', { name: 'Source diff' })).toBeInTheDocument()
+  expect(screen.queryByRole('tab', { name: 'Plugin sandbox' })).toBeNull()
+})
 
 /**
  * The endpoint row that renders `path`, i.e. the list item holding both the

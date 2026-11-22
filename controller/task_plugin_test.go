@@ -658,6 +658,7 @@ export function parseBalance() { return {unlimited: true}; }
 // and no credential hooks.
 func TestTaskPluginPagesReportPartsAndCredentialHooks(t *testing.T) {
 	setupTaskPluginControllerTest(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.TaskCreateAttempt{}))
 	const head = `export const meta = {apiVersion: 1, key: %q, name: "Parts", version: %q, author: {name: "Test"}, %s};`
 	const task = `models: ["m"], fetchMode: "per_task"`
 	const relay = `relay: [{incoming_path: "/v1/chat/completions", upstream_path: "/chat"}]`
@@ -965,9 +966,14 @@ func TestTaskPluginChangesReportPricingIssuesOfServingPlugin(t *testing.T) {
 	require.NoError(t, model.InitLogDB())
 	key := "pricing-notice-probe"
 	cleanupTaskPluginControllerRuntime(t, key)
+	const fixtureChannelType = 1995
+	require.NoError(t, model.DB.Create(&model.Channel{
+		Id: 1, Type: fixtureChannelType, Status: common.ChannelStatusEnabled,
+		Name: "pricing notice channel", Key: "fixture-key", Models: "doc-1",
+	}).Error)
 	require.NoError(t, model.DB.Create(&model.Ability{Group: "default", Model: "doc-1", ChannelId: 1, Enabled: true}).Error)
 	upload := func(version string) string {
-		body, err := common.Marshal(map[string]any{"source": taskPluginControllerTestSource(key, version)})
+		body, err := common.Marshal(map[string]any{"source": taskPluginControllerChannelSource(key, version, fixtureChannelType)})
 		require.NoError(t, err)
 		return string(body)
 	}
@@ -1048,6 +1054,10 @@ func TestSwitchedOffPluginPricesAreNotPricingIssues(t *testing.T) {
 	freshIssues, err := model.GetModelPricingIssues("")
 	require.NoError(t, err)
 	assert.Empty(t, freshIssues)
+	require.NoError(t, model.DB.Create(&model.Channel{
+		Id: 1, Type: constant.ChannelTypeKling, Status: common.ChannelStatusEnabled,
+		Name: "kling fixture channel", Key: "fixture-key", Models: strings.Join(kling.Models, ","),
+	}).Error)
 	for _, name := range kling.Models {
 		require.NoError(t, model.DB.Create(&model.Ability{Group: "default", Model: name, ChannelId: 1, Enabled: true}).Error)
 	}

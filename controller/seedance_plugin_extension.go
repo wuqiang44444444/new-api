@@ -43,12 +43,28 @@ func compileTaskPluginSource(source string, options pluginruntime.Options) (*plu
 	return plugin, err
 }
 
+func isLinkExtensionPlugin(key string) bool {
+	return key == taskseedance.SeedanceExtensionPluginKey || key == pluginruntime.MinimaxPluginKey
+}
+
+func storedTaskPluginDetail(plugin *model.TaskPlugin, meta pluginruntime.Meta) taskPluginDetail {
+	detail := taskPluginDetail{
+		Plugin: plugin, Meta: meta, Source: string(plugin.Source), Layer: "override",
+		HasIcon: plugin.HasIcon(), SkippedRoutes: taskPluginSkippedRoutes(plugin.Key, plugin.Version),
+		Link: isLinkExtensionPlugin(plugin.Key),
+	}
+	if !detail.Link {
+		detail.taskPluginParts = servedTaskPluginParts(meta, plugin.Active && plugin.Enabled)
+	}
+	return detail
+}
+
 // splitSeedanceExtensionRows separates typed extension rows (seedance-link
 // and minimax-link) from the native override set so the native registry
 // never receives them (index isolation).
 func splitSeedanceExtensionRows(rows []model.TaskPlugin) (native []model.TaskPlugin, extensions []model.TaskPlugin) {
 	for _, row := range rows {
-		if row.Key == taskseedance.SeedanceExtensionPluginKey || row.Key == pluginruntime.MinimaxPluginKey {
+		if isLinkExtensionPlugin(row.Key) {
 			extensions = append(extensions, row)
 			continue
 		}
@@ -122,21 +138,25 @@ func applySeedanceExtensionListItem(item *taskPluginListItem) error {
 		return err
 	}
 	item.InFlightCount = int64(len(tasks) + len(attempts))
-	item.RuntimeError = ""
+	item.Link = true
+	item.SkippedRoutes = []string{}
 
 	if !item.Enabled {
 		// item.Active marks the promoted version, not the runtime switch; a
 		// disabled row is not serving regardless of promotion.
 		item.RuntimeStatus = "disabled_fallback"
+		item.RuntimeError = ""
 		return nil
 	}
 	activeVersion, syncErrors := describeTypedExtensionByKey(item.Meta.Key)
 	if len(syncErrors) > 0 {
-		item.RuntimeStatus = "compile_failed"
 		item.RuntimeError = syncErrors[0]
+	}
+	if item.RuntimeError != "" {
+		item.RuntimeStatus = "compile_failed"
 		return nil
 	}
-	if activeVersion == "" {
+	if activeVersion == "" || activeVersion != item.Meta.Version {
 		item.RuntimeStatus = "not_registered"
 		return nil
 	}

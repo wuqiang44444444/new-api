@@ -110,6 +110,17 @@ func TestDailyReportValidationYieldsAndRecentDeadlineKeepsPressureReason(t *test
 	require.ErrorIs(t, budget.gate(expired), context.DeadlineExceeded)
 }
 
+func TestDailyReportCleanupDefersDuringCalibration(t *testing.T) {
+	decision := reportAdmissionDecision{calibrating: true, pressure: reportPause, at: time.Now()}
+	budget := dailyReportBudget{admission: func(context.Context) reportAdmissionDecision {
+		current := decision
+		decision = reportAdmissionDecision{pressure: reportHealthy, at: current.at.Add(reportObservationInterval)}
+		return current
+	}}
+	ctx := context.WithValue(t.Context(), dailyReportCleanupWorkKey{}, true)
+	require.ErrorIs(t, budget.pace(ctx, 25), model.ErrDailyReportResourcePressure)
+}
+
 func TestSharedAdmissionStopsAtWALPressure(t *testing.T) {
 	db := setupVersionServiceTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.SystemInstance{}))

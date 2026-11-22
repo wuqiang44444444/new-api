@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { createFileRoute, redirect } from '@tanstack/react-router'
 
 import { TaskPlugins } from '@/features/task-plugins'
-import { taskPluginsSearchSchema } from '@/features/task-plugins/lib/plugin-kinds'
+import { taskPluginsSearchSchema } from '@/features/task-plugins/lib/installed-plugin-kinds'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 

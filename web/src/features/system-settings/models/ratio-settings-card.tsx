@@ -200,6 +200,8 @@ export function RatioSettingsCard({
               pricingBaseline.options['billing_setting.billing_expr'],
             PluginBillingExpr:
               pricingBaseline.options['billing_setting.plugin_billing_expr'],
+            TaskPreConsumeTokens:
+              pricingBaseline.options['task_billing_setting.preconsume_tokens'],
           }
         : initialModelDefaults,
     [initialModelDefaults, pricingBaseline]

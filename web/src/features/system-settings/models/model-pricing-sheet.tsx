@@ -65,6 +65,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   previewModelPricing,
   previewModelPricingConversion,
+  useModelPricing,
   type ModelPricingPluginVariant,
 } from '@/features/model-pricing/api'
 import {
@@ -160,7 +161,7 @@ export const ModelPricingSheet = forwardRef<
     isSaving,
     usageSchema,
     preconsumeTokenBudget,
-    pluginVariants,
+    pluginVariants: providedPluginVariants,
     onDirtyChange,
     scrollHeader,
   },
@@ -185,7 +186,7 @@ export const ModelPricingSheet = forwardRef<
           editData={editData}
           usageSchema={usageSchema}
           preconsumeTokenBudget={preconsumeTokenBudget}
-          pluginVariants={pluginVariants}
+          pluginVariants={providedPluginVariants}
           onDirtyChange={onDirtyChange}
           scrollHeader={scrollHeader}
           onSave={onSave}
@@ -208,7 +209,7 @@ const ModelPricingEditorPanelContent = forwardRef<
     isSaving,
     usageSchema,
     preconsumeTokenBudget,
-    pluginVariants,
+    pluginVariants: providedPluginVariants,
     onDirtyChange,
     embedded = false,
     scrollHeader,
@@ -295,12 +296,24 @@ const ModelPricingEditorPanelContent = forwardRef<
     },
   })
   const watchedValues = form.watch()
+  const modelName = watchedValues.name.trim()
+  const debouncedModelName = useDebounce(modelName, 250)
+  const pricingModelName =
+    modelName === editData?.name ? modelName : debouncedModelName
+  const pricingConfig = useModelPricing(
+    pricingModelName ? [pricingModelName] : [],
+    Boolean(pricingModelName) && preconsumeTokenBudget === undefined
+  )
+  const pricingEntry = pricingConfig.data?.entries.find(
+    (entry) => entry.model_name === modelName
+  )
+  const pluginVariants = providedPluginVariants ?? pricingEntry?.plugin_variants
   const billingContractConflict =
     editData?.billingContractConflict === true ||
+    pricingEntry?.billing_contract_conflict === true ||
     pricingModels.some(
       (model) =>
-        model.model_name === watchedValues.name.trim() &&
-        model.billing_contract_conflict
+        model.model_name === modelName && model.billing_contract_conflict
     )
   let previewRequest = ''
   if (pricingMode === 'per-token' && watchedValues.name.trim()) {
@@ -349,13 +362,17 @@ const ModelPricingEditorPanelContent = forwardRef<
       ),
     [pricingModels]
   )
-  const showTaskBudget = preconsumeTokenBudget ?? (editData?.taskPreConsumeTokens !== undefined || pricingModels.some(model=>model.model_name===watchedValues.name.trim() && ('preconsume_token_budget' in model && model.preconsume_token_budget)))
+  const showTaskBudget =
+    preconsumeTokenBudget ??
+    (pricingEntry?.preconsume_token_budget === true ||
+      editData?.taskPreConsumeTokens !== undefined)
   const taskUsageSchema =
     usageSchema ??
+    pricingEntry?.usage_schema ??
     pluginVariants?.find((variant) => !variant.stale)?.usage_schema ??
-    usageSchemaByModel.get(watchedValues.name.trim())
+    usageSchemaByModel.get(modelName)
   const taskUsageExamples =
-    usageExamplesByModel.get(watchedValues.name.trim()) ??
+    usageExamplesByModel.get(modelName) ??
     pluginVariants?.find((variant) => !variant.stale)?.usage_examples
   const usesTaskPricing =
     ordinaryPricingModel !== watchedValues.name &&
@@ -731,8 +748,10 @@ const ModelPricingEditorPanelContent = forwardRef<
         audioCompletionRatio: values.audioCompletionRatio || '',
       }
 
-      if (pricingMode === 'tiered_expr') {
+      if (editData?.taskPreConsumeTokens !== undefined || taskPreConsumeTokens > 0) {
         data.taskPreConsumeTokens = taskPreConsumeTokens
+      }
+      if (pricingMode === 'tiered_expr') {
         data.billingExpr = resolvedBillingExpr
         data.requestRuleExpr = requestRuleExpr
       }

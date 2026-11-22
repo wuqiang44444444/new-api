@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -120,10 +121,17 @@ func TestApplySeedanceExtensionListItemProjectsRealStatus(t *testing.T) {
 	}}
 	require.NoError(t, taskseedance.SyncExtensionSnapshot(nil, rows))
 
-	item := taskPluginListItem{Active: true, Enabled: true, Meta: jsplugin.Meta{Key: "seedance-link"}}
+	item := taskPluginListItem{Active: true, Enabled: true, Meta: jsplugin.Meta{Key: "seedance-link", Version: rows[0].Version}}
 	require.NoError(t, applySeedanceExtensionListItem(&item))
 	assert.Equal(t, "registered", item.RuntimeStatus)
 	assert.Empty(t, item.RuntimeError)
+	item.Meta.Version = "unpublished-version"
+	require.NoError(t, applySeedanceExtensionListItem(&item))
+	assert.Equal(t, "not_registered", item.RuntimeStatus)
+	item.RuntimeError = "cannot read active Seedance plugin"
+	require.NoError(t, applySeedanceExtensionListItem(&item))
+	assert.Equal(t, "compile_failed", item.RuntimeStatus)
+	assert.Equal(t, "cannot read active Seedance plugin", item.RuntimeError)
 
 	// A disabled active row reports disabled_fallback, never not_registered
 	// noise from the native registry.
@@ -152,4 +160,85 @@ func TestSeedanceListCountsAttemptsAndDisabledHistory(t *testing.T) {
 	require.NoError(t, model.DB.Migrator().DropTable(&model.TaskCreateAttempt{}))
 	item := taskPluginListItem{Enabled: false, Meta: jsplugin.Meta{Key: "seedance-link"}}
 	require.Error(t, applySeedanceExtensionListItem(&item))
+}
+
+func TestLinkPluginManagementClassifiesBothExtensions(t *testing.T) {
+	setupTaskPluginControllerTest(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.TaskCreateAttempt{}))
+	rows := []model.TaskPlugin{
+		{Key: jsplugin.SeedancePluginKey, Version: plugins.SeedanceVersion(), APIVersion: 3, Source: model.LongText(plugins.SeedanceSource()), Active: true},
+		{Key: jsplugin.MinimaxPluginKey, Version: plugins.MinimaxVersion(), APIVersion: 3, Source: model.LongText(plugins.MinimaxSource()), Active: true},
+	}
+	for _, row := range rows {
+		row.SourceHash = fmt.Sprintf("%x", common.Sha256Raw([]byte(row.Source)))
+		require.NoError(t, model.DB.Create(&row).Error)
+	}
+	router := gin.New()
+	router.GET("/api/plugin/task", ListTaskPlugins)
+	router.POST("/api/plugin/task", UploadTaskPlugin)
+	router.GET("/api/plugin/task/:key", GetTaskPlugin)
+	router.GET("/api/task_plugin_options", GetTaskPluginOptions)
+	type pluginItem struct {
+		Meta                            jsplugin.Meta
+		Link, Task, Provider, Transform bool
+		SkippedRoutes                   []string `json:"skipped_routes"`
+	}
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/plugin/task", nil))
+	var list struct {
+		Success bool
+		Data    []pluginItem
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &list))
+	require.True(t, list.Success)
+	items := map[string]pluginItem{}
+	for _, item := range list.Data {
+		items[item.Meta.Key] = item
+	}
+	for _, row := range rows {
+		t.Run(row.Key, func(t *testing.T) {
+			item, ok := items[row.Key]
+			require.True(t, ok)
+			assert.True(t, item.Link)
+			assert.False(t, item.Task || item.Provider || item.Transform)
+			assert.Equal(t, []string{}, item.SkippedRoutes)
+
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/plugin/task/"+row.Key+"?version="+row.Version, nil))
+			var detail struct {
+				Success bool
+				Data    pluginItem
+			}
+			require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &detail))
+			require.True(t, detail.Success)
+			assert.True(t, detail.Data.Link)
+			assert.False(t, detail.Data.Task || detail.Data.Provider || detail.Data.Transform)
+			assert.Equal(t, []string{}, detail.Data.SkippedRoutes)
+
+			payload, err := common.Marshal(map[string]any{"source": row.Source, "enabled": false})
+			require.NoError(t, err)
+			recorder = httptest.NewRecorder()
+			upload := httptest.NewRequest(http.MethodPost, "/api/plugin/task", bytes.NewReader(payload))
+			upload.Header.Set("Content-Type", "application/json")
+			router.ServeHTTP(recorder, upload)
+			detail.Data = pluginItem{}
+			require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &detail))
+			require.True(t, detail.Success, recorder.Body.String())
+			assert.True(t, detail.Data.Link)
+			assert.False(t, detail.Data.Task || detail.Data.Provider || detail.Data.Transform)
+			assert.Equal(t, []string{}, detail.Data.SkippedRoutes)
+		})
+	}
+	recorder = httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/task_plugin_options", nil))
+	var options struct {
+		Success bool
+		Data    []struct{ Key string }
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &options))
+	require.True(t, options.Success)
+	for _, option := range options.Data {
+		assert.NotEqual(t, jsplugin.SeedancePluginKey, option.Key)
+		assert.NotEqual(t, jsplugin.MinimaxPluginKey, option.Key)
+	}
 }

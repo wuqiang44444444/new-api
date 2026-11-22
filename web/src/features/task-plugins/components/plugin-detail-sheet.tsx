@@ -124,6 +124,7 @@ function PluginDetailContent(props: { plugin: TaskPluginListItem }) {
   const detail = detailQuery.data
   const versions = versionsQuery.data ?? []
   const parts = resolvePluginParts(detail ?? props.plugin)
+  const link = detail?.link ?? props.plugin.link
   // A provider-only plugin has no billing parameters or task sandbox.
   const tab =
     !parts.task && (activeTab === 'billing' || activeTab === 'sandbox')
@@ -221,8 +222,9 @@ function PluginDetailContent(props: { plugin: TaskPluginListItem }) {
             {detail?.meta.version ?? props.plugin.meta.version}
           </Badge>
         </div>
-        {(parts.provider || parts.login || parts.transform) && (
+        {(link || parts.provider || parts.login || parts.transform) && (
           <div className='flex flex-wrap items-center gap-1.5'>
+            {link && <Badge variant='secondary'>{t('Link extensions')}</Badge>}
             <PluginPartsBadges
               provider={parts.provider}
               login={parts.login}

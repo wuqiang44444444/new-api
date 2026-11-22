@@ -75,7 +75,10 @@ export function ModelPricingPanel(props: {
       values['billing_setting.billing_expr'] =
         entry.effective['billing_setting.billing_expr']
     }
-    return pricingRow(entry.model_name, values)
+    return {
+      ...pricingRow(entry.model_name, values),
+      billingContractConflict: entry.billing_contract_conflict,
+    }
   }, [entry])
 
   useEffect(() => {
@@ -164,6 +167,10 @@ export function ModelPricingPanel(props: {
         ref={editor}
         editData={editData}
         usageSchema={entry.usage_schema}
+        preconsumeTokenBudget={
+          entry.preconsume_token_budget ??
+          editData.taskPreConsumeTokens !== undefined
+        }
         pluginVariants={entry.plugin_variants}
         onDirtyChange={props.onDirtyChange}
         onSave={() => persist()}

@@ -25,7 +25,42 @@ import {
   pricingFromDraft,
   pricingOptions,
   pricingRow,
+  pricingRows,
 } from '../pricing'
+
+const taskBudgetKey = 'task_billing_setting.preconsume_tokens'
+
+it('retains the saved token budget when editing a task expression', () => {
+  const configured = {
+    'billing_setting.billing_mode': 'tiered_expr',
+    'billing_setting.billing_expr': 'tier("base", u("tokens") * 5 / 1000000)',
+    [taskBudgetKey]: 800000,
+  }
+  const draft = pricingRow('seedance-2-0-fast-b', configured)
+  expect(draft.taskPreConsumeTokens).toBe(800000)
+  draft.billingExpr = 'tier("base", u("tokens") * 6 / 1000000)'
+  expect(pricingFromDraft(draft)).toEqual({
+    ...configured,
+    'billing_setting.billing_expr': draft.billingExpr,
+  })
+})
+
+it('preserves unedited budgets and removes an explicitly cleared source budget', () => {
+  const options = pricingOptions({
+    TaskPreConsumeTokens: '{"source":800000,"target":900000}',
+  })
+  const draft = { name: 'source', billingMode: 'tiered_expr' as const }
+  const unchanged = applyPricingDraft(options, draft)
+  expect(pricingRows(unchanged)).toContainEqual(
+    expect.objectContaining({ name: 'source', taskPreConsumeTokens: 800000 })
+  )
+  const cleared = applyPricingDraft(
+    unchanged,
+    { ...draft, taskPreConsumeTokens: 0 },
+    ['source', 'target']
+  )
+  expect(JSON.parse(cleared[taskBudgetKey])).toEqual({ target: 900000 })
+})
 
 describe('shared model pricing', () => {
   it('preserves explicit zero prices and cache-write configuration', () => {

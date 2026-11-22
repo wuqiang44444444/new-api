@@ -125,6 +125,9 @@ func buildTaskAliasView(generation *jsplugin.RoutingGeneration) *taskAliasView {
 	drafts := make(map[string]*taskAliasDraft)
 	for i := range channels {
 		channel := &channels[i]
+		if channelSkipsGenericAbilities(channel.Type) {
+			continue
+		}
 		mappingJSON := channel.GetModelMapping()
 		if mappingJSON == "" || mappingJSON == "{}" {
 			continue

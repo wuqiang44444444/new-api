@@ -44,6 +44,7 @@ import {
 import {
   countPluginKinds,
   defaultPluginKind,
+  PLUGIN_KIND_OPTIONS,
   type PluginKind,
 } from '../lib/plugin-kinds'
 import { resolvePluginParts } from '../lib/plugin-parts'
@@ -177,6 +178,7 @@ export function MarketplacePanel(props: MarketplacePanelProps) {
               </ToggleGroupItem>
             </ToggleGroup>
             <PluginKindSwitch
+              options={PLUGIN_KIND_OPTIONS}
               value={kind}
               counts={kindCounts}
               onValueChange={props.onKindChange}

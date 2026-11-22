@@ -46,7 +46,7 @@ import { MarketplacePanel } from './components/marketplace-panel'
 import { PluginDetailSheet } from './components/plugin-detail-sheet'
 import { PluginsTable } from './components/plugins-table'
 import { UploadDialog } from './components/upload-dialog'
-import type { PluginKind } from './lib/plugin-kinds'
+import type { InstalledPluginKind } from './lib/installed-plugin-kinds'
 import { localizedPluginName } from './lib/plugin-name'
 import type { TaskPluginListItem } from './types'
 
@@ -78,7 +78,7 @@ export function TaskPlugins() {
     },
     onError: (error) => handleServerError(error),
   })
-  const setKind = (kind: PluginKind) =>
+  const setKind = (kind: InstalledPluginKind) =>
     void navigate({ search: (prev) => ({ ...prev, kind }) })
   const openUpload = (key?: string) => {
     setUploadKey(key ?? null)
@@ -179,7 +179,10 @@ export function TaskPlugins() {
               />
             </TabsContent>
             <TabsContent value='marketplace' className='min-h-0 flex-1'>
-              <MarketplacePanel kind={search.kind} onKindChange={setKind} />
+              <MarketplacePanel
+                kind={search.kind === 'link' ? undefined : search.kind}
+                onKindChange={setKind}
+              />
             </TabsContent>
           </Tabs>
         </SectionPageLayout.Content>

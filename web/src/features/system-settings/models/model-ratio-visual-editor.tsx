@@ -47,7 +47,6 @@ import {
   useDataTable,
 } from '@/components/data-table'
 import { Button } from '@/components/ui/button'
-import { useModelPricing } from '@/features/model-pricing/api'
 import {
   applyPricingDraft,
   PRICING_KEYS,
@@ -82,6 +81,7 @@ import {
 } from './model-ratio-table-columns'
 import { PriceChangeCard } from './price-change-diff'
 import { type ModelPricingIssue, useModelPricingIssues } from './pricing-issues'
+import { applyTaskPreConsumeTokenChanges } from './task-preconsume-map'
 
 type ModelRatioVisualEditorProps = {
   savedModelPrice: string
@@ -95,6 +95,7 @@ type ModelRatioVisualEditorProps = {
   savedBillingMode: string
   savedBillingExpr: string
   savedPluginBillingExpr?: string
+  savedTaskPreConsumeTokens?: string
   modelPrice: string
   modelRatio: string
   cacheRatio: string
@@ -106,6 +107,7 @@ type ModelRatioVisualEditorProps = {
   billingMode: string
   billingExpr: string
   pluginBillingExpr?: string
+  taskPreConsumeTokens?: string
   candidateModelNames?: string[]
   candidateModelsLoading?: boolean
   filterMode?: 'all' | 'unset'
@@ -139,6 +141,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
     savedBillingMode,
     savedBillingExpr,
     savedPluginBillingExpr = '{}',
+    savedTaskPreConsumeTokens = '{}',
     modelPrice,
     modelRatio,
     cacheRatio,
@@ -150,6 +153,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
     billingMode,
     billingExpr,
     pluginBillingExpr = '{}',
+    taskPreConsumeTokens = '{}',
     candidateModelNames,
     candidateModelsLoading,
     filterMode = 'all',
@@ -167,10 +171,6 @@ const ModelRatioVisualEditorComponent = forwardRef<
   const [editorOpen, setEditorOpen] = useState(false)
   const [editData, setEditData] = useState<ModelRatioData | null>(null)
   const [panelDirty, setPanelDirty] = useState(false)
-  const pricingConfig = useModelPricing(
-    editData?.name ? [editData.name] : [],
-    Boolean(editData?.name)
-  )
   const pricingIssuesQuery = useModelPricingIssues()
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFiltersOverride, setColumnFiltersOverride] =
@@ -268,6 +268,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
         BillingMode: savedBillingMode,
         BillingExpr: savedBillingExpr,
         PluginBillingExpr: savedPluginBillingExpr,
+        TaskPreConsumeTokens: savedTaskPreConsumeTokens,
       }),
     [
       savedModelPrice,
@@ -281,6 +282,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
       savedBillingMode,
       savedBillingExpr,
       savedPluginBillingExpr,
+      savedTaskPreConsumeTokens,
     ]
   )
   const draftOptions = useMemo(
@@ -297,6 +299,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
         BillingMode: billingMode,
         BillingExpr: billingExpr,
         PluginBillingExpr: pluginBillingExpr,
+        TaskPreConsumeTokens: taskPreConsumeTokens,
       }),
     [
       modelPrice,
@@ -310,6 +313,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
       billingMode,
       billingExpr,
       pluginBillingExpr,
+      taskPreConsumeTokens,
     ]
   )
 
@@ -431,6 +435,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
         billingExpr: editableModel.billingExpr,
         pluginBillingExpr: editableModel.pluginBillingExpr,
         requestRuleExpr: editableModel.requestRuleExpr,
+        taskPreConsumeTokens: editableModel.taskPreConsumeTokens,
       })
       setEditorOpen(true)
       if (isMobile) setSheetOpen(true)
@@ -513,6 +518,10 @@ const ModelRatioVisualEditorComponent = forwardRef<
         billingExpr,
         { fallback: {}, silent: true }
       )
+      const taskBudgetMap = safeJsonParse<Record<string, number>>(
+        taskPreConsumeTokens,
+        { fallback: {}, silent: true }
+      )
 
       delete priceMap[name]
       delete ratioMap[name]
@@ -524,6 +533,11 @@ const ModelRatioVisualEditorComponent = forwardRef<
       delete audioCompletionMap[name]
       delete billingModeMap[name]
       delete billingExprMap[name]
+      applyTaskPreConsumeTokenChanges(taskBudgetMap, [name])
+      onChange(
+        'task_billing_setting.preconsume_tokens',
+        JSON.stringify(taskBudgetMap, null, 2)
+      )
       const pluginExprMap = safeJsonParse<Record<string, string>>(
         pluginBillingExpr,
         { fallback: {} }
@@ -573,6 +587,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
       billingMode,
       billingExpr,
       pluginBillingExpr,
+      taskPreConsumeTokens,
       onChange,
     ]
   )
@@ -911,16 +926,6 @@ const ModelRatioVisualEditorComponent = forwardRef<
               editData={editData}
               scrollHeader={scrollHeader}
               onDirtyChange={setPanelDirty}
-              pluginVariants={
-                pricingConfig.data?.entries.find(
-                  (entry) => entry.model_name === editData?.name
-                )?.plugin_variants
-              }
-              usageSchema={
-                pricingConfig.data?.entries.find(
-                  (entry) => entry.model_name === editData?.name
-                )?.usage_schema
-              }
               onSave={onSave}
               isSaving={isSaving}
               className='h-full min-h-0'
@@ -963,16 +968,6 @@ const ModelRatioVisualEditorComponent = forwardRef<
           editData={editData}
           scrollHeader={scrollHeader}
           onDirtyChange={setPanelDirty}
-          pluginVariants={
-            pricingConfig.data?.entries.find(
-              (entry) => entry.model_name === editData?.name
-            )?.plugin_variants
-          }
-          usageSchema={
-            pricingConfig.data?.entries.find(
-              (entry) => entry.model_name === editData?.name
-            )?.usage_schema
-          }
           onSave={onSave}
           isSaving={isSaving}
         />
@@ -998,6 +993,7 @@ export const ModelRatioVisualEditor = memo(
       prevProps.savedBillingMode === nextProps.savedBillingMode &&
       prevProps.savedBillingExpr === nextProps.savedBillingExpr &&
       prevProps.savedPluginBillingExpr === nextProps.savedPluginBillingExpr &&
+      prevProps.savedTaskPreConsumeTokens === nextProps.savedTaskPreConsumeTokens &&
       prevProps.modelPrice === nextProps.modelPrice &&
       prevProps.modelRatio === nextProps.modelRatio &&
       prevProps.cacheRatio === nextProps.cacheRatio &&
@@ -1009,6 +1005,7 @@ export const ModelRatioVisualEditor = memo(
       prevProps.billingMode === nextProps.billingMode &&
       prevProps.billingExpr === nextProps.billingExpr &&
       prevProps.pluginBillingExpr === nextProps.pluginBillingExpr &&
+      prevProps.taskPreConsumeTokens === nextProps.taskPreConsumeTokens &&
       prevProps.candidateModelNames === nextProps.candidateModelNames &&
       prevProps.candidateModelsLoading === nextProps.candidateModelsLoading &&
       prevProps.filterMode === nextProps.filterMode &&

@@ -17,12 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { afterEach, expect, it, vi } from 'vitest'
 
+import type { ModelPricingEntry } from '@/features/model-pricing/api'
 import { api } from '@/lib/api'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
@@ -63,11 +64,12 @@ const raisedDeepseek = { ModelRatio: '{"deepseek-v4":0.15}' }
 
 function PriceChangesFixture(props: {
   draft?: Partial<typeof saved>
+  savedValues: typeof saved
   onSave: (values: typeof saved) => Promise<void>
 }) {
   const [actions, setActions] = useState<HTMLDivElement | null>(null)
   const [titleStatus, setTitleStatus] = useState<HTMLSpanElement | null>(null)
-  const form = useForm({ defaultValues: { ...saved, ...props.draft } })
+  const form = useForm({ defaultValues: { ...props.savedValues, ...props.draft } })
   return (
     <SettingsPageProvider
       actionsContainer={actions}
@@ -79,7 +81,7 @@ function PriceChangesFixture(props: {
       </header>
       <ModelRatioForm
         form={form}
-        savedValues={saved}
+        savedValues={props.savedValues}
         onSave={props.onSave}
         onReset={() => undefined}
         isSaving={false}
@@ -90,7 +92,12 @@ function PriceChangesFixture(props: {
 }
 
 async function renderForm(
-  fixture: { draft?: Partial<typeof saved>; issues?: ModelPricingIssue[] } = {}
+  fixture: {
+    draft?: Partial<typeof saved>
+    saved?: Partial<typeof saved>
+    issues?: ModelPricingIssue[]
+    entries?: ModelPricingEntry[]
+  } = {}
 ) {
   vi.spyOn(api, 'get').mockImplementation(async (url) => {
     if (url === '/api/option/model_pricing/issues') {
@@ -100,7 +107,7 @@ async function renderForm(
       return {
         data: {
           success: true,
-          data: { entries: [], options: {}, empty_version: '' },
+          data: { entries: fixture.entries ?? [], options: {}, empty_version: '' },
         },
       }
     }
@@ -109,7 +116,7 @@ async function renderForm(
   vi.spyOn(api, 'post').mockResolvedValue({
     data: { success: true, data: { effective: {} } },
   })
-  if (fixture.issues) {
+  if (fixture.issues || fixture.entries) {
     useAuthStore
       .getState()
       .auth.setUser({ id: 1, username: 'root', role: ROLE.SUPER_ADMIN })
@@ -119,7 +126,11 @@ async function renderForm(
   const queryClient = client
   render(
     <QueryClientProvider client={queryClient}>
-      <PriceChangesFixture draft={fixture.draft} onSave={onSave} />
+      <PriceChangesFixture
+        draft={fixture.draft}
+        savedValues={{ ...saved, ...fixture.saved }}
+        onSave={onSave}
+      />
     </QueryClientProvider>
   )
   await waitFor(() => expect(queryClient.isFetching()).toBe(0))
@@ -136,6 +147,42 @@ const topBar = () => {
 }
 const saveButton = () =>
   topBar().getByRole('button', { name: /Save model prices/ })
+
+it('shows the saved budget and preserves it when saving an edited expression', async () => {
+  const user = userEvent.setup()
+  const name = 'seedance-2-0-fast-b'
+  const expression = 'tier("base", u("tokens") * 5 / 1000000)'
+  const edited = 'tier("base", u("tokens") * 6 / 1000000)'
+  const { onSave } = await renderForm({
+    saved: {
+      BillingMode: JSON.stringify({ [name]: 'tiered_expr' }),
+      BillingExpr: JSON.stringify({ [name]: expression }),
+      TaskPreConsumeTokens: JSON.stringify({ [name]: 800000 }),
+    },
+    entries: [{
+      model_name: name,
+      version: 'saved',
+      configured: { 'task_billing_setting.preconsume_tokens': 800000 },
+      effective: {},
+      usage_schema: { tokens: { type: 'number', unit: 'token' } },
+      preconsume_token_budget: true,
+    }],
+  })
+  await user.click(screen.getByText(name))
+
+  expect(await screen.findByPlaceholderText('250000')).toHaveValue('800000')
+  fireEvent.change(await screen.findByRole('textbox', { name: 'Billing expression' }), {
+    target: { value: edited },
+  })
+  await user.click(saveButton())
+  const dialog = await screen.findByRole('alertdialog', { name: 'Confirm price changes' })
+  await user.click(within(dialog).getByRole('button', { name: 'Confirm and save' }))
+
+  await waitFor(() => expect(onSave).toHaveBeenCalledOnce())
+  const submitted = onSave.mock.calls[0][0]
+  expect(JSON.parse(submitted.BillingExpr)).toEqual({ [name]: edited })
+  expect(JSON.parse(submitted.TaskPreConsumeTokens)).toEqual({ [name]: 800000 })
+})
 
 async function deleteRow(
   user: ReturnType<typeof userEvent.setup>,

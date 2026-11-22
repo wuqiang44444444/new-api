@@ -19,15 +19,19 @@ type TaskBillingProbeProvider interface {
 	BuildTaskBillingProbe(c *gin.Context, info *relaycommon.RelayInfo) (map[string]any, error)
 }
 
+type taskPreConsumeTokenEstimator interface {
+	EstimateTaskPreConsumeTokens(*gin.Context, *relaycommon.RelayInfo, map[string]any) int
+}
+
 // ModelPriceHelperTaskTiered evaluates a task expression with an
 // administrator-configured maximum billable-token estimate. The expression,
 // trusted request probe and estimate are frozen on RelayInfo for settlement.
 //
 // Seedance Link customer models price through the upstream u() engine with the
 // controlled usage facts built from the same typed probe: u("tokens") carries
-// the administrator budget at submission and is replaced by accepted actual
-// usage at settlement, while every other declared field stays a frozen request
-// condition. Other task channel types retain their existing token contract.
+// the request estimate within the administrator budget at submission and is
+// replaced by accepted actual usage at settlement. Every other field stays a
+// frozen request condition. Other channels retain their existing token contract.
 func ModelPriceHelperTaskTiered(c *gin.Context, info *relaycommon.RelayInfo, adaptor any) (types.PriceData, error) {
 	exprString, ok := billing_setting.GetBillingExpr(info.OriginModelName)
 	if !ok {
@@ -90,6 +94,14 @@ func ModelPriceHelperTaskTiered(c *gin.Context, info *relaycommon.RelayInfo, ada
 
 	if err := AttachFrozenExchangeRate(exprString, &requestInput, info.TieredBillingSnapshot); err != nil {
 		return types.PriceData{}, fmt.Errorf("model %s: %w", info.OriginModelName, err)
+	}
+
+	if estimator, supported := adaptor.(taskPreConsumeTokenEstimator); taskUsageBilling && supported && estimatedTokens > 0 {
+		if estimate := estimator.EstimateTaskPreConsumeTokens(c, info, probe); estimate > 0 && estimate < estimatedTokens &&
+			billingexpr.ValidateTaskTokenPrice(exprString, requestInput) == nil {
+			estimatedTokens = estimate
+			usageFacts[seedancebilling.TokenUsageKey] = float64(estimate)
+		}
 	}
 
 	draft := info.TaskRelayInfo.IsVideoDraftOperation()

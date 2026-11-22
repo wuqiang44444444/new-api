@@ -23,7 +23,7 @@ import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
 import { resolveLocalizedText } from '@/lib/localized-text'
 
-import type { PluginKind } from '../lib/plugin-kinds'
+import type { InstalledPluginKind } from '../lib/installed-plugin-kinds'
 import { localizedPluginName } from '../lib/plugin-name'
 import { resolvePluginParts } from '../lib/plugin-parts'
 import { REQUEST_PLUGIN_STAGE_LABELS } from '../lib/request-plugins'
@@ -61,7 +61,7 @@ function PluginCardComponent({
   revoked,
 }: {
   row: Row<TaskPluginListItem>
-  kind: PluginKind
+  kind: InstalledPluginKind
   /** Set when the community list took this installed code down. */
   revoked?: MarketplaceRevokedEntry
 }) {

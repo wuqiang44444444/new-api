@@ -49,16 +49,29 @@ func (handler usageReportHandler) Run(parent context.Context, task *model.System
 	sourceCtx = model.WithLowPriorityDailyReport(sourceCtx)
 	reportErr := runDailyReport(sourceCtx, task, runnerID, gate)
 	now := common.GetTimestamp()
-	if err := gate(sourceCtx); err == nil {
-		pruneCtx, stopPrune := context.WithTimeout(sourceCtx, 3*time.Second)
-		_, err := model.PruneUsageReportRows(pruneCtx, now)
-		if err == nil && gate(pruneCtx) == nil {
-			_, err = model.PruneBillingReportGenerations(pruneCtx, now)
+	// Admission may wait for calibration before a pass. Once the pass starts,
+	// its short deadline is for cleanup work; a new calibration defers it.
+	cleanupSource := context.WithValue(sourceCtx, dailyReportCleanupWorkKey{}, true)
+	for _, phase := range []struct {
+		name string
+		run  func(context.Context, int64) (bool, error)
+	}{
+		{"usage", model.PruneUsageReportRows},
+		{"billing", model.PruneBillingReportGenerations},
+	} {
+		if err := gate(sourceCtx); err != nil {
+			break
 		}
+		pruneCtx, stopPrune := context.WithTimeout(cleanupSource, 3*time.Second)
+		_, err := phase.run(pruneCtx, now)
 		stopPrune()
-		if err != nil && !errors.Is(err, model.ErrDailyReportResourcePressure) {
-			common.SysError("daily report cleanup failed: " + err.Error())
+		if err == nil {
+			continue
 		}
+		if !errors.Is(err, model.ErrDailyReportResourcePressure) {
+			common.SysError("daily report cleanup failed: " + phase.name + ": " + err.Error())
+		}
+		break
 	}
 	if err := gate(sourceCtx); err == nil {
 		pruneCtx, cancel := context.WithTimeout(sourceCtx, 3*time.Second)

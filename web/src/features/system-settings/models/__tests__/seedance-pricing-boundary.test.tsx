@@ -24,6 +24,9 @@ import { createRef } from 'react'
 import { describe, expect, test, vi } from 'vitest'
 
 import { getPricingQueryKey } from '@/features/pricing/hooks/use-pricing-data'
+import { api } from '@/lib/api'
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 
 import type { ModelRatioData } from '../model-pricing-core'
 import {
@@ -43,6 +46,61 @@ function getEditorModeSelect() {
 }
 
 describe('separate Seedance and native task pricing editors', () => {
+  test('loads the budget contract by name when adding a price to a Seedance model', async () => {
+    const user = userEvent.setup()
+    const name = 'seedance-2-0-b'
+    const auth = useAuthStore.getState().auth
+    auth.setUser({ id: 1, username: 'root', role: ROLE.SUPER_ADMIN })
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    })
+    client.setQueryData(['status'], { price: 1 })
+    client.setQueryData(getPricingQueryKey(undefined), {
+      vendors: [],
+      data: [],
+    })
+    const get = vi.spyOn(api, 'get').mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          entries: [
+            {
+              model_name: name,
+              preconsume_token_budget: true,
+              usage_schema: { tokens: { type: 'number', unit: 'token' } },
+            },
+          ],
+        },
+      },
+    })
+    const ref = createRef<ModelPricingEditorPanelHandle>()
+    const view = render(
+      <QueryClientProvider client={client}>
+        <ModelPricingEditorPanel ref={ref} />
+      </QueryClientProvider>
+    )
+    try {
+      expect(screen.queryByPlaceholderText('250000')).not.toBeInTheDocument()
+      await user.type(screen.getByRole('textbox', { name: 'Model name' }), name)
+      const budget = await screen.findByPlaceholderText('250000')
+      expect(get).toHaveBeenCalledWith('/api/option/model_pricing', {
+        params: new URLSearchParams({ model: name }),
+      })
+      await user.type(budget, '150000')
+      await act(async () => {
+        await expect(ref.current?.commitDraft()).resolves.toMatchObject({
+          name,
+          taskPreConsumeTokens: 150000,
+        })
+      })
+    } finally {
+      view.unmount()
+      client.clear()
+      get.mockRestore()
+      auth.setUser(auth.user)
+    }
+  })
+
   test('renders the Seedance task editor with an editable budget when admin data passes the Link schema', async () => {
     // 管理价格接口（props）传入的是 Seedance u() 字段合同，而不是原生插件 schema：
     // 编辑器进入任务用量编辑器，同时独立的预扣预算字段保持可读、可改、可提交。

@@ -10,6 +10,7 @@ import (
 )
 
 type dailyReportResumableWorkKey struct{}
+type dailyReportCleanupWorkKey struct{}
 
 const (
 	reportInitialWriteRate = 25
@@ -36,6 +37,9 @@ func newDailyReportBudget(ctx context.Context) (*dailyReportBudget, error) {
 }
 
 func (b *dailyReportBudget) gate(ctx context.Context) error {
+	if cleanup, _ := ctx.Value(dailyReportCleanupWorkKey{}).(bool); cleanup {
+		return b.validationGate(ctx)
+	}
 	resumable, _ := ctx.Value(dailyReportResumableWorkKey{}).(bool)
 	for {
 		err := b.validationGate(ctx)

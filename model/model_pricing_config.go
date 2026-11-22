@@ -392,22 +392,14 @@ type ModelPricingIssue struct {
 // empty pluginKey covers every plugin.
 func GetModelPricingIssues(pluginKey string) ([]ModelPricingIssue, error) {
 	generation := jsplugin.DefaultRegistry.Generation()
-	served := make(map[string]bool)
-	for _, name := range GetEnabledModels() {
-		if declared, ok := generation.CanonicalModel(name); ok {
-			served[declared] = true
-		} else if target, ok := ResolveTaskModelAlias(generation, name); ok && target.Declared != "" {
-			served[target.Declared] = true
-		}
+	served, err := servedTaskPluginPricingModels(generation, pluginKey)
+	if err != nil {
+		return nil, err
 	}
 	names := make(map[string]bool)
-	for _, plugin := range generation.Plugins() {
-		if pluginKey == "" || plugin.Meta.Key == pluginKey {
-			for _, name := range plugin.Meta.Models {
-				if served[name] {
-					names[name] = true
-				}
-			}
+	for _, models := range served {
+		for name := range models {
+			names[name] = true
 		}
 	}
 	// Models of the installed versions of plugins with saved prices that are
@@ -454,7 +446,7 @@ func GetModelPricingIssues(pluginKey string) ([]ModelPricingIssue, error) {
 				continue
 			case variant.Stale:
 				reason = ModelPricingIssueStale
-			case !served[entry.ModelName], variant.Compatible:
+			case !served[variant.PluginKey][entry.ModelName], variant.Compatible:
 				continue
 			// fixed() and chat prices mark ordinary channel pricing: the
 			// provider has no task price.

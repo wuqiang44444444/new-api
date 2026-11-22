@@ -68,6 +68,17 @@ export function parseTaskResult() { return {}; }
 				channel.Status = common.ChannelStatusManuallyDisabled
 			}
 			require.NoError(t, model.DB.Create(&channel).Error)
+			if tc.customerModel != "declared-video" {
+				// The runtime folds native aliases but pricing keys are exact.
+				// A case variant keeps the two price owners distinct.
+				nativeAlias := strings.ToUpper(tc.customerModel)
+				nativeMapping, err := common.Marshal(map[string]string{nativeAlias: "declared-video"})
+				require.NoError(t, err)
+				require.NoError(t, model.DB.Create(&model.Channel{
+					Type: constant.ChannelTypeVolcEngine, Status: common.ChannelStatusEnabled,
+					Name: "native-alias", Models: nativeAlias, ModelMapping: common.GetPointer(string(nativeMapping)),
+				}).Error)
+			}
 			for key, value := range map[string]any{
 				"billing_setting.billing_mode":           "tiered_expr",
 				"task_billing_setting.preconsume_tokens": 300000,
