@@ -71,7 +71,7 @@ func (s *azureBlobArtifactStore) putObjectFile(ctx context.Context, objectKey st
 		httpHeaders.BlobContentType = &mimeType
 	}
 	timeout := azurePutTimeout
-	if stage == "customer_export_archive" {
+	if stage == "customer_export_archive" || stage == statementExportUploadStage {
 		timeout = customerExportJobBudget
 	}
 	putCtx, cancel := context.WithTimeout(ctx, timeout)

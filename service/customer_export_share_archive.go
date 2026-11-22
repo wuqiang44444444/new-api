@@ -93,7 +93,23 @@ func executeCustomerExportShareArchive(ctx context.Context, job *model.CustomerE
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
-	if err := archive.writeZIP(ctx, io.MultiWriter(file, digest)); err != nil {
+	progress := model.CustomerExportArchiveProgress{TotalFiles: len(archive.files)}
+	var lastProgressWrite time.Time
+	publishProgress := func() {
+		lastProgressWrite = time.Now()
+		progressCtx, cancel := context.WithTimeout(ctx, customerExportBatchTimeout)
+		defer cancel()
+		if err := model.UpdateCustomerExportProgress(progressCtx, job.JobID, job.Executor, model.CustomerExportProgress{Archive: &progress}); err != nil && ctx.Err() == nil {
+			logger.LogWarn(ctx, "customer export archive progress write failed")
+		}
+	}
+	publishProgress()
+	if err := archive.writeZIP(ctx, io.MultiWriter(file, digest), func(packagedFiles int) {
+		progress.PackagedFiles = packagedFiles
+		if packagedFiles == 1 || time.Since(lastProgressWrite) >= customerExportProgressInterval {
+			publishProgress()
+		}
+	}); err != nil {
 		return nil, err
 	}
 	info, err := file.Stat()
@@ -115,6 +131,8 @@ func executeCustomerExportShareArchive(ctx context.Context, job *model.CustomerE
 	if err := model.StageCustomerExportArtifact(ctx, job.JobID, artifact); err != nil {
 		return nil, err
 	}
+	progress.Uploading = true
+	publishProgress()
 	if err := azure.putObjectFile(ctx, key, "application/zip", file.Name(), info.Size(), "customer_export_archive"); err != nil {
 		return nil, ErrCustomerExportStorageUnavailable
 	}

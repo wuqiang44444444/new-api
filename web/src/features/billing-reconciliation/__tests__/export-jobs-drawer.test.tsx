@@ -272,6 +272,37 @@ it('shows ZIP packaging without reporting ledger scan progress', async () => {
   expect(screen.queryByText('Scanned 0 records · 0 matched')).toBeNull()
 })
 
+it.each([
+  [45, false, 'Packaging ZIP'],
+  [111, true, 'Uploading ZIP'],
+])(
+  'shows archive progress after %i CSV files',
+  async (completed, uploading, label) => {
+    const archive = jobView({
+      job_type: 'statement_archive',
+      status: 'running',
+      progress: {
+        scanned: 0,
+        matched: 0,
+        written: 0,
+        files: 0,
+        archive: { packaged_files: completed, total_files: 111, uploading },
+      },
+      artifact: undefined,
+    })
+    vi.mocked(api.get).mockResolvedValue({
+      data: { success: true, data: { items: [archive] } },
+    })
+
+    await mountDrawer(true)
+
+    expect(await screen.findAllByText(label)).not.toHaveLength(0)
+    expect(
+      screen.getAllByText(`${completed} of 111 CSV files packaged`)
+    ).not.toHaveLength(0)
+  }
+)
+
 it('offers regeneration when the personal statement file expires before its status refreshes', async () => {
   const job = jobView({ expires_at: Math.floor(Date.now() / 1000) - 1 })
   vi.mocked(api.get).mockResolvedValueOnce({

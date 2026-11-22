@@ -308,9 +308,12 @@ function exportStatusLabel(
       if (job.status === 'queued') {
         return translate('Queued')
       }
-      return job.job_type === 'statement_archive'
-        ? translate('Packaging ZIP')
-        : translate('Generating')
+      if (job.job_type === 'statement_archive') {
+        return job.progress.archive?.uploading
+          ? translate('Uploading ZIP')
+          : translate('Packaging ZIP')
+      }
+      return translate('Generating')
     case 'succeeded':
       if (
         job.artifact?.missing_report_dates?.length &&
@@ -392,6 +395,7 @@ function ExportJobCard(props: {
   const { t, i18n } = useTranslation()
   const { job } = props
   const shareArchive = job.job_type === 'statement_archive'
+  const archiveProgress = job.progress.archive
   const usageRecords = job.job_type === 'usage_logs'
   const allStatements = job.job_type === 'customer_statements'
   const summary = job.job_type === 'statement_summary'
@@ -551,7 +555,14 @@ function ExportJobCard(props: {
             </p>
           )}
         {shareArchive && isExportJobActive(job) && (
-          <p>{t('Reusing existing CSV files')}</p>
+          <p>
+            {archiveProgress && job.status !== 'queued'
+              ? t('{{completed}} of {{total}} CSV files packaged', {
+                  completed: formatInteger(archiveProgress.packaged_files),
+                  total: formatInteger(archiveProgress.total_files),
+                })
+              : t('Reusing existing CSV files')}
+          </p>
         )}
         {job.job_type === 'statement_details' &&
         isExportJobActive(job) &&

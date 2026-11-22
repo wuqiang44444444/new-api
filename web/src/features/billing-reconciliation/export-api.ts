@@ -105,6 +105,11 @@ export type CustomerExportJobView = {
     files: number
     last_committed_at?: number
     waiting_for_resources?: boolean
+    archive?: {
+      packaged_files: number
+      total_files: number
+      uploading: boolean
+    }
   }
   cancel_requested: boolean
   error_code?: string

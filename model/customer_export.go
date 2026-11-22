@@ -98,12 +98,19 @@ type BillingExportCoverage struct {
 // CustomerExportProgress is throttled persisted scan state. Counts are
 // candidate/matched/written facts, never a percentage of an unknown total.
 type CustomerExportProgress struct {
-	Scanned     int64 `json:"scanned"`
-	Matched     int64 `json:"matched"`
-	Written     int64 `json:"written"`
-	Files       int64 `json:"files"`
-	CommittedAt int64 `json:"last_committed_at,omitempty"`
-	WaitingE    bool  `json:"waiting_for_resources,omitempty"`
+	Scanned     int64                          `json:"scanned"`
+	Matched     int64                          `json:"matched"`
+	Written     int64                          `json:"written"`
+	Files       int64                          `json:"files"`
+	CommittedAt int64                          `json:"last_committed_at,omitempty"`
+	WaitingE    bool                           `json:"waiting_for_resources,omitempty"`
+	Archive     *CustomerExportArchiveProgress `json:"archive,omitempty"`
+}
+
+type CustomerExportArchiveProgress struct {
+	PackagedFiles int  `json:"packaged_files"`
+	TotalFiles    int  `json:"total_files"`
+	Uploading     bool `json:"uploading"`
 }
 
 // CustomerExportArtifact describes published deliverables. Objects stay in the
@@ -632,7 +639,7 @@ func RenewCustomerExportLease(jobID string, executor string, leaseUntil int64) e
 	return nil
 }
 
-// UpdateCustomerExportProgress 按调用方节流频率持久化扫描进度。
+// UpdateCustomerExportProgress 按调用方节流频率持久化任务进度。
 func UpdateCustomerExportProgress(ctx context.Context, jobID string, executor string, progress CustomerExportProgress) error {
 	progressText, err := common.Marshal(progress)
 	if err != nil {

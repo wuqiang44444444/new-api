@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path"
 	"strconv"
 	"sync"
 	"testing"
@@ -46,6 +47,12 @@ func TestCustomerExportShareArchivePublishesAndReusesExistingCSV(t *testing.T) {
 		defer mu.Unlock()
 		switch r.Method {
 		case http.MethodPut:
+			archiveJobID := path.Base(path.Dir(r.URL.Path))
+			job, err := model.GetCustomerExportJob(archiveJobID)
+			if assert.NoError(t, err) {
+				assert.Equal(t, model.CustomerExportJobStatusRunning, job.Status)
+				assert.Equal(t, &model.CustomerExportArchiveProgress{PackagedFiles: 2, TotalFiles: 2, Uploading: true}, job.DecodeProgress().Archive)
+			}
 			content, err := io.ReadAll(r.Body)
 			if !assert.NoError(t, err) {
 				w.WriteHeader(http.StatusBadRequest)

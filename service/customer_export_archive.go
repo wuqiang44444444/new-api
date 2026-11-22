@@ -57,15 +57,15 @@ func (archive *CustomerExportArchive) Write(ctx context.Context, destination io.
 	default:
 		return ErrCustomerExportArchiveBusy
 	}
-	return archive.writeZIP(ctx, destination)
+	return archive.writeZIP(ctx, destination, nil)
 }
 
-func (archive *CustomerExportArchive) writeZIP(ctx context.Context, destination io.Writer) error {
+func (archive *CustomerExportArchive) writeZIP(ctx context.Context, destination io.Writer, onFilePackaged func(int)) error {
 	writer := zip.NewWriter(destination)
 	writer.RegisterCompressor(zip.Deflate, func(w io.Writer) (io.WriteCloser, error) {
 		return flate.NewWriter(w, flate.BestSpeed)
 	})
-	for _, file := range archive.files {
+	for i, file := range archive.files {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -86,6 +86,9 @@ func (archive *CustomerExportArchive) writeZIP(ctx context.Context, destination 
 		}
 		if size != file.SizeBytes || hex.EncodeToString(digest.Sum(nil)) != file.Sha256 {
 			return ErrCustomerExportArchiveUnavailable
+		}
+		if onFilePackaged != nil {
+			onFilePackaged(i + 1)
 		}
 	}
 	// Omit the central directory on error so a partial archive cannot be

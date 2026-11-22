@@ -28,6 +28,10 @@ const (
 	statementExportMinRowsPerSecond = 1_000
 	statementExportMaxRowsPerSecond = 16_000
 	statementExportMaxPageRows      = 1_000
+	statementExportPartRows         = 500_000
+	statementExportPartBytes        = 300_000_000
+	statementExportCommitReserve    = 2 * time.Minute
+	statementExportUploadStage      = "customer_statement_export"
 )
 
 type customerStatementExportPolicy struct {
@@ -42,7 +46,7 @@ func newCustomerStatementExportPolicy() customerStatementExportPolicy {
 	var lastDiskCheck time.Time
 	var diskAvailable bool
 	return customerStatementExportPolicy{
-		partRows:    50_000,
+		partRows:    statementExportPartRows,
 		currentRate: func() int { return speed.rate },
 		beforeBatch: func(ctx context.Context) error {
 			if sample == nil {
@@ -90,6 +94,9 @@ func (p customerStatementExportPolicy) waitForAdmission(ctx context.Context) err
 func executeCustomerStatementExport(ctx context.Context, job *model.CustomerExportJob, filters model.CustomerExportFilters, workDir string, policy customerStatementExportPolicy) (*model.CustomerExportArtifact, error) {
 	slice, stop := context.WithTimeout(ctx, 5*time.Minute)
 	defer stop()
+	deadline, _ := slice.Deadline()
+	readWindow, stopReading := context.WithDeadlineCause(slice, deadline.Add(-statementExportCommitReserve), errCustomerStatementExportYield)
+	defer stopReading()
 	if err := policy.waitForAdmission(slice); err != nil {
 		return nil, err
 	}
@@ -151,11 +158,18 @@ func executeCustomerStatementExport(ctx context.Context, job *model.CustomerExpo
 		Timezone: filters.Timezone, GeneratedAt: artifact.GeneratedAt,
 	}
 	for {
-		done, err := writeCustomerStatementExportPart(slice, reportDB, store, job, filters, artifact, pending, scope, workDir, policy)
-		if errors.Is(slice.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
-			return nil, errCustomerStatementExportYield
+		readCtx := readWindow
+		if pending != nil {
+			// Reconstruct a previously staged shard to its recorded boundary.
+			readCtx = slice
 		}
+		// Only reads use the shorter window. A staged shard can upload and commit
+		// against the remaining lease-bound job budget.
+		done, err := writeCustomerStatementExportPart(ctx, readCtx, reportDB, store, job, filters, artifact, pending, scope, workDir, policy)
 		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) && errors.Is(slice.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
+				return nil, errCustomerStatementExportYield
+			}
 			return nil, err
 		}
 		if done {
@@ -165,18 +179,18 @@ func executeCustomerStatementExport(ctx context.Context, job *model.CustomerExpo
 			return artifact, nil
 		}
 		pending = nil
-		if deadline, ok := slice.Deadline(); ok && time.Until(deadline) < 2*time.Minute {
+		if readWindow.Err() != nil {
 			return nil, errCustomerStatementExportYield
 		}
 	}
 }
 
-func writeCustomerStatementExportPart(ctx context.Context, reportDB *gorm.DB, store exportObjectStore, job *model.CustomerExportJob, filters model.CustomerExportFilters,
+func writeCustomerStatementExportPart(ctx, readCtx context.Context, reportDB *gorm.DB, store exportObjectStore, job *model.CustomerExportJob, filters model.CustomerExportFilters,
 	artifact *model.CustomerExportArtifact, pending *model.CustomerExportArtifactFile, scope customerExportScopeColumns, workDir string, policy customerStatementExportPolicy) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	writer, err := newCustomerExportCsvWriter(workDir, "statement-details", customerExportCsvShardBytes)
+	writer, err := newCustomerExportCsvWriter(workDir, "statement-details", statementExportPartBytes)
 	if err != nil {
 		return false, err
 	}
@@ -195,16 +209,13 @@ func writeCustomerStatementExportPart(ctx context.Context, reportDB *gorm.DB, st
 	var scanned int64
 	var eof, full bool
 	for writer.totalLines < partRows && (pending != nil || scanned < partRows) && !eof && !full {
-		if err := ctx.Err(); err != nil {
-			return false, err
-		}
 		started := time.Now()
 		var page model.CustomerStatementExportPage
 		for {
-			if err := policy.waitForAdmission(ctx); err != nil {
-				return false, err
+			if err = policy.waitForAdmission(readCtx); err != nil {
+				break
 			}
-			err = executeSharedReportBatch(ctx, policy.beforeBatch, func(batchCtx context.Context) error {
+			err = executeSharedReportBatch(readCtx, policy.beforeBatch, func(batchCtx context.Context) error {
 				pageRows := statementExportMaxPageRows
 				if policy.currentRate != nil {
 					// Keep low-speed batches short enough to yield quickly.
@@ -222,12 +233,16 @@ func writeCustomerStatementExportPart(ctx context.Context, reportDB *gorm.DB, st
 			if !errors.Is(err, errReportBatchDeferred) && !errors.Is(err, errCustomerStatementExportCalibration) {
 				break
 			}
-			if err = waitDailyReportBudget(ctx, 100*time.Millisecond); err != nil {
-				return false, err
+			if err = waitDailyReportBudget(readCtx, 100*time.Millisecond); err != nil {
+				break
 			}
 		}
+		if err != nil && errors.Is(context.Cause(readCtx), errCustomerStatementExportYield) && ctx.Err() == nil {
+			// Seal the accumulated rows while there is still time to upload and checkpoint.
+			break
+		}
 		var pgErr *pgconn.PgError
-		if ctx.Err() == nil && (errors.Is(err, context.DeadlineExceeded) || pgconn.SafeToRetry(err) ||
+		if readCtx.Err() == nil && (errors.Is(err, context.DeadlineExceeded) || pgconn.SafeToRetry(err) ||
 			(errors.As(err, &pgErr) && (pgErr.Code == "40001" || pgErr.Code == "57014" || pgErr.Code == "57P01" || pgErr.Code == "57P03"))) {
 			return false, errCustomerStatementExportPressure
 		}
@@ -268,7 +283,10 @@ func writeCustomerStatementExportPart(ctx context.Context, reportDB *gorm.DB, st
 		if policy.currentRate != nil {
 			interval := time.Duration(page.Scanned) * time.Second / time.Duration(max(1, policy.currentRate()))
 			if sleep := interval - time.Since(started); sleep > 0 {
-				if err := waitDailyReportBudget(ctx, sleep); err != nil {
+				if err := waitDailyReportBudget(readCtx, sleep); err != nil {
+					if errors.Is(context.Cause(readCtx), errCustomerStatementExportYield) && ctx.Err() == nil {
+						break
+					}
 					return false, err
 				}
 			}
@@ -339,7 +357,13 @@ func uploadCustomerStatementExportPart(ctx context.Context, store exportObjectSt
 			}
 		}
 	}()
-	err := store.ExportPutFile(ctx, file.ObjectKey, "text/csv; charset=utf-8", path, file.SizeBytes)
+	const contentType = "text/csv; charset=utf-8"
+	var err error
+	if azure, ok := store.(*azureBlobArtifactStore); ok {
+		err = azure.putObjectFile(ctx, file.ObjectKey, contentType, path, file.SizeBytes, statementExportUploadStage)
+	} else {
+		err = store.ExportPutFile(ctx, file.ObjectKey, contentType, path, file.SizeBytes)
+	}
 	if err != nil {
 		if cause := context.Cause(ctx); cause != nil {
 			err = cause
