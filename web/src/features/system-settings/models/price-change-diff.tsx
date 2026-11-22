@@ -144,10 +144,13 @@ function getPriceGroups(
   if (snapshot.taskPreConsumeTokens !== undefined || showClearedBudget) {
     groups.push({
       key: 'task_billing_setting.preconsume_tokens',
-      lines: [{
-        label: t('Async task pre-consume token upper bound'),
-        value: snapshot.taskPreConsumeTokens?.toLocaleString() ?? t('Not configured'),
-      }],
+      lines: [
+        {
+          label: t('Async task pre-consume token upper bound'),
+          value:
+            snapshot.taskPreConsumeTokens?.toLocaleString() ?? t('Not configured'),
+        },
+      ],
     })
   }
   return groups

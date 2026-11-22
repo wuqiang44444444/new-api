@@ -54,8 +54,13 @@ it('preserves unedited budgets and removes an explicitly cleared source budget',
   expect(pricingRows(unchanged)).toContainEqual(
     expect.objectContaining({ name: 'source', taskPreConsumeTokens: 800000 })
   )
+  const copied = applyPricingDraft(unchanged, draft, ['source', 'target'])
+  expect(JSON.parse(copied[taskBudgetKey])).toEqual({
+    source: 800000,
+    target: 900000,
+  })
   const cleared = applyPricingDraft(
-    unchanged,
+    copied,
     { ...draft, taskPreConsumeTokens: 0 },
     ['source', 'target']
   )

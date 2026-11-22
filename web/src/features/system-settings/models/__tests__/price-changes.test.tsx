@@ -156,14 +156,22 @@ function renderSeedanceBudgets() {
   const names = [seedanceSource, seedanceTarget] as const
   return renderForm({
     saved: {
-      BillingMode: JSON.stringify(Object.fromEntries(names.map((name) => [name, 'tiered_expr']))),
-      BillingExpr: JSON.stringify(Object.fromEntries(names.map((name) => [name, 'tier("base", u("tokens") * 5 / 1000000)']))),
+      BillingMode: JSON.stringify(
+        Object.fromEntries(names.map((name) => [name, 'tiered_expr']))
+      ),
+      BillingExpr: JSON.stringify(
+        Object.fromEntries(
+          names.map((name) => [name, 'tier("base", u("tokens") * 5 / 1000000)'])
+        )
+      ),
       TaskPreConsumeTokens: JSON.stringify(seedanceBudgets),
     },
     entries: names.map((name) => ({
       model_name: name,
       version: 'saved',
-      configured: { 'task_billing_setting.preconsume_tokens': seedanceBudgets[name] },
+      configured: {
+        'task_billing_setting.preconsume_tokens': seedanceBudgets[name],
+      },
       effective: {},
       usage_schema: { tokens: { type: 'number', unit: 'token' } },
       preconsume_token_budget: true,
@@ -177,11 +185,17 @@ it('shows the copied budget in the save confirmation and restores the target bud
   const target = screen.getByRole('row', { name: new RegExp(seedanceTarget) })
   await user.click(screen.getByText(seedanceSource, { exact: true }))
   await user.click(within(target).getByRole('checkbox'))
-  await user.click(screen.getByRole('button', { name: `Copy ${seedanceSource} pricing` }))
+  await user.click(
+    screen.getByRole('button', { name: `Copy ${seedanceSource} pricing` })
+  )
   await user.click(saveButton())
 
-  const dialog = await screen.findByRole('alertdialog', { name: 'Confirm price changes' })
-  const update = within(dialog).getByRole('row', { name: new RegExp(seedanceTarget) })
+  const dialog = await screen.findByRole('alertdialog', {
+    name: 'Confirm price changes',
+  })
+  const update = within(dialog).getByRole('row', {
+    name: new RegExp(seedanceTarget),
+  })
   expect(update).toHaveTextContent('7,000,000')
   expect(update).toHaveTextContent('800,000')
   await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
@@ -201,7 +215,9 @@ it('keeps a pending budget across the JSON view and restores it when changes are
   await user.clear(budget)
   await user.type(budget, '850000')
   await user.click(screen.getByRole('button', { name: 'Switch to JSON' }))
-  await user.click(await screen.findByRole('button', { name: 'Switch to Visual' }))
+  await user.click(
+    await screen.findByRole('button', { name: 'Switch to Visual' })
+  )
   await user.click(screen.getByText(seedanceSource, { exact: true }))
   expect(await screen.findByPlaceholderText('250000')).toHaveValue('850000')
   await user.click(topBar().getByRole('button', { name: 'Discard changes' }))
@@ -210,18 +226,23 @@ it('keeps a pending budget across the JSON view and restores it when changes are
   expect(onSave).not.toHaveBeenCalled()
 })
 
-it('restores a saved budget after invalid input and a switch to the expression editor', async () => {
-  const user = userEvent.setup()
-  await renderSeedanceBudgets()
-  await user.click(screen.getByText(seedanceSource, { exact: true }))
-  const budget = await screen.findByPlaceholderText('250000')
-  await user.clear(budget)
-  await user.type(budget, '0')
-  await user.click(screen.getByRole('combobox', { name: 'Editor mode' }))
-  await user.click(await screen.findByRole('option', { name: 'Expression editor' }))
-  expect(await screen.findByPlaceholderText('250000')).toHaveValue('800000')
-  expect(saveButton()).toBeDisabled()
-})
+it.each(['0', '1.5'])(
+  'restores a saved budget after typing %s and switching to the expression editor',
+  async (input) => {
+    const user = userEvent.setup()
+    await renderSeedanceBudgets()
+    await user.click(screen.getByText(seedanceSource, { exact: true }))
+    const budget = await screen.findByPlaceholderText('250000')
+    await user.clear(budget)
+    await user.type(budget, input)
+    await user.click(screen.getByRole('combobox', { name: 'Editor mode' }))
+    await user.click(
+      await screen.findByRole('option', { name: 'Expression editor' })
+    )
+    expect(await screen.findByPlaceholderText('250000')).toHaveValue('800000')
+    expect(saveButton()).toBeDisabled()
+  }
+)
 
 it.each(['desktop', 'mobile'] as const)(
   'shows the saved budget and preserves it when saving an edited expression on %s',
