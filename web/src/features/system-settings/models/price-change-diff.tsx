@@ -112,7 +112,8 @@ function getExpressionGroups(
 
 function getPriceGroups(
   snapshot: ModelPricingSnapshot | undefined,
-  t: Translate
+  t: Translate,
+  showClearedBudget = false
 ): PriceGroup[] {
   if (!snapshot) return []
   const groups: PriceGroup[] = []
@@ -140,6 +141,15 @@ function getPriceGroups(
   for (const [plugin, expression] of providers) {
     groups.push(...getExpressionGroups(expression, t, plugin))
   }
+  if (snapshot.taskPreConsumeTokens !== undefined || showClearedBudget) {
+    groups.push({
+      key: 'task_billing_setting.preconsume_tokens',
+      lines: [{
+        label: t('Async task pre-consume token upper bound'),
+        value: snapshot.taskPreConsumeTokens?.toLocaleString() ?? t('Not configured'),
+      }],
+    })
+  }
   return groups
 }
 
@@ -161,7 +171,11 @@ function getPriceLineValues(
 export function PriceChangeSummary(props: { row: ModelRow }) {
   const { t } = useTranslation()
   const before = getPriceLineValues(props.row.saved, t)
-  const changes = getPriceGroups(props.row.draft, t).flatMap((group) =>
+  const changes = getPriceGroups(
+    props.row.draft,
+    t,
+    props.row.saved?.taskPreConsumeTokens !== undefined
+  ).flatMap((group) =>
     group.lines.flatMap((line) => {
       const key = priceLineKey(group, line)
       const old = before.get(key)
@@ -197,7 +211,11 @@ function PriceValues(props: {
   compareTo?: ModelPricingSnapshot
 }) {
   const { t } = useTranslation()
-  const groups = getPriceGroups(props.snapshot, t)
+  const groups = getPriceGroups(
+    props.snapshot,
+    t,
+    props.compareTo?.taskPreConsumeTokens !== undefined
+  )
   if (groups.length === 0) {
     return <span className='text-muted-foreground'>{t('Unset price')}</span>
   }

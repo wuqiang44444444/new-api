@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Input } from '@/components/ui/input'
@@ -43,12 +43,11 @@ export function AsyncPreConsumeTokenField({
   onChange,
 }: AsyncPreConsumeTokenFieldProps) {
   const { t } = useTranslation()
-  // 字符串草稿：保留用户原始输入（含非法字符），仅在分类为合法时才回写受控 number 值。
-  // 这样可区分「清空（空串，合法）」与「0/负数/小数（非法）」——原先用 number 无法区分，
-  // 导致 -1/1.9 被静默 floor 或归零，保存时连带删除既有预扣配置（见验收要求 9.2.6）。
+  // 保留原始输入，区分主动清空与不合法的替换。
   const [draft, setDraft] = useState(() => formatPreConsumeValue(value))
   const [focused, setFocused] = useState(false)
   const [error, setError] = useState(false)
+  const valueBeforeEdit = useRef(value)
 
   // 非聚焦时跟随受控值（模型切换 / 外部重置时回填到合法值）
   useEffect(() => {
@@ -69,9 +68,9 @@ export function AsyncPreConsumeTokenField({
       setError(false)
       onChange?.(Number(raw.trim()))
     } else {
-      // 0 / 负数 / 小数 / 非数字：绝不回写受控值，避免静默删除既有预扣配置。
-      // 仅在字段内提示；离开字段时回退到上一个合法值，确保无法把非法值留在字段里提交。
+      // 回退本次输入前的值，避免保留输入过程中的空值或数字前缀。
       setError(true)
+      onChange?.(valueBeforeEdit.current ?? 0)
     }
   }
 
@@ -100,7 +99,9 @@ export function AsyncPreConsumeTokenField({
         max={MAX_TASK_PRE_CONSUME_TOKENS}
         value={draft}
         placeholder='250000'
+        data-billing-invalid={error || undefined}
         onFocus={(e) => {
+          valueBeforeEdit.current = value
           setFocused(true)
           e.currentTarget.select()
         }}

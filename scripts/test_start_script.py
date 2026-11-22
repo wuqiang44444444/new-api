@@ -105,7 +105,7 @@ class StartScriptTest(unittest.TestCase):
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
             output = (self.root / "output").read_text()
-            if "logs/frontend.log <==" in output:
+            if "frontend.log <==" in output:
                 return
             self.assertIsNone(proc.poll(), output)
             time.sleep(0.05)
@@ -195,7 +195,7 @@ class StartScriptTest(unittest.TestCase):
                 if not chunk:
                     break
                 transcript.extend(chunk)
-                if not interrupted and b"logs/frontend.log <==" in transcript:
+                if not interrupted and b"frontend.log <==" in transcript:
                     os.write(terminal, b"\x03")
                     interrupted = True
             else:
@@ -250,6 +250,25 @@ class StartScriptTest(unittest.TestCase):
             "yuan_gateway_dev?sslmode=disable&application_name=yuan-gateway-dev",
         )
         self.assertNotIn("test@:/% password", (self.root / "output").read_text())
+
+    def test_startup_does_not_truncate_or_follow_previous_backend_log(self):
+        old_log = self.root / "logs/backend.log"
+        old_log.parent.mkdir()
+        previous = "previous instance output\n"
+        error = "dial tcp 127.0.0.1:15432: connect: connection refused\n"
+        with old_log.open("a", buffering=1) as writer:
+            writer.write(previous)
+            proc = self.launch()
+            self.wait_ready(proc)
+            writer.write(error)
+            self.stop(proc)
+
+        self.assertEqual(old_log.read_text(), previous + error)
+        output = (self.root / "output").read_text()
+        self.assertNotIn(error, output)
+        [run_log] = old_log.parent.glob("start-*/backend.log")
+        self.assertIn(f"{run_log.parent.name}/backend.log <==", output)
+        self.assertNotIn(error, run_log.read_text())
 
     def test_invalid_configuration_preserves_existing_process(self):
         for config in [{"FRONTEND_PORT": "invalid"},

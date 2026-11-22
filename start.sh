@@ -9,8 +9,6 @@ LOG_DIR="$ROOT_DIR/logs"
 FRONTEND_PORT="${FRONTEND_PORT:-3500}"
 BACKEND_PORT="${BACKEND_PORT:-3501}"
 STARTUP_TIMEOUT="${STARTUP_TIMEOUT:-300}"
-FRONTEND_LOG="$LOG_DIR/frontend.log"
-BACKEND_LOG="$LOG_DIR/backend.log"
 DEV_TLS_DIR="$FRONTEND_DIR/.tls.local"
 FRONTEND_PID=""
 BACKEND_PID=""
@@ -221,6 +219,13 @@ fi
 SQL_DSN="postgresql://yuan_gateway:$postgres_password@$postgres_address/yuan_gateway_dev?sslmode=disable&application_name=yuan-gateway-dev"
 unset postgres_password
 
+mkdir -p "$LOG_DIR"
+# An older instance can keep writing to its open log file even after a new launch.
+RUN_LOG_DIR=$(mktemp -d "$LOG_DIR/start-$BACKEND_PORT.XXXXXXXX")
+BACKEND_LOG="$RUN_LOG_DIR/backend.log"
+FRONTEND_LOG="$RUN_LOG_DIR/frontend.log"
+echo "本次启动日志目录：$RUN_LOG_DIR"
+
 # Validate the complete configuration before stopping either running service.
 for port in "$BACKEND_PORT" "$FRONTEND_PORT"; do
   stop_port_occupiers "$port"
@@ -233,10 +238,6 @@ trap 'exit 143' TERM
 set -m
 
 prepare_frontend
-
-mkdir -p "$LOG_DIR"
-: >"$FRONTEND_LOG"
-: >"$BACKEND_LOG"
 
 echo "正在启动后端，端口：$BACKEND_PORT"
 (

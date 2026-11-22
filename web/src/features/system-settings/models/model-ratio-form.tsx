@@ -258,9 +258,13 @@ export const ModelRatioForm = memo(function ModelRatioForm({
     [form]
   )
 
-  const toggleEditMode = useCallback(() => {
-    setEditMode((prev) => (prev === 'visual' ? 'json' : 'visual'))
-  }, [])
+  const toggleEditMode = useCallback(async () => {
+    if (editMode === 'visual' && editorDirty) {
+      const committed = await visualEditorRef.current?.commitOpenEditor()
+      if (committed === false) return
+    }
+    setEditMode(editMode === 'visual' ? 'json' : 'visual')
+  }, [editMode, editorDirty])
 
   // Every price change is confirmed before it is saved.
   const handleSave = useCallback(async () => {
