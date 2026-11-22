@@ -148,41 +148,73 @@ const topBar = () => {
 const saveButton = () =>
   topBar().getByRole('button', { name: /Save model prices/ })
 
-it('shows the saved budget and preserves it when saving an edited expression', async () => {
-  const user = userEvent.setup()
-  const name = 'seedance-2-0-fast-b'
-  const expression = 'tier("base", u("tokens") * 5 / 1000000)'
-  const edited = 'tier("base", u("tokens") * 6 / 1000000)'
-  const { onSave } = await renderForm({
-    saved: {
-      BillingMode: JSON.stringify({ [name]: 'tiered_expr' }),
-      BillingExpr: JSON.stringify({ [name]: expression }),
-      TaskPreConsumeTokens: JSON.stringify({ [name]: 800000 }),
-    },
-    entries: [{
-      model_name: name,
-      version: 'saved',
-      configured: { 'task_billing_setting.preconsume_tokens': 800000 },
-      effective: {},
-      usage_schema: { tokens: { type: 'number', unit: 'token' } },
-      preconsume_token_budget: true,
-    }],
-  })
-  await user.click(screen.getByText(name))
+it.each(['desktop', 'mobile'] as const)(
+  'shows the saved budget and preserves it when saving an edited expression on %s',
+  async (layout) => {
+    const user = userEvent.setup()
+    if (layout === 'mobile') {
+      const originalMatchMedia = window.matchMedia
+      vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
+        ...originalMatchMedia(query),
+        matches:
+          query.includes('max-width') || originalMatchMedia(query).matches,
+      }))
+    }
+    const name = 'seedance-2-0-fast-b'
+    const expression = 'tier("base", u("tokens") * 5 / 1000000)'
+    const edited = 'tier("base", u("tokens") * 6 / 1000000)'
+    const { onSave } = await renderForm({
+      saved: {
+        BillingMode: JSON.stringify({ [name]: 'tiered_expr' }),
+        BillingExpr: JSON.stringify({ [name]: expression }),
+        TaskPreConsumeTokens: JSON.stringify({ [name]: 800000 }),
+      },
+      entries: [
+        {
+          model_name: name,
+          version: 'saved',
+          configured: { 'task_billing_setting.preconsume_tokens': 800000 },
+          effective: {},
+          usage_schema: { tokens: { type: 'number', unit: 'token' } },
+          preconsume_token_budget: true,
+        },
+      ],
+    })
+    await user.click(screen.getByText(name))
 
-  expect(await screen.findByPlaceholderText('250000')).toHaveValue('800000')
-  fireEvent.change(await screen.findByRole('textbox', { name: 'Billing expression' }), {
-    target: { value: edited },
-  })
-  await user.click(saveButton())
-  const dialog = await screen.findByRole('alertdialog', { name: 'Confirm price changes' })
-  await user.click(within(dialog).getByRole('button', { name: 'Confirm and save' }))
+    expect(await screen.findByPlaceholderText('250000')).toHaveValue('800000')
+    await user.click(screen.getByRole('combobox', { name: 'Editor mode' }))
+    await user.click(
+      await screen.findByRole('option', { name: 'Expression editor' })
+    )
+    fireEvent.change(
+      await screen.findByRole('textbox', { name: 'Billing expression' }),
+      {
+        target: { value: edited },
+      }
+    )
+    await user.click(
+      layout === 'mobile'
+        ? within(
+            screen.getByRole('dialog', { name: 'Edit model pricing' })
+          ).getByRole('button', { name: 'Save model prices' })
+        : saveButton()
+    )
+    const dialog = await screen.findByRole('alertdialog', {
+      name: 'Confirm price changes',
+    })
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Confirm and save' })
+    )
 
-  await waitFor(() => expect(onSave).toHaveBeenCalledOnce())
-  const submitted = onSave.mock.calls[0][0]
-  expect(JSON.parse(submitted.BillingExpr)).toEqual({ [name]: edited })
-  expect(JSON.parse(submitted.TaskPreConsumeTokens)).toEqual({ [name]: 800000 })
-})
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce())
+    const submitted = onSave.mock.calls[0][0]
+    expect(JSON.parse(submitted.BillingExpr)).toEqual({ [name]: edited })
+    expect(JSON.parse(submitted.TaskPreConsumeTokens)).toEqual({
+      [name]: 800000,
+    })
+  }
+)
 
 async function deleteRow(
   user: ReturnType<typeof userEvent.setup>,

@@ -14,6 +14,7 @@ import sys
 import tempfile
 import time
 import unittest
+from urllib.parse import quote
 
 
 def fixture(role, serve=False):
@@ -21,6 +22,8 @@ def fixture(role, serve=False):
     mode = os.environ.get(role.upper() + "_MODE", "ready")
     if not serve:
         Path(role + ".started").write_text(str(os.getpid()))
+        if role == "backend":
+            Path("backend.dsn").write_text(os.environ["SQL_DSN"])
         if mode == "fail":
             sys.exit(2)
         child = subprocess.Popen([sys.executable, __file__, "--serve", role], stdout=subprocess.PIPE, text=True)
@@ -61,15 +64,29 @@ class StartScriptTest(unittest.TestCase):
         stub.chmod(0o700)
         for command, role in [("go", "backend"), ("bun", "frontend")]:
             wrapper = self.root / "bin" / command
-            wrapper.write_text("#!/bin/sh\nexec " + shlex.join([sys.executable, str(Path(__file__).resolve()), "--fixture", role]) + "\n")
+            wrapper.write_text("#!/bin/sh\nexec " + shlex.join([sys.executable, str(Path(__file__).resolve()), "--fixture", role]) + ' "$@"\n')
             wrapper.chmod(0o700)
+        docker = self.root / "bin/docker"
+        docker.write_text(
+            '#!/bin/sh\n'
+            '[ "$1 $2 $3 $4" = "compose -p yuan-gateway -f" ] && '
+            '[ "$5" = "$PWD/docker-compose.dev.yml" ] || exit 1\n'
+            'shift 5\n'
+            'case "$*" in\n'
+            '  "up -d --wait --wait-timeout 3 --no-recreate postgres") [ "${POSTGRES_MODE:-ready}" = ready ] ;;\n'
+            '  "port postgres 5432") printf "%s\\n" "${POSTGRES_ADDRESS:-127.0.0.1:54330}" ;;\n'
+            '  "exec -T postgres sh -c "*) printf "%s" "test@:/% password" ;;\n'
+            '  *) exit 1 ;;\n'
+            'esac\n'
+        )
+        docker.chmod(0o700)
         with socket.socket() as first, socket.socket() as second:
             first.bind(("127.0.0.1", 0))
             second.bind(("127.0.0.1", 0))
             self.ports = [first.getsockname()[1], second.getsockname()[1]]
         self.env = dict(os.environ, PATH=str(self.root / "bin") + os.pathsep + os.environ["PATH"],
                         BACKEND_PORT=str(self.ports[0]), FRONTEND_PORT=str(self.ports[1]), STARTUP_TIMEOUT="3",
-                        SQL_DSN="postgresql://localhost/yuan_start_test")
+                        SQL_DSN="postgresql://postgres@127.0.0.1:15432/yuan_v51_live")
         self.env.pop("LOCAL_DEV_HTTPS", None)
 
     def launch(self, **modes):
@@ -224,13 +241,24 @@ class StartScriptTest(unittest.TestCase):
         self.stop(proc)
         self.assert_released()
 
+    def test_backend_uses_compose_postgres_instead_of_inherited_dsn(self):
+        proc = self.launch(POSTGRES_ADDRESS="127.0.0.1:54331")
+        self.wait_ready(proc)
+        self.assertEqual(
+            (self.root / "backend.dsn").read_text(),
+            "postgresql://yuan_gateway:test%40%3A%2F%25%20password@127.0.0.1:54331/"
+            "yuan_gateway_dev?sslmode=disable&application_name=yuan-gateway-dev",
+        )
+        self.assertNotIn("test@:/% password", (self.root / "output").read_text())
+
     def test_invalid_configuration_preserves_existing_process(self):
         for config in [{"FRONTEND_PORT": "invalid"},
                        {"FRONTEND_PORT": self.env["BACKEND_PORT"]},
                        {"STARTUP_TIMEOUT": "invalid"},
                        {"STARTUP_TIMEOUT": "999999999999999999999"},
-                       {"SQL_DSN": ""},
-                       {"SQL_DSN": "local"}]:
+                       {"POSTGRES_MODE": "unhealthy"},
+                       {"POSTGRES_ADDRESS": "0.0.0.0:54330"},
+                       {"POSTGRES_ADDRESS": f"127.0.0.1:{self.ports[0]}"}]:
             with self.subTest(config=config):
                 child = self.occupy_backend_port()
                 proc = self.launch(**config)
@@ -241,7 +269,9 @@ class StartScriptTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] in ("--fixture", "--serve"):
+    if sys.argv[1:4] == ["--fixture", "frontend", "-e"]:
+        sys.stdout.write(quote(sys.stdin.read(), safe=""))
+    elif len(sys.argv) > 1 and sys.argv[1] in ("--fixture", "--serve"):
         fixture(sys.argv[2], sys.argv[1] == "--serve")
     else:
         unittest.main()

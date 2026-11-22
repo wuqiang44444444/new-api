@@ -97,7 +97,23 @@ it.each([200, 400])(
         config.url === '/api/option/billing-expression/preview'
       ) {
         return {
-          data: { success: true, data: { quota: 0 } },
+          data: {
+            success: true,
+            data: [
+              {
+                key: 'preview',
+                evaluation: {
+                  billing_unit: 'token',
+                  pricing_time: '2026-11-23T00:00:00Z',
+                  usage_semantic: 'normalized',
+                  normalized_usage: {},
+                  raw_cost_usd: 0,
+                  quota: 0,
+                  matched_tier: 'standard',
+                },
+              },
+            ],
+          },
           status: 200,
           statusText: 'OK',
           headers: {},

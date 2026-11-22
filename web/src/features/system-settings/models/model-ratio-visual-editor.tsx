@@ -697,7 +697,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
     }
 
     let sourceData = editData
-    if (editorOpen && editorPanelRef.current) {
+    if (editorShown && editorPanelRef.current) {
       const committed = await editorPanelRef.current.commitDraft()
       if (!committed) return
       sourceData = committed
@@ -725,13 +725,13 @@ const ModelRatioVisualEditorComponent = forwardRef<
         count: targetNames.length,
       })
     )
-  }, [editData, editorOpen, persistPricingData, t, table])
+  }, [editData, editorShown, persistPricingData, t, table])
 
   useImperativeHandle(
     ref,
     () => ({
       commitOpenEditor: async () => {
-        if (!editorOpen || !editorPanelRef.current) return true
+        if (!editorShown || !editorPanelRef.current) return true
         const data = await editorPanelRef.current.commitDraft()
         if (!data) return false
         persistPricingData(data)
@@ -740,7 +740,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
       },
       closeEditor,
     }),
-    [editorOpen, persistPricingData, closeEditor]
+    [editorShown, persistPricingData, closeEditor]
   )
 
   const hasRows = table.getRowModel().rows.length > 0
@@ -920,7 +920,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
         </div>
 
         <div className='hidden min-h-0 min-w-0 md:block'>
-          {editorOpen ? (
+          {editorOpen && !isMobile ? (
             <ModelPricingEditorPanel
               ref={editorPanelRef}
               editData={editData}
@@ -993,7 +993,8 @@ export const ModelRatioVisualEditor = memo(
       prevProps.savedBillingMode === nextProps.savedBillingMode &&
       prevProps.savedBillingExpr === nextProps.savedBillingExpr &&
       prevProps.savedPluginBillingExpr === nextProps.savedPluginBillingExpr &&
-      prevProps.savedTaskPreConsumeTokens === nextProps.savedTaskPreConsumeTokens &&
+      prevProps.savedTaskPreConsumeTokens ===
+        nextProps.savedTaskPreConsumeTokens &&
       prevProps.modelPrice === nextProps.modelPrice &&
       prevProps.modelRatio === nextProps.modelRatio &&
       prevProps.cacheRatio === nextProps.cacheRatio &&

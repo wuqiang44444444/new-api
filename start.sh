@@ -163,6 +163,7 @@ require_command bun
 require_command go
 require_command lsof
 require_command curl
+require_command docker
 
 if [[ ! "$STARTUP_TIMEOUT" =~ ^[1-9][0-9]{0,9}$ ]] || (( STARTUP_TIMEOUT > 2147483647 )); then
   echo "STARTUP_TIMEOUT 必须是 1 到 2147483647 的整数（秒）：$STARTUP_TIMEOUT" >&2
@@ -191,23 +192,34 @@ if [[ "${LOCAL_DEV_HTTPS:-0}" == 1 ]]; then
   fi
 fi
 
-# Use the same .env parser and environment precedence as the Go backend.
-if [[ ! ${SQL_DSN+x} && -f "$ROOT_DIR/.env" ]]; then
-  if ! SQL_DSN=$(
-    cd "$ROOT_DIR" &&
-      go run github.com/joho/godotenv/cmd/godotenv /usr/bin/printenv SQL_DSN 2>/dev/null
-  ); then
-    echo "无法从 .env 读取 SQL_DSN。请在 .env 或环境变量中设置开发 PostgreSQL 的连接 URL。" >&2
-    exit 1
-  fi
+# Select the development database from its Compose service before stopping either app.
+dev_compose=(docker compose -p yuan-gateway -f "$ROOT_DIR/docker-compose.dev.yml")
+if [[ -f "$ROOT_DIR/.env" ]]; then
+  dev_compose+=(--env-file "$ROOT_DIR/.env")
 fi
-case "${SQL_DSN:-}" in
-  postgres://?*|postgresql://?*) ;;
-  *)
-    echo "开发环境需要 PostgreSQL。请在仓库 .env 或环境变量中设置 PostgreSQL URL 格式的 SQL_DSN。" >&2
-    exit 1
-    ;;
-esac
+if ! "${dev_compose[@]}" up -d --wait --wait-timeout "$STARTUP_TIMEOUT" --no-recreate postgres; then
+  echo "yuan-gateway 的 postgres 服务未就绪。" >&2
+  exit 1
+fi
+if ! postgres_address=$("${dev_compose[@]}" port postgres 5432) ||
+  [[ ! "$postgres_address" =~ ^127\.0\.0\.1:[0-9]+$ ]]; then
+  echo "无法获取 yuan-gateway 的 postgres 服务在本机回环地址上发布的端口。" >&2
+  exit 1
+fi
+postgres_port=${postgres_address##*:}
+if [[ "$postgres_port" == "$BACKEND_PORT" || "$postgres_port" == "$FRONTEND_PORT" ]]; then
+  echo "前后端端口不能占用 postgres 发布端口：$postgres_port" >&2
+  exit 1
+fi
+if ! postgres_password=$(
+  "${dev_compose[@]}" exec -T postgres sh -c 'printf %s "$POSTGRES_PASSWORD"' |
+    bun -e 'process.stdout.write(encodeURIComponent(await Bun.stdin.text()))'
+) || [[ -z "$postgres_password" ]]; then
+  echo "无法读取 yuan-gateway 的 postgres 容器凭据。" >&2
+  exit 1
+fi
+SQL_DSN="postgresql://yuan_gateway:$postgres_password@$postgres_address/yuan_gateway_dev?sslmode=disable&application_name=yuan-gateway-dev"
+unset postgres_password
 
 # Validate the complete configuration before stopping either running service.
 for port in "$BACKEND_PORT" "$FRONTEND_PORT"; do
