@@ -431,7 +431,7 @@ func loadPublishedUsageReport(ctx context.Context, period UsageAnalyticsPeriod, 
 					}
 					if meterVersion < frozenBillingTokenMeterVersion {
 						acc.m.InputTokens, acc.m.OutputTokens = 0, 0
-						acc.m.CacheReadTokens, acc.m.CacheWriteTokens = 0, 0
+						acc.m.CacheReadTokens, acc.m.CacheWriteTokens, acc.m.CacheWrites = 0, 0, nil
 						acc.m.TokenDetails = nil
 						if acc.m.BillingTokensApplicable || leaf.Mode == BillingReconciliationModeToken {
 							acc.m.BillingTokensApplicable = true

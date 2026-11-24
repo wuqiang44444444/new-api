@@ -12,6 +12,7 @@ const customerExportArchiveRoute = "/:job_id/archive.zip"
 func registerBillingReconciliationRoutes(apiRouter *gin.RouterGroup) {
 	billingRoute := apiRouter.Group("/billing")
 	billingRoute.GET("/statement/self", middleware.UserAuth(), controller.GetSelfBillingReconciliation)
+	billingRoute.GET("/statement/self/detail-export-days", middleware.UserAuth(), controller.GetSelfCustomerStatementDetailExportDays)
 	billingRoute.GET("/statement/self/logs", middleware.UserAuth(), controller.GetSelfBillingStatementLogs)
 	billingRoute.GET("/statement/self/logs/stat", middleware.UserAuth(), controller.GetSelfBillingStatementLogs)
 	billingRoute.GET("/statement/self/version-month-status", middleware.UserAuth(), controller.GetSelfBillingStatementVersionMonthStatus)
@@ -39,6 +40,8 @@ func registerBillingReconciliationRoutes(apiRouter *gin.RouterGroup) {
 		adminRoute.POST("/reports/rebuild", middleware.RootAuth(), controller.PostBillingReportRebuild)
 		adminRoute.POST("/reports/rollback", middleware.RootAuth(), controller.PostBillingReportRollback)
 		adminRoute.GET("/customer-statements", controller.GetAdminCustomerBillingStatements)
+		adminRoute.GET("/customer-statement-export-days", controller.GetAdminCustomerStatementExportDays)
+		adminRoute.GET("/customer-detail-export-days", controller.GetAdminCustomerStatementDetailExportDays)
 		adminRoute.GET("/customer-logs", controller.GetAdminBillingStatementLogs)
 		adminRoute.GET("/customer-logs/stat", controller.GetAdminBillingStatementLogs)
 		adminRoute.GET("/customer-summary", controller.GetAdminCustomerBillingReconciliation)
@@ -51,7 +54,7 @@ func registerBillingReconciliationRoutes(apiRouter *gin.RouterGroup) {
 		adminRoute.GET("/channel-config", controller.GetAdminChannelBillingConfig)
 		adminRoute.PUT("/channel-name", controller.PutAdminChannelBillingName)
 
-		// 管理员代客导出：显式目标客户，限单客户；任务列表仍只看本人发起。
+		// 管理员可代单客户导出或导出全客户汇总。任务归发起人。
 		adminExportRoute := adminRoute.Group("/customer-exports")
 		{
 			adminExportRoute.POST("", controller.CreateAdminCustomerExport)

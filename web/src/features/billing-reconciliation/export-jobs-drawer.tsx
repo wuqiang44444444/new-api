@@ -58,6 +58,7 @@ import {
 import {
   cancelExport,
   createExportShareArchive,
+  hasExportCoverageFile,
   getExport,
   isExportJobActive,
   listSelfExports,
@@ -66,7 +67,12 @@ import {
   resubmitExport,
   type CustomerExportJobView,
 } from './export-api'
-import { billingModeLabel, formatBillingMonth, formatInteger } from './lib'
+import {
+  billingModeLabel,
+  formatBillingDate,
+  formatBillingMonth,
+  formatInteger,
+} from './lib'
 
 type ExportJobsDrawerProps = {
   open: boolean
@@ -439,13 +445,19 @@ function ExportJobCard(props: {
         : t('All customers')
     }
   }
+  const { start_timestamp, end_timestamp, token_id, model_name } = job.filters
+  const singleDayDetail =
+    (job.job_type === 'statement_details' || shareArchive) &&
+    end_timestamp - start_timestamp === 86400
   if (compact && !compactUsage) {
     title = t('{{month}} {{statement}}', {
-      month: formatBillingMonth(job.filters.start_timestamp, locale),
+      month:
+        job.filters.billing_date || singleDayDetail
+          ? formatBillingDate(start_timestamp, locale)
+          : formatBillingMonth(start_timestamp, locale),
       statement: type,
     })
   }
-  const { start_timestamp, end_timestamp, token_id, model_name } = job.filters
   const usageRange = compactUsage
     ? new Intl.DateTimeFormat(locale, {
         timeZone: job.filters.timezone,
@@ -548,6 +560,11 @@ function ExportJobCard(props: {
         ) : (
           <ExportScope job={job} compact={compact} />
         )}
+        {(hasExportCoverageFile(job) ||
+          (job.filters.billing_date &&
+            !!job.filters.billing_report_coverage?.incomplete_days)) && (
+          <p>{t('Partial data')}</p>
+        )}
         {!compact &&
           (job.filters.model_name || job.job_type === 'usage_summary') && (
             <p>
@@ -586,6 +603,19 @@ function ExportJobCard(props: {
               })}
             </p>
           )
+        )}
+        {job.filters.request_id && job.artifact?.request_net_amount && (
+          <p>
+            {t('Net amount')} {job.artifact.request_net_amount}{' '}
+            {job.filters.currency}
+          </p>
+        )}
+        {job.job_type === 'usage_summary' && (
+          <p>
+            {job.filters.usage_export_grain === 'period'
+              ? t('Period total')
+              : t('Daily breakdown')}
+          </p>
         )}
         {compact &&
           status === 'succeeded' &&
@@ -696,9 +726,14 @@ function ExportJobCard(props: {
             key={job.job_id}
             jobId={job.job_id}
             files={files}
+            coverageFile={hasExportCoverageFile(job)}
           />
         ) : (
-          <ExportFiles jobId={job.job_id} fileCount={files.length} />
+          <ExportFiles
+            jobId={job.job_id}
+            fileCount={files.length}
+            coverageFile={hasExportCoverageFile(job)}
+          />
         ))}
     </ReportCard>
   )
@@ -818,7 +853,11 @@ function ExportScope({
   )
 }
 
-function ExportFiles(props: { jobId: string; fileCount: number }) {
+function ExportFiles(props: {
+  jobId: string
+  fileCount: number
+  coverageFile?: boolean
+}) {
   const { t } = useTranslation()
   const [expired, setExpired] = useState(false)
   const download = useMutation({
@@ -843,7 +882,9 @@ function ExportFiles(props: { jobId: string; fileCount: number }) {
   return (
     <div className='mt-2 space-y-2' aria-live='polite'>
       <div className='flex flex-wrap items-start gap-2'>
-        {props.fileCount > 1 && <ExportArchiveDownload jobId={props.jobId} />}
+        {(props.fileCount > 1 || props.coverageFile) && (
+          <ExportArchiveDownload jobId={props.jobId} />
+        )}
         <Button
           size='sm'
           variant={props.fileCount > 1 ? 'outline' : 'default'}

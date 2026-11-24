@@ -56,7 +56,8 @@ func TestRunGenerationPersistsDetailAndPending(t *testing.T) {
 	// 造一个已结束自然月的两条结算日志。
 	periodStart := time.Date(2025, 9, 1, 0, 0, 0, 0, time.FixedZone("Asia/Shanghai", 8*3600)).Unix() // 2025-09-01 00:00:00 +0800
 	require.NoError(t, db.Create(&model.User{Id: 4001, Username: "version-fixture", Status: common.UserStatusEnabled, Role: common.RoleCommonUser}).Error)
-	consume := &model.Log{UserId: 4001, Username: "version-fixture", Type: model.LogTypeConsume, Quota: 500, CreatedAt: periodStart + 1000, TokenId: 7, TokenName: "key-7", ModelName: "m1"}
+	consume := &model.Log{UserId: 4001, Username: "version-fixture", Type: model.LogTypeConsume, Quota: 500, CreatedAt: periodStart + 1000, TokenId: 7, TokenName: "key-7", ModelName: "m1",
+		Other: `{"usage_semantic":"openai","cache_creation_tokens":12,"cache_creation_tokens_12h":12,"cache_creation_ratio":1.25}`}
 	refund := &model.Log{UserId: 4001, Username: "version-fixture", Type: model.LogTypeRefund, Quota: 100, CreatedAt: periodStart + 2000, TokenId: 7, TokenName: "key-7", ModelName: "m1"}
 	require.NoError(t, createLogForTest(db, consume))
 	require.NoError(t, createLogForTest(db, refund))

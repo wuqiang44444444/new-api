@@ -19,7 +19,6 @@ func CreateAdminUpstreamExport(c *gin.Context) {
 		EvidenceFilter        string `json:"evidence_filter"`
 		URLKey                string `json:"url_key"`
 		ProviderModelFallback *bool  `json:"provider_model_fallback"`
-		SourceJobID           string `json:"source_job_id"`
 	}
 	if err := c.ShouldBindJSON(&request); err != nil {
 		common.ApiErrorMsg(c, "invalid export request")

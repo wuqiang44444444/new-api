@@ -5,6 +5,9 @@ import (
 	"errors"
 	"math"
 	"os"
+	"path/filepath"
+	"slices"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -30,6 +33,11 @@ const (
 	statementExportMaxPageRows      = 1_000
 	statementExportPartRows         = 500_000
 	statementExportPartBytes        = 300_000_000
+	statementScopedPartRows         = 100_000
+	statementScopedPartBytes        = 32 << 20
+	statementDailyPartRows          = 1_000_000
+	statementDailyPartBytes         = 500_000_000
+	statementExportDiskReserve      = 256 << 20
 	statementExportCommitReserve    = 2 * time.Minute
 	statementExportUploadStage      = "customer_statement_export"
 )
@@ -38,16 +46,21 @@ type customerStatementExportPolicy struct {
 	beforeBatch func(context.Context) error
 	currentRate func() int
 	partRows    int
+	diskBudget  func(context.Context, string) (int64, error)
 }
 
 func newCustomerStatementExportPolicy() customerStatementExportPolicy {
 	var speed adaptiveReportRate
 	var sample func(context.Context) ([]model.DailyReportDatabaseLoad, error)
-	var lastDiskCheck time.Time
-	var diskAvailable bool
 	return customerStatementExportPolicy{
-		partRows:    statementExportPartRows,
 		currentRate: func() int { return speed.rate },
+		diskBudget: func(ctx context.Context, dir string) (int64, error) {
+			usage, err := disk.UsageWithContext(ctx, dir)
+			if err != nil {
+				return 0, err
+			}
+			return int64(usage.Free) - statementExportDiskReserve, nil
+		},
 		beforeBatch: func(ctx context.Context) error {
 			if sample == nil {
 				var err error
@@ -57,15 +70,6 @@ func newCustomerStatementExportPolicy() customerStatementExportPolicy {
 				}
 			}
 			decision := checkReportAdmission(ctx, sample)
-			if time.Since(lastDiskCheck) >= 3*time.Second {
-				lastDiskCheck = time.Now()
-				usage, err := disk.UsageWithContext(ctx, os.TempDir())
-				diskAvailable = err == nil && usage.Free >= 256<<20
-			}
-			if !diskAvailable {
-				decision.pressure = reportPause
-				decision.calibrating = false
-			}
 			if decision.calibrating {
 				speed.last = decision.at
 				return errCustomerStatementExportCalibration
@@ -77,6 +81,25 @@ func newCustomerStatementExportPolicy() customerStatementExportPolicy {
 			return ctx.Err()
 		},
 	}
+}
+
+func customerStatementExportPartLimits(filters model.CustomerExportFilters, configuredRows int) (rows, bytes int) {
+	if limits := filters.StatementPartLimits; limits != nil {
+		rows, bytes = limits.Rows, limits.Bytes
+	} else {
+		rows, bytes = statementExportPartRows, statementExportPartBytes
+		monthStart, monthEnd := customerExportMonth(filters.StartTimestamp)
+		if filters.StartTimestamp != monthStart || filters.EndTimestamp != monthEnd ||
+			filters.TokenId != nil || filters.ChannelId != nil || len(filters.LogTypes) > 0 ||
+			filters.RequestId != "" || filters.UpstreamRequestId != "" || filters.TokenName != "" ||
+			filters.ModelName != "" || filters.BillingMode != "" || filters.Group != "" || filters.Username != "" {
+			rows, bytes = statementScopedPartRows, statementScopedPartBytes
+		}
+	}
+	if configuredRows > 0 {
+		rows = min(configuredRows, rows)
+	}
+	return rows, bytes
 }
 
 func (p customerStatementExportPolicy) waitForAdmission(ctx context.Context) error {
@@ -118,9 +141,16 @@ func executeCustomerStatementExport(ctx context.Context, job *model.CustomerExpo
 	}
 	defer os.RemoveAll(workDir)
 	checkCtx, cancel := context.WithTimeout(slice, customerExportBatchTimeout)
-	err = model.CheckCustomerStatementExportSource(checkCtx, reportDB)
+	if filters.StatementDraftId != "" {
+		_, err = model.CustomerStatementVersionForExport(checkCtx, reportDB, job.TargetUserId, filters)
+	} else {
+		err = model.CheckCustomerStatementExportSource(checkCtx, reportDB)
+	}
 	cancel()
 	if err != nil {
+		if errors.Is(err, model.ErrCustomerExportNotFound) {
+			return nil, err
+		}
 		return nil, errCustomerStatementExportPressure
 	}
 
@@ -148,8 +178,21 @@ func executeCustomerStatementExport(ctx context.Context, job *model.CustomerExpo
 			return nil, errors.New("missing pending statement export file")
 		}
 		file := artifact.Files[len(artifact.Files)-1]
-		pending = &file
 		artifact.Files = artifact.Files[:len(artifact.Files)-1]
+		if filters.FieldVersion == singleCustomerDayExportFieldVersion {
+			// The old PUT may still complete. A replacement with different
+			// contents gets a different key; retain the old key for cleanup.
+			if !slices.Contains(artifact.ObsoleteKeys, file.ObjectKey) {
+				artifact.ObsoleteKeys = append(artifact.ObsoleteKeys, file.ObjectKey)
+			}
+			artifact.Checkpoint.PendingFile = false
+			artifact.Checkpoint.RetryPartRows = max(1, file.LineCount/2)
+			if err := model.SaveCustomerStatementExport(ctx, job.JobID, job.Executor, artifact, false); err != nil {
+				return nil, err
+			}
+		} else {
+			pending = &file
+		}
 	}
 
 	scope := customerExportScopeColumns{
@@ -174,6 +217,9 @@ func executeCustomerStatementExport(ctx context.Context, job *model.CustomerExpo
 		}
 		if done {
 			artifact.Checkpoint = nil
+			if filters.RequestId != "" && artifact.LineCount > 0 {
+				artifact.RequestNetAmount = exportCurrencyAmount(strconv.FormatInt(artifact.StatementTotals.Net, 10), scope)
+			}
 			artifact.MissingDates = model.CustomerStatementExportMissingDates(ctx, filters)
 			artifact.ExpiresAt = common.GetTimestamp() + int64(customerExportFileRetention.Seconds())
 			return artifact, nil
@@ -190,25 +236,59 @@ func writeCustomerStatementExportPart(ctx, readCtx context.Context, reportDB *go
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	writer, err := newCustomerExportCsvWriter(workDir, "statement-details", statementExportPartBytes)
+	partRows, partBytes := customerStatementExportPartLimits(filters, policy.partRows)
+	byteLimit := int64(partBytes)
+	// Writer cleanup removes the previous part's directory. Its parent is on
+	// the same filesystem and remains available throughout the execution.
+	diskPath := filepath.Dir(workDir)
+	if policy.diskBudget != nil {
+		budget, err := policy.diskBudget(ctx, diskPath)
+		if err != nil || budget <= 0 || (pending != nil && budget < pending.SizeBytes) {
+			return false, errCustomerStatementExportPressure
+		}
+		byteLimit = min(byteLimit, budget)
+	}
+	writer, err := newCustomerExportCsvWriter(workDir, "statement-details", byteLimit)
 	if err != nil {
 		return false, err
 	}
 	defer writer.Cleanup()
-	writer.useStatementDetails(filters.Language)
-	writer.setBillingCoverage(filters)
+	writer.useStatementDetails(filters.Language, filters.Currency)
+	writer.prefix += "-" + time.Unix(filters.StartTimestamp, 0).In(billingExportTimezone()).Format(time.DateOnly) + "-" + time.Unix(filters.EndTimestamp-1, 0).In(billingExportTimezone()).Format(time.DateOnly)
+	if csvReportCoverage(filters.Language, filters.BillingReportCoverage) != "" {
+		writer.prefix += "-partial"
+	}
 	writer.statementPart = true
 	writer.shardIndex = len(artifact.Files)
 
 	cursor := artifact.Checkpoint.Cursor
 	totals := *artifact.StatementTotals
-	partRows := int64(policy.partRows)
+	partLimit := int64(partRows)
+	if artifact.Checkpoint.RetryPartRows > 0 {
+		partLimit = min(partLimit, artifact.Checkpoint.RetryPartRows)
+	}
 	if pending != nil {
-		partRows = pending.LineCount
+		partLimit = pending.LineCount
 	}
 	var scanned int64
 	var eof, full bool
-	for writer.totalLines < partRows && (pending != nil || scanned < partRows) && !eof && !full {
+	var lastDiskCheck = time.Now()
+	largeDailyPart := filters.FieldVersion == singleCustomerDayExportFieldVersion
+	for writer.totalLines < partLimit && (largeDailyPart || pending != nil || scanned < partLimit) && !eof && !full {
+		if pending == nil && policy.diskBudget != nil && time.Since(lastDiskCheck) >= 3*time.Second {
+			budget, err := policy.diskBudget(ctx, diskPath)
+			if err != nil {
+				return false, errCustomerStatementExportPressure
+			}
+			lastDiskCheck = time.Now()
+			writer.maxShardBytes = min(int64(partBytes), writer.bytesInShard+max(0, budget))
+			if budget <= 0 {
+				if writer.totalLines == 0 {
+					return false, errCustomerStatementExportPressure
+				}
+				break
+			}
+		}
 		started := time.Now()
 		var page model.CustomerStatementExportPage
 		for {
@@ -222,7 +302,11 @@ func writeCustomerStatementExportPart(ctx, readCtx context.Context, reportDB *go
 					pageRows = min(pageRows, max(1, policy.currentRate()/8))
 				}
 				if pending == nil {
-					pageRows = int(min(int64(pageRows), partRows-scanned))
+					remaining := partLimit - writer.totalLines
+					if !largeDailyPart {
+						remaining = min(remaining, partLimit-scanned)
+					}
+					pageRows = int(min(int64(pageRows), remaining))
 				}
 				batchCtx, cancel := context.WithTimeout(batchCtx, 2*time.Second)
 				defer cancel()
@@ -252,12 +336,15 @@ func writeCustomerStatementExportPart(ctx, readCtx context.Context, reportDB *go
 		eof = page.Done
 		scanned += int64(page.Scanned)
 		for _, event := range page.Events {
-			if writer.totalLines >= partRows {
+			if writer.totalLines >= partLimit {
 				full, eof = true, false
 				break
 			}
 			err = writer.AppendRow(event.Row, scope)
 			if errors.Is(err, errCustomerStatementExportPartFull) {
+				if writer.totalLines == 0 {
+					return false, errCustomerStatementExportPressure
+				}
 				full, eof = true, false
 				break
 			}
@@ -308,7 +395,7 @@ func writeCustomerStatementExportPart(ctx, readCtx context.Context, reportDB *go
 		return false, err
 	}
 	file := files[0]
-	file.ObjectKey = CustomerExportObjectNamespace + "/" + job.JobID + "/" + file.FileName
+	file.ObjectKey = customerExportFileKey(job.JobID, file, largeDailyPart)
 	if pending != nil && (file.ObjectKey != pending.ObjectKey || file.Sha256 != pending.Sha256 || file.LineCount != pending.LineCount || file.SizeBytes != pending.SizeBytes) {
 		return false, errors.New("regenerated statement export part differs from its checkpoint")
 	}
@@ -326,10 +413,12 @@ func writeCustomerStatementExportPart(ctx, readCtx context.Context, reportDB *go
 
 	artifact.LineCount += lines
 	artifact.SizeBytes += file.SizeBytes
+	artifact.ObsoleteKeys = slices.DeleteFunc(artifact.ObsoleteKeys, func(key string) bool { return key == file.ObjectKey })
 	totals.Net = totals.Charges - totals.Refunds
 	artifact.StatementTotals = &totals
 	artifact.Checkpoint.Cursor = cursor
 	artifact.Checkpoint.PendingFile = false
+	artifact.Checkpoint.RetryPartRows = 0
 	if err := model.SaveCustomerStatementExport(ctx, job.JobID, job.Executor, artifact, true); err != nil {
 		return false, err
 	}

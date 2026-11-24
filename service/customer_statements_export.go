@@ -22,23 +22,68 @@ func SubmitCustomerStatementsExport(ctx context.Context, actorID int, request Cu
 	if _, err := currentExportObjectStore(); err != nil {
 		return nil, err
 	}
-	// Accept only the month, report version and language for an all-customer job.
-	filters, err := normalizeCustomerExportFilters(model.CustomerExportJobTypeStatementSummary, CustomerExportRequest{
-		StartTimestamp: request.StartTimestamp,
-		EndTimestamp:   request.EndTimestamp,
-		Language:       request.Language,
-	})
-	if err != nil {
-		return nil, ErrCustomerExportInvalidRequest
-	}
-	filters.FieldVersion = customerExportFormatVersion(model.CustomerExportJobTypeCustomerStatements)
-	filters.Currency, filters.CurrencyRate = "USD", 1
 	ctx, cancel := context.WithTimeout(ctx, customerExportBatchTimeout)
 	defer cancel()
-	if _, err := freezeBillingExportReport(ctx, &filters, request.ReportVersion); err != nil {
-		return nil, err
+	var filters model.CustomerExportFilters
+	var reportCtx context.Context
+	var err error
+	if request.SourceJobID != "" {
+		if request.BillingDate != "" || request.ReportVersion != "" || request.ExpectedIncomplete != nil ||
+			request.StartTimestamp != 0 || request.EndTimestamp != 0 || request.Language != "" {
+			return nil, ErrCustomerExportInvalidRequest
+		}
+		source, err := model.GetCustomerExportJobForOwner(request.SourceJobID, actorID)
+		if err != nil {
+			return nil, err
+		}
+		filters, err = source.DecodeFilters()
+		if err != nil || source.JobType != model.CustomerExportJobTypeCustomerStatements || source.TargetUserId != 0 ||
+			filters.BillingDate == "" || filters.BillingReportCoverage == nil {
+			return nil, ErrCustomerExportInvalidRequest
+		}
+		filters.FieldVersion = customerStatementDayExportFieldVersion
+		filters.Language = billingExportLanguage
+		reportCtx, _, err = model.ResolveBillingReport(ctx, filters.StartTimestamp, filters.EndTimestamp-1, filters.BillingReportVersion)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// The scope includes every customer's statement for the selected period.
+		filters, err = normalizeCustomerExportFilters(model.CustomerExportJobTypeCustomerStatements, CustomerExportRequest{
+			BillingDate:    request.BillingDate,
+			StartTimestamp: request.StartTimestamp,
+			EndTimestamp:   request.EndTimestamp,
+			Language:       request.Language,
+		})
+		if err != nil {
+			return nil, ErrCustomerExportInvalidRequest
+		}
+		daily := filters.BillingDate != ""
+		if daily != (request.ExpectedIncomplete != nil) || (daily && len(request.ReportVersion) != model.BillingReportGenerationIDLength) {
+			return nil, ErrCustomerExportInvalidRequest
+		}
+		filters.Currency, filters.CurrencyRate = "USD", 1
+		reportCtx, err = freezeBillingExportReport(ctx, &filters, request.ReportVersion)
+		if err != nil {
+			return nil, err
+		}
 	}
-	job, created, err := model.CreateCustomerExportJob(actorID, 0, model.CustomerExportJobTypeCustomerStatements, filters)
+	var job *model.CustomerExportJob
+	var created bool
+	if filters.BillingDate != "" {
+		report := model.BillingReportFromContext(reportCtx)
+		calendar, calendarErr := report.CustomerStatementExportCalendar(reportCtx, filters.StartTimestamp, filters.EndTimestamp)
+		if calendarErr != nil {
+			return nil, calendarErr
+		}
+		if len(calendar.Days) != 1 || calendar.Days[0].ReportVersion == "" ||
+			calendar.Days[0].ReportVersion != filters.BillingReportVersion {
+			return nil, common.NewMessage("The selected billing date is unavailable.")
+		}
+		job, created, err = model.CreateCustomerStatementDayExportJob(actorID, filters, request.ExpectedIncomplete)
+	} else {
+		job, created, err = model.CreateCustomerExportJob(actorID, 0, model.CustomerExportJobTypeCustomerStatements, filters)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -53,9 +98,13 @@ func executeCustomerStatementsExport(ctx context.Context, job *model.CustomerExp
 		return nil, errCustomerExportFormatChanged
 	}
 	end := filters.EndTimestamp - 1
-	confirmed, err := model.CurrentBillingStatementListItems(ctx, filters.StartTimestamp, end)
-	if err != nil {
-		return nil, err
+	var confirmed []model.BillingCustomerStatementListItem
+	if filters.BillingDate == "" {
+		var err error
+		confirmed, err = model.CurrentBillingStatementListItems(ctx, filters.StartTimestamp, end)
+		if err != nil {
+			return nil, err
+		}
 	}
 	// The list already collects and sorts all matching customers before paging.
 	// Read it once so a large export does not repeat the aggregation for each page.
@@ -79,8 +128,11 @@ func executeCustomerStatementsExport(ctx context.Context, job *model.CustomerExp
 }
 
 func writeCustomerStatementsCSV(ctx context.Context, workDir string, filters model.CustomerExportFilters, items []model.BillingCustomerStatementListItem) ([]model.CustomerExportArtifactFile, []string, int64, error) {
-	month := time.Unix(filters.StartTimestamp, 0).In(billingExportTimezone()).Format("2006-01")
-	writer, err := newCustomerExportCsvWriter(workDir, "customer-statements-"+month, customerExportCsvShardBytes)
+	period := filters.BillingDate
+	if period == "" {
+		period = time.Unix(filters.StartTimestamp, 0).In(billingExportTimezone()).Format("2006-01")
+	}
+	writer, err := newCustomerExportCsvWriter(workDir, "customer-statements-"+period, customerExportCsvShardBytes)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -92,12 +144,17 @@ func writeCustomerStatementsCSV(ctx context.Context, workDir string, filters mod
 			writer.Cleanup()
 		}
 	}()
-	writer.header = []string{"Billing month (Asia/Shanghai)", "Customer ID", "Username", "Customer name", "Requests", "Original amount (USD)", "Savings (USD)", "Total charges (USD)", "Total returns (USD)", "Net settled amount (USD)", "Data quality", "Confirmed statement version"}
-	if filters.Language == "zh" {
-		writer.header = []string{"账单月份（上海时区）", "客户 ID", "用户名", "客户名称", "请求数", "原价（USD）", "优惠（USD）", "总扣减（USD）", "总退回（USD）", "净结算金额（USD）", "数据质量", "确认账单版本"}
+	csvLang := filters.Language
+	periodColumn := csvText(csvLang, "Billing month (Asia/Shanghai)", "账单月份（上海时区）")
+	if filters.BillingDate != "" {
+		periodColumn = csvText(csvLang, "Billing date (Asia/Shanghai)", "账单日期（上海时区）")
 	}
-	coverageHeader, coverageCells := billingCoverageCSV(filters.BillingReportCoverage, filters.Language)
-	writer.header = append(writer.header, coverageHeader...)
+	writer.header = []string{periodColumn, csvText(csvLang, "Customer ID", "客户 ID"), csvText(csvLang, "Customer", "客户"),
+		csvText(csvLang, "Net settled amount (USD)", "净结算金额（USD）"), csvText(csvLang, "Total charges (USD)", "总扣减（USD）"),
+		csvText(csvLang, "Total returns (USD)", "总退回（USD）"), csvText(csvLang, "Original amount (USD)", "原价（USD）"),
+		csvText(csvLang, "Savings (USD)", "优惠（USD）"), csvText(csvLang, "Requests", "请求数"),
+		csvText(csvLang, "Statement version", "账单版本"), csvText(csvLang, "Reconciliation notes", "对账说明")}
+	coverage := csvReportCoverage(csvLang, filters.BillingReportCoverage)
 	quotaPerUnit := decimal.NewFromFloat(filters.QuotaPerUnit)
 	for _, item := range items {
 		if err := ctx.Err(); err != nil {
@@ -125,21 +182,28 @@ func writeCustomerStatementsCSV(ctx context.Context, workDir string, filters mod
 				savings = money(*item.DiscountQuota)
 			}
 		}
-		quality, version := "", ""
-		if item.DataQuality != nil {
-			quality = customerStatementExportValue(filters.Language, "quality_status", item.DataQuality.Status)
+		var version, coverageNote, quality string
+		if item.BillingVersion == nil {
+			coverageNote = coverage
 		}
-		if item.BillingVersion != nil && item.BillingVersion.VersionNumber != nil {
+		if item.DataQuality != nil && item.DataQuality.Status == "partial" {
+			quality = customerStatementExportValue(csvLang, "quality_status", item.DataQuality.Status)
+		}
+		if filters.BillingDate != "" {
+			version = filters.BillingReportVersion
+		} else if item.BillingVersion != nil && item.BillingVersion.VersionNumber != nil {
 			version = strconv.Itoa(*item.BillingVersion.VersionNumber)
 		}
-		record := []string{
-			month, strconv.Itoa(item.UserId), exportCsvCellGuard(item.Username), exportCsvCellGuard(item.DisplayName),
-			strconv.FormatInt(item.Usage.Requests, 10), original, savings, gross, returns, net, quality, version,
+		name := item.DisplayName
+		if name == "" {
+			name = item.Username
 		}
-		if item.BillingVersion != nil {
-			record = append(record, make([]string, len(coverageCells))...)
-		} else {
-			record = append(record, coverageCells...)
+		if original == "" {
+			savings = ""
+		}
+		record := []string{
+			period, strconv.Itoa(item.UserId), exportCsvCellGuard(name), net, gross, returns, original, savings,
+			strconv.FormatInt(item.Usage.Requests, 10), version, csvNotes(coverageNote, quality, csvMissingOriginal(csvLang, original)),
 		}
 		if err := writer.AppendRecord(record); err != nil {
 			return nil, nil, 0, err

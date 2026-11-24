@@ -20,6 +20,7 @@ import {
 export function ExportArtifactFiles(props: {
   jobId: string
   files: CustomerExportArtifactFileDto[]
+  coverageFile?: boolean
 }) {
   const { t } = useTranslation()
   const download = useMutation({
@@ -30,7 +31,7 @@ export function ExportArtifactFiles(props: {
       downloadExportFile(file.url)
     },
   })
-  const singleFile = props.files.length === 1
+  const singleFile = props.files.length === 1 && !props.coverageFile
   const fileButton = (file: CustomerExportArtifactFileDto) => {
     let label = singleFile
       ? t('Download CSV')

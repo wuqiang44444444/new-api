@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"slices"
 
 	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
@@ -25,6 +26,9 @@ type CustomerExportReuse struct {
 func CustomerStatementExportSourceVersion(ctx context.Context, userID int, jobType string, filters CustomerExportFilters) (string, error) {
 	if jobType != CustomerExportJobTypeStatementSummary && jobType != CustomerExportJobTypeStatementDetails {
 		return "", nil
+	}
+	if filters.StatementDraftId != "" {
+		return "statement:" + filters.StatementDraftId, nil
 	}
 	if filters.BillingReportVersion != "" {
 		return fmt.Sprintf("daily:%x", sha256.Sum256([]byte(filters.BillingReportVersion))), nil
@@ -102,4 +106,33 @@ func findReusableCustomerExport(tx *gorm.DB, userID, targetID int, jobType strin
 		}
 	}
 	return nil, nil
+}
+
+// CompletedStatementExportCandidates returns the actor's matching snapshots.
+// The service verifies the referenced files outside a DB transaction.
+func CompletedStatementExportCandidates(ctx context.Context, actorID, targetID int, scopes []CustomerExportFilters, reuse CustomerExportReuse) ([]*CustomerExportJob, error) {
+	if reuse.SourceVersion == "" || reuse.StoreIdentity == "" {
+		return nil, nil
+	}
+	encoded := make([]string, 0, len(scopes))
+	for _, scope := range scopes {
+		raw, err := common.Marshal(scope)
+		if err != nil {
+			return nil, err
+		}
+		encoded = append(encoded, string(raw))
+	}
+	var jobs []*CustomerExportJob
+	now := common.GetTimestamp()
+	if err := DB.WithContext(ctx).
+		Where("user_id = ? AND target_user_id = ? AND job_type = ? AND status = ? AND expires_at > ? AND filters IN ?",
+			actorID, targetID, CustomerExportJobTypeStatementDetails, CustomerExportJobStatusSucceeded, now, encoded).
+		Order("id DESC").Limit(20).Find(&jobs).Error; err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(jobs, func(job *CustomerExportJob) bool {
+		artifact := job.DecodeArtifact()
+		return artifact == nil || len(artifact.Files) == 0 || artifact.ExpiresAt <= now ||
+			artifact.SourceVersion != reuse.SourceVersion || artifact.StoreIdentity != reuse.StoreIdentity
+	}), nil
 }

@@ -11,6 +11,8 @@ import (
 
 const billingReportDaySeconds int64 = 86400
 
+const BillingReportGenerationIDLength = 32
+
 type billingReportHead struct {
 	Start      int64  `gorm:"primaryKey;autoIncrement:false"`
 	Generation string `gorm:"size:32;not null"`
@@ -56,6 +58,7 @@ type billingReportLine struct {
 	LogType           int
 	CreatedAt         int64
 	RequestID         string `gorm:"size:64"`
+	CustomerRequestID string `gorm:"size:64"`
 	UpstreamRequestID string `gorm:"size:128"`
 	CustomerModel     string `gorm:"size:255"`
 	ProviderModel     string `gorm:"size:255"`
@@ -125,7 +128,7 @@ func ResolveBillingReport(ctx context.Context, start, end int64, version string)
 			return ctx, nil, common.NewMessage("Invalid billing report version")
 		}
 		for _, id := range ids {
-			if len(id) != 32 {
+			if len(id) != BillingReportGenerationIDLength {
 				return ctx, nil, common.NewMessage("Invalid billing report version")
 			}
 		}
@@ -173,6 +176,7 @@ func ResolveBillingReport(ctx context.Context, start, end int64, version string)
 		if version == "" && row.Start < todayStart && row.AsOf < row.Start+billingReportDaySeconds+dailyReportCloseDelay {
 			continue
 		}
+		row.Incomplete = row.Incomplete || issues[row.Start]
 		selected = append(selected, row)
 		if seen[row.Start] {
 			return ctx, nil, common.NewMessage("Invalid billing report version")
@@ -182,7 +186,7 @@ func ResolveBillingReport(ctx context.Context, start, end int64, version string)
 		if report.AsOf == 0 || row.AsOf < report.AsOf {
 			report.AsOf = row.AsOf
 		}
-		if row.Incomplete || issues[row.Start] {
+		if row.Incomplete {
 			report.IncompleteDays++
 		}
 		if row.AsOf < row.Start+billingReportDaySeconds+dailyReportCloseDelay {

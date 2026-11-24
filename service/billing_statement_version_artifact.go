@@ -163,7 +163,7 @@ func writeBillingStatementVersionDetailCsv(ctx context.Context, v *model.Billing
 			writer.Cleanup()
 		}
 	}()
-	writer.useStatementDetails(v.Language)
+	writer.useStatementDetails(v.Language, v.Currency)
 	if err := writer.ensureShard(); err != nil {
 		return nil, err
 	}
@@ -630,11 +630,11 @@ func ComputeBillingStatementVersionDiff(base *model.BillingStatementVersion, com
 
 // SubmitBillingStatementVersionCorrectionJob 受理更正：以当前确认版为基准生成更正草稿
 // （方案 6.1/7），客户可见原因与内部备注随草稿冻结，后台生成流程与普通草稿一致。
-func SubmitBillingStatementVersionCorrectionJob(ctx context.Context, adminId int, userId int, periodStart int64, periodEndExcl int64, baseVersionId int64, publicReason string, internalNote string, language ...string) (*model.BillingStatementVersion, error) {
+func SubmitBillingStatementVersionCorrectionJob(ctx context.Context, adminId int, userId int, periodStart int64, periodEndExcl int64, baseVersionId int64, publicReason string, internalNote string, _ ...string) (*model.BillingStatementVersion, error) {
 	if !model.BillingStatementVersionTopologyOK() {
 		return nil, model.ErrBillingStatementVersionTopology
 	}
-	filters, err := billingStatementGenerationFilters(ctx, adminId, userId, periodStart, periodEndExcl, language...)
+	filters, err := billingStatementGenerationFilters(ctx, adminId, userId, periodStart, periodEndExcl)
 	if err != nil {
 		return nil, err
 	}
@@ -650,18 +650,14 @@ func SubmitBillingStatementVersionCorrectionJob(ctx context.Context, adminId int
 }
 
 // 使用既有范围/换算验证，生成任务无需引入第二套资源配置。
-func billingStatementGenerationFilters(ctx context.Context, adminId, userId int, start, end int64, language ...string) (model.CustomerExportFilters, error) {
+func billingStatementGenerationFilters(ctx context.Context, adminId, userId int, start, end int64) (model.CustomerExportFilters, error) {
 	if _, err := currentExportObjectStore(); err != nil {
 		return model.CustomerExportFilters{}, err
 	}
 	if err := model.AuthorizeCustomerExport(ctx, adminId, userId); err != nil {
 		return model.CustomerExportFilters{}, err
 	}
-	lang := "en"
-	if len(language) > 0 {
-		lang = language[0]
-	}
-	filters, err := normalizeCustomerExportFilters(model.CustomerExportJobTypeStatementSummary, CustomerExportRequest{StartTimestamp: start, EndTimestamp: end, Language: lang})
+	filters, err := normalizeCustomerExportFilters(model.CustomerExportJobTypeStatementSummary, CustomerExportRequest{StartTimestamp: start, EndTimestamp: end})
 	if err != nil {
 		return filters, err
 	}

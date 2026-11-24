@@ -63,8 +63,11 @@ func billingReportCustomerLines(query *gorm.DB, filter BillingStatementLogFilter
 	if filter.LogType != 0 {
 		query = query.Where("log_type = ?", filter.LogType)
 	}
+	if filter.RequestId != "" {
+		query = query.Where("COALESCE(NULLIF(customer_request_id, ''), request_id) = ?", filter.RequestId)
+	}
 	return billingReportLineFilters(query, map[string]string{
-		"token_name": filter.TokenName, "username": filter.Username, "group_name": filter.Group, "request_id": filter.RequestId,
+		"token_name": filter.TokenName, "username": filter.Username, "group_name": filter.Group,
 		"upstream_request_id": filter.UpstreamRequestId, "customer_model": filter.ModelName, "billing_mode": filter.BillingMode,
 		"fund_group": filter.FundGroup,
 	})
@@ -104,7 +107,7 @@ func (report *BillingReportManifest) customerDetails(ctx context.Context, filter
 		}
 		groups := []BillingStatementFundGroup{}
 		if int64(offset) < result.Total {
-			if err := query.Select("fund_group AS fund_key, MIN(customer_model) AS model_name, MAX(request_id) AS request_id, COUNT(*) AS event_count, SUM(customer_charge) AS net_quota").
+			if err := query.Select("fund_group AS fund_key, MIN(customer_model) AS model_name, MAX(COALESCE(NULLIF(customer_request_id, ''), request_id)) AS request_id, COUNT(*) AS event_count, SUM(customer_charge) AS net_quota").
 				Group("fund_group").Order("MAX(source_id) DESC").Offset(offset).Limit(result.PageSize).
 				Scan(&groups).Error; err != nil {
 				return result, err
@@ -118,7 +121,7 @@ func (report *BillingReportManifest) customerDetails(ctx context.Context, filter
 	}
 	result.Total = totals.RowCount
 	var rows []billingReportLine
-	if err := query.Omit("upstream", "root_task_ref").Order("source_id DESC").Offset(offset).Limit(result.PageSize).Find(&rows).Error; err != nil {
+	if err := query.Omit("upstream", "root_task_ref", "url_key").Order("source_id DESC").Offset(offset).Limit(result.PageSize).Find(&rows).Error; err != nil {
 		return result, err
 	}
 	for _, row := range rows {
@@ -133,7 +136,7 @@ func (report *BillingReportManifest) customerDetails(ctx context.Context, filter
 		log := &Log{Id: int(row.SourceID), UserId: row.UserID, CreatedAt: row.CreatedAt, Type: row.LogType, Username: row.Username, TokenName: row.TokenName,
 			TokenId: row.TokenID, ChannelId: row.ChannelID, ModelName: row.CustomerModel, Group: record.Export.GroupName, Quota: int(record.Export.Quota),
 			PromptTokens: int(record.RecordedInput), CompletionTokens: int(record.Export.OutputTokens), UseTime: record.UseTime, IsStream: record.IsStream,
-			RequestId: row.RequestID, Other: string(raw)}
+			RequestId: record.Export.RequestId, Other: string(raw)}
 		if role >= common.RoleAdminUser {
 			log.UpstreamRequestId = row.UpstreamRequestID
 		} else {
@@ -184,7 +187,7 @@ func (report *BillingReportManifest) upstreamDetails(ctx context.Context, filter
 		return result, err
 	}
 	var rows []billingReportLine
-	if err := query.Select("user_id, upstream, original_exact, root_task_ref").Order("source_id ASC").Offset((result.Page - 1) * result.PageSize).Limit(result.PageSize).Find(&rows).Error; err != nil {
+	if err := query.Select("user_id, upstream, original_exact, root_task_ref, url_key").Order("source_id ASC").Offset((result.Page - 1) * result.PageSize).Limit(result.PageSize).Find(&rows).Error; err != nil {
 		return result, err
 	}
 	items, err := upstreamReportDetailItems(ctx, rows, root)
@@ -217,6 +220,7 @@ func (row billingReportLine) upstreamDetail(root bool) (UpstreamBillingDetailIte
 		return item, err
 	}
 	item.OriginalExactQuota = row.OriginalExact
+	item.URLKey = row.URLKey
 	if item.TestPricing == nil && item.OriginalAmount != nil &&
 		(item.OriginalAmountEstimated == nil || *item.OriginalAmountEstimated) {
 		item.OriginalAmount, item.OriginalAmountEstimated = nil, nil
@@ -259,7 +263,7 @@ func (report *BillingReportManifest) scanUpstreamDetails(ctx context.Context, fi
 		}
 		batchCtx, cancel := context.WithTimeout(ctx, timeout)
 		var rows []billingReportLine
-		err := report.upstreamLines(batchCtx, filter).Select("source_id, user_id, upstream, original_exact, root_task_ref").
+		err := report.upstreamLines(batchCtx, filter).Select("source_id, user_id, upstream, original_exact, root_task_ref, url_key").
 			Where("source_id > ?", cursor).Order("source_id ASC").Limit(500).Find(&rows).Error
 		if err != nil {
 			cancel()

@@ -65,7 +65,7 @@ func TestUsageAnalyticsScopedUpstreamExportMatchesPublishedTotals(t *testing.T) 
 	assert.EqualValues(t, 3, acrossURLs.Total.TotalCalls)
 
 	job, err := SubmitUsageAnalyticsExport(42, UsageAnalyticsExportRequest{
-		ReportDays: meta.References, Period: period.Period, Date: period.Date, View: "upstream",
+		ReportDays: meta.References, Period: period.Period, Date: period.Date, View: "upstream", Grain: "period",
 		Upstream: model.UsageUpstreamScope{URLKey: originalURL, ChannelID: &channel},
 	})
 	require.NoError(t, err)
@@ -78,14 +78,19 @@ func TestUsageAnalyticsScopedUpstreamExportMatchesPublishedTotals(t *testing.T) 
 	rows, _, err := usageAnalyticsExportRows(ctx, job, "upstream", period, filters,
 		customerExportScopeColumns{QuotaPerUnit: 100, CurrencyRate: 1, Currency: "USD"})
 	require.NoError(t, err)
-	require.Len(t, rows, 17, "two selected model rows with seven daily buckets each plus the scoped grand total")
-	csv := rows[len(rows)-1]
-	assert.Equal(t, "grand_total", csv[0])
-	assert.Equal(t, originalURL, csv[7])
-	assert.Equal(t, "971", csv[8])
-	assert.Equal(t, "2", csv[13])
-	assert.Empty(t, csv[27], "the complete reference amount stays blank")
-	assert.Equal(t, "1.00000000", csv[len(csv)-6], "the known subtotal occupies its own column")
+	require.Len(t, rows, 2, "one period row per selected model")
+	for _, row := range rows {
+		cells := usageTestCells(t, row, "upstream", "period")
+		assert.Equal(t, originalURL, cells["url"])
+		assert.Equal(t, "971", cells["channel_id"])
+		assert.Equal(t, "1", cells["calls"])
+		if cells["model"] == "priced" {
+			assert.Contains(t, []string{cells["reference_amount"], cells["known_reference_amount"]}, "1.00000000")
+		} else {
+			assert.Equal(t, "unpriced", cells["model"])
+			assert.Empty(t, cells["reference_amount"])
+		}
+	}
 }
 
 func TestUsageAnalyticsUpstreamMonthlyExportUsesShanghaiCalendar(t *testing.T) {
@@ -135,11 +140,9 @@ func TestUsageAnalyticsUpstreamMonthlyExportUsesShanghaiCalendar(t *testing.T) {
 	rows, _, err := usageAnalyticsExportRows(ctx, job, "upstream", csvPeriod, filters,
 		customerExportScopeColumns{QuotaPerUnit: 100, CurrencyRate: 1, Currency: "USD"})
 	require.NoError(t, err)
-	require.Len(t, rows, 32)
-	assert.Equal(t, []string{"daily", "2026-09-01"}, rows[0][:2])
-	assert.Equal(t, []string{"not_published", "2026-09-02"}, rows[1][:2])
-	assert.Equal(t, []string{"daily", "2026-09-30"}, rows[29][:2])
-	assert.Equal(t, "grand_total", rows[31][0])
-	assert.Equal(t, "2", rows[31][13])
-	assert.Equal(t, "1.00000000", rows[31][27])
+	require.Len(t, rows, 30)
+	assert.Equal(t, "2026-09-01", rows[0][0])
+	assert.Equal(t, "2026-09-02", rows[1][0])
+	assert.Empty(t, usageTestCells(t, rows[1], "upstream", "")["calls"])
+	assert.Equal(t, "2026-09-30", rows[29][0])
 }

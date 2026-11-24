@@ -129,6 +129,31 @@ it.each([
   click.mockRestore()
 })
 
+it('shows the day and incomplete coverage on an all-customer export in history', async () => {
+  const job = jobView({
+    job_type: 'customer_statements',
+    target_user_id: 0,
+    filters: {
+      billing_date: '2026-09-01',
+      billing_report_coverage: { incomplete_days: 1 },
+      field_version: 26,
+      start_timestamp: 1788192000,
+      end_timestamp: 1788278400,
+      timezone: 'Asia/Shanghai',
+    },
+  })
+  vi.mocked(api.get).mockResolvedValue({
+    data: { success: true, data: { items: [job] } },
+  })
+
+  await mountDrawer(true)
+  expect(
+    await screen.findByRole('article', {
+      name: 'September 1, 2026 Customer statements',
+    })
+  ).toHaveTextContent('Partial data')
+})
+
 it('expands multipart statements without signing until a file is selected', async () => {
   const job = jobView({})
   const artifact = job.artifact

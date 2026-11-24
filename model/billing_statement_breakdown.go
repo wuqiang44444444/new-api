@@ -276,11 +276,13 @@ type billingStatementCacheWriteTokens struct {
 	total       int64
 	fiveMinutes int64
 	oneHour     int64
+	tiers       *BillingCacheWrites
 }
 
 func normalizedBillingBreakdownCacheWriteTokens(other map[string]json.RawMessage) billingStatementCacheWriteTokens {
 	fiveMinutes, fiveMinutesKnown := billingBreakdownNonNegativeInt(other["cache_creation_tokens_5m"])
 	oneHour, oneHourKnown := billingBreakdownNonNegativeInt(other["cache_creation_tokens_1h"])
+	twelveHours, twelveHoursKnown := billingBreakdownNonNegativeInt(other["cache_creation_tokens_12h"])
 	writeTokens := billingStatementCacheWriteTokens{
 		fiveMinutes: fiveMinutes,
 		oneHour:     oneHour,
@@ -288,10 +290,13 @@ func normalizedBillingBreakdownCacheWriteTokens(other map[string]json.RawMessage
 	normalized, normalizedKnown := billingBreakdownNonNegativeInt(other["cache_write_tokens"])
 	total, totalKnown := billingBreakdownNonNegativeInt(other["cache_creation_tokens"])
 	cachedCreation, cachedCreationKnown := billingBreakdownNonNegativeInt(other["cached_creation_tokens"])
-	writeTokens.known = normalizedKnown || totalKnown || cachedCreationKnown || fiveMinutesKnown || oneHourKnown
+	writeTokens.known = normalizedKnown || totalKnown || cachedCreationKnown || fiveMinutesKnown || oneHourKnown || twelveHoursKnown
 	split := fiveMinutes
 	addBillingStatementValue(&split, oneHour)
-	writeTokens.total = max(normalized, total, cachedCreation, split)
+	addBillingStatementValue(&split, twelveHours)
+	aggregate := max(normalized, total, cachedCreation)
+	writeTokens.total = max(aggregate, split)
+	writeTokens.tiers = observedBillingCacheWrites(other, writeTokens.total, aggregate, normalizedKnown || totalKnown || cachedCreationKnown)
 	return writeTokens
 }
 

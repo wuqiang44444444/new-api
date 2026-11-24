@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/shopspring/decimal"
 )
 
 // 客户导出的有界源数据读取与客户安全投影。游标是真实内部唯一键（关系库
@@ -41,7 +43,7 @@ func customerExportScanColumns() string {
 			groupCol = "`group`"
 		}
 	}
-	return "id, user_id, token_id, channel_id, COALESCE(token_name, '') AS token_name, model_name, type, created_at, prompt_tokens, completion_tokens, quota, " + groupCol + " AS group_name, COALESCE(request_id, '') AS request_id, COALESCE(content, '') AS content, COALESCE(other, '') AS other"
+	return "id, user_id, token_id, channel_id, COALESCE(token_name, '') AS token_name, model_name, type, created_at, is_stream, prompt_tokens, completion_tokens, quota, " + groupCol + " AS group_name, COALESCE(request_id, '') AS request_id, COALESCE(content, '') AS content, COALESCE(other, '') AS other"
 }
 
 // customerExportScanRow 是导出扫描的最小行载荷（7.3：只取必要字段）。
@@ -54,6 +56,7 @@ type customerExportScanRow struct {
 	ModelName        string
 	Type             int
 	CreatedAt        int64
+	IsStream         *bool
 	PromptTokens     int
 	CompletionTokens int
 	Quota            int
@@ -66,6 +69,13 @@ type customerExportScanRow struct {
 // CustomerExportRow 是每个日志事件一行的客户安全投影（9.1 字段组）。它由
 // 既有结算事实构建，不重新定价；未知与估算显式标注。
 type CustomerExportRow struct {
+	IsStream                 *bool                       `json:"is_stream,omitempty"`
+	ContractID               int64                       `json:"contract_id,omitempty"`
+	CacheWrites              *BillingCacheWrites         `json:"cache_writes,omitempty"`
+	BillableDurations        map[string]decimal.Decimal  `json:"billable_durations,omitempty"`
+	BillableSeconds          *decimal.Decimal            `json:"billable_seconds,omitempty"`
+	BillableSecondsMissing   *bool                       `json:"billable_seconds_missing,omitempty"`
+	CacheReadUnknown         bool                        `json:"cache_read_unknown,omitempty"`
 	EstimateReasons          []string                    `json:"estimate_reasons,omitempty"`
 	RequestId                string                      `json:"request_id"`
 	EventType                string                      `json:"event_type"`
@@ -201,6 +211,9 @@ func BuildCustomerExportRows(ctx context.Context, rows []customerExportScanRow, 
 			refundParseds = append(refundParseds, parseds[i])
 		}
 	}
+	if err := resolveBillingExportTaskStreams(ctx, facts, parseds); err != nil {
+		return nil, err
+	}
 	// 7.3.13: 沿用页面退款分类语义，但只在当前有界批次内收集标识、批量取
 	// Task 事实并释放；退款引用唯一性可在单次导出内按来源修订复用。
 	evidence, err := buildBillingStatementRefundEvidence(ctx, refundFacts, refundParseds)
@@ -236,6 +249,7 @@ func BuildCustomerExportRows(ctx context.Context, rows []customerExportScanRow, 
 // one scanned row so the export uses the same parsing semantics as the page.
 func customerExportScanFact(scanned customerExportScanRow) billingReconciliationLog {
 	return billingReconciliationLog{
+		sourceID:  int64(scanned.Id),
 		RequestId: scanned.RequestId,
 		GroupName: scanned.GroupName, UserId: scanned.UserId, TokenId: scanned.TokenId, TokenName: scanned.TokenName,
 		ChannelId: scanned.ChannelId, ModelName: scanned.ModelName, Type: scanned.Type,
@@ -246,8 +260,18 @@ func customerExportScanFact(scanned customerExportScanRow) billingReconciliation
 
 func buildCustomerExportRow(scanned customerExportScanRow, fact billingReconciliationLog, parsed parsedBillingReconciliationLog) CustomerExportRow {
 	facts := loadCustomerExportFacts(scanned.Other)
+	seconds, secondsMissing, _ := upstreamBillingSeconds(fact, parsed)
+	requestID := scanned.RequestId
+	if strings.HasPrefix(requestID, taskBillingDeliveryRequestPrefix) {
+		requestID = upstreamTaskCreateRequestID(upstreamRequestIDFromLog(Log{RequestId: requestID, Other: scanned.Other}))
+	}
+	streamed := billingExportStream(scanned.Type, scanned.IsStream, parsed)
+	if parsed.refundOriginalRequestID != "" {
+		requestID = parsed.refundOriginalRequestID
+	}
 	row := CustomerExportRow{
-		RequestId:              scanned.RequestId,
+		IsStream: streamed, CacheWrites: parsed.cacheWrite.tiers, BillableSeconds: seconds, CacheReadUnknown: parsed.cacheReadUnavailable,
+		RequestId:              requestID,
 		EventType:              customerExportEventType(scanned.Type),
 		RecordTime:             scanned.CreatedAt,
 		TokenId:                scanned.TokenId,
@@ -264,6 +288,12 @@ func buildCustomerExportRow(scanned customerExportScanRow, fact billingReconcili
 		Quota:                  int64(scanned.Quota),
 		HasAuxiliaryCharge:     parsed.hasAuxiliaryCharge,
 	}
+	if seconds == nil {
+		row.BillableDurations = exportBillingDurations(fact, parsed, facts)
+	}
+	if parsed.billingMode == BillingReconciliationModePerSecond {
+		row.BillableSecondsMissing = &secondsMissing
+	}
 	if parsed.isRequest {
 		row.RequestCount = billingStatementRequestCount(parsed)
 	}
@@ -277,6 +307,7 @@ func buildCustomerExportRow(scanned customerExportScanRow, fact billingReconcili
 		row.ContractRatio = parsed.contractDiscountRatio
 		row.ContractName = parsed.contractName
 		row.ContractVersion = int64(parsed.contractVersion)
+		row.ContractID = int64(parsed.contractId)
 	case "no", "unrecorded":
 		// 保留当次记录状态。
 	default:
@@ -416,7 +447,7 @@ func CustomerBillingLogRow(log *Log) CustomerExportRow {
 }
 
 func customerBillingLogScanRow(log *Log) customerExportScanRow {
-	return customerExportScanRow{UserId: log.UserId, TokenId: log.TokenId, TokenName: log.TokenName, ChannelId: log.ChannelId, ModelName: log.ModelName, Type: log.Type, Quota: log.Quota, PromptTokens: log.PromptTokens, CompletionTokens: log.CompletionTokens, Other: log.Other, Content: log.Content, GroupName: log.Group, RequestId: log.RequestId, CreatedAt: log.CreatedAt}
+	return customerExportScanRow{UserId: log.UserId, TokenId: log.TokenId, TokenName: log.TokenName, ChannelId: log.ChannelId, ModelName: log.ModelName, Type: log.Type, Quota: log.Quota, PromptTokens: log.PromptTokens, CompletionTokens: log.CompletionTokens, Other: log.Other, Content: log.Content, IsStream: &log.IsStream, GroupName: log.Group, RequestId: log.RequestId, CreatedAt: log.CreatedAt}
 }
 
 func CustomerExportLogUpperBound(ctx context.Context) (int64, error) {

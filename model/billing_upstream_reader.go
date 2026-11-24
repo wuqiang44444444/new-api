@@ -93,9 +93,9 @@ func scanUpstreamBillingFacts(ctx context.Context, filter UpstreamBillingDetailF
 			GroupName     string
 			TupleRevision int64
 		}
-		columns := "id, user_id, token_id, token_name, channel_id, model_name, type, created_at, prompt_tokens, completion_tokens, quota, content, other, request_id, upstream_request_id, " + billingStatementGroupSelect()
+		columns := "id, user_id, token_id, token_name, channel_id, model_name, type, created_at, prompt_tokens, completion_tokens, quota, content, other, request_id, upstream_request_id, is_stream, " + billingStatementGroupSelect()
 		if policy.ReadOnlySource {
-			columns += ", username, use_time, is_stream"
+			columns += ", username, use_time"
 		}
 		if policy.ObserveLogRevision != nil && db.Dialector.Name() == "postgres" {
 			columns += ", " + dailyReportTupleRevision + " AS tuple_revision"
@@ -115,6 +115,7 @@ func scanUpstreamBillingFacts(ctx context.Context, filter UpstreamBillingDetailF
 			var refundParsed []parsedBillingReconciliationLog
 			for i, log := range logs {
 				facts[i] = upstreamBillingLogFact(log.Log, log.GroupName)
+				facts[i].sourceID = int64(log.Id)
 				parsed[i] = parseBillingReconciliationLog(facts[i])
 				if log.Type == LogTypeRefund {
 					refunds = append(refunds, facts[i])
@@ -123,7 +124,10 @@ func scanUpstreamBillingFacts(ctx context.Context, filter UpstreamBillingDetailF
 			}
 			var err error
 			evidence, err = buildBillingStatementRefundEvidence(batchCtx, refunds, refundParsed)
-			return err
+			if err != nil {
+				return err
+			}
+			return resolveBillingExportTaskStreams(batchCtx, facts, parsed)
 		})
 		if err != nil {
 			return err

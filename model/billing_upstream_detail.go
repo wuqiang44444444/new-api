@@ -30,6 +30,10 @@ type UpstreamBillingDetailFilter struct {
 // and is only included for root viewers. Missing IDs stay empty and display
 // as "not recorded" instead of being guessed by time or amount.
 type UpstreamBillingDetailItem struct {
+	BillableDurations       map[string]decimal.Decimal `json:"billable_durations,omitempty"`
+	URLKey                  string                     `json:"-"`
+	CacheWrites             *BillingCacheWrites        `json:"cache_writes,omitempty"`
+	IsStream                *bool                      `json:"is_stream,omitempty"`
 	secondsRecovered        bool
 	secondsLog              billingReconciliationLog
 	SecondsSource           string              `json:"seconds_source,omitempty"`
@@ -177,6 +181,7 @@ func projectUpstreamBillingDetail(log Log, fact billingReconciliationLog, parsed
 	}
 	item := UpstreamBillingDetailItem{
 		RowId: int64(log.Id), Time: log.CreatedAt, ChannelId: log.ChannelId,
+		CacheWrites: parsed.cacheWrite.tiers, IsStream: billingExportStream(log.Type, &log.IsStream, parsed),
 		CustomerModel: parsed.customerModel, ProviderModel: providerModel, ProviderModelFallback: fallback,
 		BillingMode: parsed.billingMode, RecordedInputTokens: parsed.recordedInputTokens,
 		OutputTokens: parsed.outputTokens, CacheReadTokens: parsed.cacheReadTokens, CacheWriteTokens: parsed.cacheWrite.total,
@@ -189,6 +194,9 @@ func projectUpstreamBillingDetail(log Log, fact billingReconciliationLog, parsed
 	}
 	var secondsMissing, secondsUnitKnown bool
 	item.Seconds, secondsMissing, secondsUnitKnown = upstreamBillingSeconds(fact, parsed)
+	if item.Seconds == nil && (parsed.billingMode == BillingReconciliationModeDurationAndCount || parsed.billingMode == BillingReconciliationModePerSecond) {
+		item.BillableDurations = exportBillingDurations(fact, parsed, loadCustomerExportFacts(log.Other))
+	}
 	if secondsMissing {
 		quality := ensureBillingReconciliationQuality(&item.DataQuality)
 		quality.SecondsUnavailableRows = 1

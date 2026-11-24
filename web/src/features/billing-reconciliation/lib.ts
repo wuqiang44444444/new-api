@@ -44,6 +44,13 @@ export function formatBillingMonth(timestamp: number, locale?: string) {
   }).format(timestamp * 1000)
 }
 
+export function formatBillingDate(timestamp: number, locale?: string) {
+  return new Intl.DateTimeFormat(locale, {
+    timeZone: 'Asia/Shanghai',
+    dateStyle: 'long',
+  }).format(timestamp * 1000)
+}
+
 export function formatShanghaiMonth(date: Date) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Shanghai',

@@ -37,15 +37,19 @@ func (handler usageReportHandler) Run(parent context.Context, task *model.System
 		return
 	}
 	defer closeSource()
-	budget, err := newDailyReportBudget(sourceCtx)
-	if err != nil {
-		failSystemTask(task, runnerID, err)
-		return
+	gate := context.Context.Err
+	if !skipDailyReportResourceBudget() {
+		budget, err := newDailyReportBudget(sourceCtx)
+		if err != nil {
+			failSystemTask(task, runnerID, err)
+			return
+		}
+		gate = budget.gate
+		sourceCtx = model.WithDailyReportWorkerBudget(sourceCtx, gate, budget.pace)
+		sourceCtx = model.WithDailyReportValidationGate(sourceCtx, budget.validationGate)
+		sourceCtx = model.WithDailyReportBatchExecutor(sourceCtx, budget.execute)
 	}
-	gate := budget.gate
-	sourceCtx = model.WithDailyReportWorkerBudget(sourceCtx, gate, budget.pace)
-	sourceCtx = model.WithDailyReportValidationGate(sourceCtx, budget.validationGate)
-	sourceCtx = model.WithDailyReportBatchExecutor(sourceCtx, budget.execute)
+	// The scheduled batch profile also enables checkpoints and the final source recheck.
 	sourceCtx = model.WithLowPriorityDailyReport(sourceCtx)
 	reportErr := runDailyReport(sourceCtx, task, runnerID, gate)
 	now := common.GetTimestamp()

@@ -119,8 +119,8 @@ func (BillingStatementVersion) TableName() string { return "billing_statement_ve
 // BillingStatementVersionLine 版本明细：version_id + sequence 唯一，保存客户字段白名单与精确 quota。
 type BillingStatementVersionLine struct {
 	ID               int64  `json:"id" gorm:"primary_key"`
-	VersionId        int64  `json:"version_id" gorm:"uniqueIndex:uidx_bsvl_version_seq,priority:1"`
-	Sequence         int64  `json:"sequence" gorm:"bigint;uniqueIndex:uidx_bsvl_version_seq,priority:2"`
+	VersionId        int64  `json:"version_id" gorm:"uniqueIndex:uidx_bsvl_version_seq,priority:1;index:idx_bsvl_version_time_seq,priority:1"`
+	Sequence         int64  `json:"sequence" gorm:"bigint;uniqueIndex:uidx_bsvl_version_seq,priority:2;index:idx_bsvl_version_time_seq,priority:3"`
 	FundGroup        string `json:"-" gorm:"size:75"`
 	SourceLogId      int64  `json:"source_log_id" gorm:"bigint"` // 稳定源记录身份
 	RequestId        string `json:"request_id" gorm:"type:varchar(64);index"`
@@ -130,7 +130,7 @@ type BillingStatementVersionLine struct {
 	CustomerModel    string `json:"customer_model" gorm:"type:varchar(128);index"`
 	Group            string `json:"group" gorm:"type:varchar(128)"`
 	LogType          int    `json:"log_type"`
-	CreatedAt        int64  `json:"created_at" gorm:"bigint;index"`
+	CreatedAt        int64  `json:"created_at" gorm:"bigint;index;index:idx_bsvl_version_time_seq,priority:2"`
 	BillingMode      string `json:"billing_mode" gorm:"type:varchar(32);index"`
 	InputTokens      int64  `json:"input_tokens"`
 	OutputTokens     int64  `json:"output_tokens"`

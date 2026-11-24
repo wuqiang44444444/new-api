@@ -34,7 +34,7 @@ func TestManualRefundRecoversFactsFromOriginalPreauth(t *testing.T) {
 	require.NoError(t, db.Create(&User{Id: 7, Username: "customer"}).Error)
 	periodStart, periodEnd := preauthTestPeriod()
 	original := Log{UserId: 7, TokenId: 4, ChannelId: 3, ModelName: "seedance-2-0-m", Type: LogTypeConsume,
-		CreatedAt: periodStart + 10, Quota: 87,
+		CreatedAt: periodStart + 10, Quota: 87, RequestId: "original-request", IsStream: true,
 		Other: `{"contract_applicable":false,"statement_snapshot":{"snapshot_version":1,"billing_mode":"per_second","provider_model":"v","customer_model":"seedance-2-0-m","group_ratio":0.87},"group_ratio":0.87,"admin_info":{"statement_original_quota":100}}`}
 	require.NoError(t, db.Create(&original).Error)
 	require.NotZero(t, original.Id)
@@ -56,6 +56,18 @@ func TestManualRefundRecoversFactsFromOriginalPreauth(t *testing.T) {
 	require.NotNil(t, statement.DataQuality)
 	assert.Zero(t, statement.DataQuality.UnknownBillingModeRequests)
 	assert.Zero(t, statement.DataQuality.MissingHistoricalPriceRows)
+
+	ctx := context.Background()
+	scanned, err := NextCustomerExportLogBatch(ctx, CustomerExportBatchParams{
+		UserId: 7, StartTimestamp: periodStart, EndTimestamp: periodEnd, StatementScope: true,
+	})
+	require.NoError(t, err)
+	rows, err := BuildCustomerExportRows(ctx, scanned, "", "", nil)
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
+	assert.Equal(t, "original-request", rows[1].RequestId)
+	require.NotNil(t, rows[1].IsStream)
+	assert.True(t, *rows[1].IsStream)
 }
 
 func TestManualRefundIdentityMismatchStaysUnknown(t *testing.T) {

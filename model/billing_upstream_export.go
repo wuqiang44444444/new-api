@@ -44,6 +44,11 @@ func AuthorizeCustomerExportJob(ctx context.Context, job *CustomerExportJob) err
 		}
 		return AuthorizeUsageAnalyticsExport(ctx, job.UserId, job.TargetUserId, filters.UsageView)
 	}
+	if job.JobType == CustomerExportJobTypeStatementDetails || job.JobType == CustomerExportJobTypeStatementArchive {
+		if err := authorizeStatementExportVersion(ctx, job); err != nil {
+			return err
+		}
+	}
 	if job.JobType != CustomerExportJobTypeUpstreamDetails && job.JobType != CustomerExportJobTypeUpstreamSummary {
 		return AuthorizeCustomerExport(ctx, job.UserId, job.TargetUserId)
 	}
@@ -105,7 +110,7 @@ func FreezeUpstreamExportScope(ctx context.Context, actorID int, start int64, ch
 
 // ScanUpstreamExportSummary shares the page's accounting projection but reads
 // one frozen channel at a time, under the shared export queue's batch policy.
-func ScanUpstreamExportSummary(ctx context.Context, filters CustomerExportFilters, policy BillingStatementReadPolicy, consume func(int, ProviderURLChannelModelSummary) error) error {
+func ScanUpstreamExportSummary(ctx context.Context, filters CustomerExportFilters, policy BillingStatementReadPolicy, consume func(int, string, ProviderURLChannelModelSummary) error) error {
 	if filters.Upstream == nil || len(filters.Upstream.ChannelIds) == 0 {
 		return errors.New("missing upstream summary scope")
 	}
@@ -134,7 +139,7 @@ func ScanUpstreamExportSummary(ctx context.Context, filters CustomerExportFilter
 		for _, group := range summary.Groups {
 			for _, channel := range group.Channels {
 				for _, leaf := range channel.Models {
-					if err := consume(channel.ChannelId, leaf); err != nil {
+					if err := consume(channel.ChannelId, group.UrlKey, leaf); err != nil {
 						return err
 					}
 				}

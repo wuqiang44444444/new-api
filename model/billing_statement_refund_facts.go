@@ -160,6 +160,8 @@ type billingStatementPreauthCandidate struct {
 // for association validation.
 type billingStatementPreauthOriginal struct {
 	GroupName        string
+	RequestId        string
+	IsStream         *bool
 	Id               int64
 	UserId           int
 	TokenId          int
@@ -178,6 +180,8 @@ type billingStatementPreauthOriginal struct {
 // Money, tokens and request counts are never inherited.
 type billingStatementRefundPreauthFact struct {
 	billingMode                     string
+	requestID                       string
+	isStream                        *bool
 	discountRatio                   *float64
 	groupName, groupRatioSource     string
 	contractDiscountRatio           *float64
@@ -206,6 +210,8 @@ func (facts billingStatementRefundPreauthFacts) apply(log billingReconciliationL
 	if !ok {
 		return
 	}
+	parsed.refundOriginalRequestID = fact.requestID
+	parsed.refundOriginalIsStream = fact.isStream
 	// Do not assemble a price from mutually inconsistent partial snapshots.
 	if (parsed.groupName != "" && fact.groupName != "" && parsed.groupName != fact.groupName) ||
 		(parsed.groupRatioSource != "" && fact.groupRatioSource != "" && parsed.groupRatioSource != fact.groupRatioSource) ||
@@ -330,7 +336,7 @@ func buildBillingStatementRefundPreauthFacts(ctx context.Context, refunds []bill
 		end := min(start+200, len(ids))
 		var originals []billingStatementPreauthOriginal
 		query := usageReportLogDB(ctx).WithContext(ctx).Model(&Log{}).
-			Select("id, user_id, token_id, channel_id, COALESCE(model_name, '') AS model_name, type, quota, prompt_tokens, completion_tokens, COALESCE(other, '') AS other, "+billingStatementGroupSelect()).
+			Select("id, user_id, token_id, channel_id, COALESCE(model_name, '') AS model_name, COALESCE(request_id, '') AS request_id, is_stream, type, quota, prompt_tokens, completion_tokens, COALESCE(other, '') AS other, "+billingStatementGroupSelect()).
 			Where("id IN ?", ids[start:end])
 		if err := query.Scan(&originals).Error; err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
@@ -376,6 +382,8 @@ func billingStatementPreauthFactFromOriginal(original billingStatementPreauthOri
 	applyCustomerOriginalReplay(source, &parsed)
 	return billingStatementRefundPreauthFact{
 		billingMode:              parsed.billingMode,
+		requestID:                original.RequestId,
+		isStream:                 original.IsStream,
 		discountRatio:            parsed.discountRatio,
 		recordedOriginalQuota:    parsed.recordedOriginalQuota,
 		replayedOriginalQuota:    parsed.replayedOriginalQuota,

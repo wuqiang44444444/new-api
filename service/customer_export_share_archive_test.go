@@ -92,8 +92,14 @@ func TestCustomerExportShareArchivePublishesAndReusesExistingCSV(t *testing.T) {
 	artifact.StoreIdentity = azure.ExportIdentity()
 	manifest, err := common.Marshal(artifact)
 	require.NoError(t, err)
+	version := model.BillingStatementVersion{
+		UserId: 42, DraftPublicId: "shared-confirmed", Status: model.BillingStatementVersionConfirmed,
+		PeriodStart: 1785513600, PeriodEndExclusive: 1788192000,
+	}
+	require.NoError(t, db.Create(&version).Error)
 	frozen, err := common.Marshal(model.CustomerExportFilters{
-		StartTimestamp: 1785513600, EndTimestamp: 1788192000, Timezone: "Asia/Shanghai",
+		StartTimestamp: version.PeriodStart, EndTimestamp: version.PeriodEndExclusive, Timezone: "Asia/Shanghai",
+		StatementDraftId: version.DraftPublicId,
 	})
 	require.NoError(t, err)
 	source := &model.CustomerExportJob{JobID: sourceID, UserId: 42, TargetUserId: 42,
@@ -141,4 +147,61 @@ func TestCustomerExportShareArchivePublishesAndReusesExistingCSV(t *testing.T) {
 	again, err := SubmitCustomerExportShareArchive(t.Context(), source)
 	require.NoError(t, err)
 	assert.Equal(t, job.JobID, again.JobID)
+	require.NoError(t, db.Model(&version).Update("status", model.BillingStatementVersionInvalid).Error)
+	_, _, err = PresignCustomerExportShareArchive(t.Context(), finished)
+	assert.ErrorIs(t, err, model.ErrCustomerExportNotFound)
+}
+
+func TestCustomerExportShareArchiveChecksFrozenVersionInHistoryAndLinks(t *testing.T) {
+	db := setupVersionServiceTestDB(t)
+	setupCustomerExportServiceTest(t)
+	require.NoError(t, db.Model(&model.User{}).Where("id = ?", 42).Update("role", common.RoleAdminUser).Error)
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, billingExportTimezone())
+	version := model.BillingStatementVersion{
+		UserId: 42, DraftPublicId: "share-pending-version", Status: model.BillingStatementVersionPending,
+		PeriodStart: start.Unix(), PeriodEndExclusive: start.AddDate(0, 1, 0).Unix(),
+	}
+	require.NoError(t, db.Create(&version).Error)
+	filters := model.CustomerExportFilters{
+		StartTimestamp: version.PeriodStart, EndTimestamp: version.PeriodEndExclusive,
+		StatementDraftId: version.DraftPublicId,
+	}
+	sourceRaw, err := common.Marshal(filters)
+	require.NoError(t, err)
+	source := model.CustomerExportJob{JobID: "cex_share_draft_source", UserId: 42, TargetUserId: 42,
+		JobType: model.CustomerExportJobTypeStatementDetails, Status: model.CustomerExportJobStatusSucceeded, Filters: string(sourceRaw)}
+	require.NoError(t, db.Create(&source).Error)
+	filters.StatementDraftId = ""
+	filters.ArchiveSourceJobID = source.JobID
+	for _, archivedVersion := range []*string{nil, &version.DraftPublicId} {
+		filters.ArchiveDraftId = archivedVersion
+		raw, err := common.Marshal(filters)
+		require.NoError(t, err)
+		jobID, err := model.GenerateCustomerExportJobID()
+		require.NoError(t, err)
+		job := model.CustomerExportJob{JobID: jobID, UserId: 42, TargetUserId: 42,
+			JobType: model.CustomerExportJobTypeStatementArchive, Status: model.CustomerExportJobStatusSucceeded, Filters: string(raw)}
+		require.NoError(t, db.Create(&job).Error)
+		_, err = model.GetCustomerExportJobForOwner(job.JobID, 42)
+		require.NoError(t, err)
+	}
+	history, total, err := model.ListCustomerExportJobs(t.Context(), 42, 1, 10)
+	require.NoError(t, err)
+	require.Len(t, history, 3)
+	require.EqualValues(t, 3, total)
+	require.NoError(t, db.Model(&model.User{}).Where("id = ?", 42).Update("role", common.RoleCommonUser).Error)
+	for _, job := range history {
+		_, err := model.GetCustomerExportJobForOwner(job.JobID, 42)
+		assert.ErrorIs(t, err, model.ErrCustomerExportNotFound)
+	}
+	jobs, total, err := model.ListCustomerExportJobs(t.Context(), 42, 1, 10)
+	require.NoError(t, err)
+	assert.Empty(t, jobs)
+	assert.Zero(t, total)
+	require.NoError(t, db.Model(&model.User{}).Where("id = ?", 42).Update("role", common.RoleAdminUser).Error)
+	require.NoError(t, db.Model(&version).Update("status", model.BillingStatementVersionInvalid).Error)
+	for _, job := range history {
+		_, err := model.GetCustomerExportJobForOwner(job.JobID, 42)
+		assert.ErrorIs(t, err, model.ErrCustomerExportNotFound)
+	}
 }

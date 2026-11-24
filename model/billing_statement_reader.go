@@ -91,7 +91,7 @@ func scanBillingStatementFacts(ctx context.Context, query *gorm.DB, policy Billi
 			ID   int64
 			Fact billingReconciliationLog `gorm:"embedded"`
 		}
-		columns := "id, COALESCE(request_id, '') AS request_id, user_id, token_id, COALESCE(token_name, '') AS token_name, channel_id, COALESCE(model_name, '') AS model_name, type, created_at, prompt_tokens, completion_tokens, quota, COALESCE(content, '') AS content, COALESCE(other, '') AS other, " + billingStatementGroupSelect()
+		columns := "id, COALESCE(request_id, '') AS request_id, is_stream, user_id, token_id, COALESCE(token_name, '') AS token_name, channel_id, COALESCE(model_name, '') AS model_name, type, created_at, prompt_tokens, completion_tokens, quota, COALESCE(content, '') AS content, COALESCE(other, '') AS other, " + billingStatementGroupSelect()
 		err := query.Session(&gorm.Session{}).WithContext(batchCtx).Select(columns).
 			Where("id > ? AND id <= ?", cursor, upper).Order("id asc").Limit(500).Scan(&batch).Error
 		var evidence billingStatementRefundEvidence
@@ -99,7 +99,10 @@ func scanBillingStatementFacts(ctx context.Context, query *gorm.DB, policy Billi
 		if err == nil {
 			refunds := make([]billingReconciliationLog, 0)
 			var refundParsed []parsedBillingReconciliationLog
+			facts := make([]billingReconciliationLog, len(batch))
 			for i, row := range batch {
+				facts[i] = row.Fact
+				facts[i].sourceID = row.ID
 				parsed[i] = parseBillingReconciliationLog(row.Fact)
 				if row.Fact.Type == LogTypeRefund {
 					refunds = append(refunds, row.Fact)
@@ -107,6 +110,9 @@ func scanBillingStatementFacts(ctx context.Context, query *gorm.DB, policy Billi
 				}
 			}
 			evidence, err = buildBillingStatementRefundEvidence(batchCtx, refunds, refundParsed)
+			if err == nil && policy.ObserveFact != nil {
+				err = resolveBillingExportTaskStreams(batchCtx, facts, parsed)
+			}
 		}
 		cancel()
 		if err != nil {
@@ -138,12 +144,12 @@ func emitObservedFact(policy BillingStatementReadPolicy, fact billingReconciliat
 	if policy.ObserveFact == nil {
 		return nil
 	}
-	row := buildCustomerExportRow(customerExportScanRow{RequestId: fact.RequestId, UserId: fact.UserId, TokenId: fact.TokenId, TokenName: fact.TokenName, ChannelId: fact.ChannelId, ModelName: fact.ModelName, Type: fact.Type, CreatedAt: fact.CreatedAt, PromptTokens: fact.PromptTokens, CompletionTokens: fact.CompletionTokens, Quota: fact.Quota, Other: fact.Other, Content: fact.Content}, fact, parsed)
+	row := buildCustomerExportRow(customerExportScanRow{RequestId: fact.RequestId, IsStream: fact.IsStream, UserId: fact.UserId, TokenId: fact.TokenId, TokenName: fact.TokenName, ChannelId: fact.ChannelId, ModelName: fact.ModelName, Type: fact.Type, CreatedAt: fact.CreatedAt, PromptTokens: fact.PromptTokens, CompletionTokens: fact.CompletionTokens, Quota: fact.Quota, Other: fact.Other, Content: fact.Content}, fact, parsed)
 	raw, err := common.Marshal(row)
 	if err != nil {
 		return err
 	}
 	fundGroup := billingStatementFundIdentity(Log{Id: int(sourceID), CreatedAt: fact.CreatedAt, UserId: fact.UserId, TokenId: fact.TokenId, ChannelId: fact.ChannelId}, parsed)
-	line := BillingStatementVersionLine{FundGroup: fundGroup, SourceLogId: sourceID, RequestId: fact.RequestId, TokenId: fact.TokenId, TokenName: fact.TokenName, ChannelId: fact.ChannelId, CustomerModel: parsed.customerModel, Group: parsed.groupName, LogType: fact.Type, CreatedAt: fact.CreatedAt, BillingMode: parsed.billingMode, InputTokens: parsed.inputTokens, OutputTokens: parsed.outputTokens, CacheReadTokens: parsed.cacheReadTokens, CacheWriteTokens: parsed.cacheWrite.total, Quota: int64(fact.Quota), Facts: string(raw)}
+	line := BillingStatementVersionLine{FundGroup: fundGroup, SourceLogId: sourceID, RequestId: row.RequestId, TokenId: fact.TokenId, TokenName: fact.TokenName, ChannelId: fact.ChannelId, CustomerModel: parsed.customerModel, Group: parsed.groupName, LogType: fact.Type, CreatedAt: fact.CreatedAt, BillingMode: parsed.billingMode, InputTokens: parsed.inputTokens, OutputTokens: parsed.outputTokens, CacheReadTokens: parsed.cacheReadTokens, CacheWriteTokens: parsed.cacheWrite.total, Quota: int64(fact.Quota), Facts: string(raw)}
 	return policy.ObserveFact(line, &Log{Type: fact.Type, PromptTokens: fact.PromptTokens, CompletionTokens: fact.CompletionTokens, Other: fact.Other})
 }

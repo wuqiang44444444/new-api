@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -20,21 +21,27 @@ import (
 // 不重新扫描日志；下载签发短时地址，签名 URL 不落日志。
 
 type customerExportHttpRequest struct {
-	ReportVersion     string `json:"report_version,omitempty"`
-	JobType           string `json:"job_type"`
-	StartTimestamp    int64  `json:"start_timestamp"`
-	EndTimestamp      int64  `json:"end_timestamp"`
-	LogTypes          []int  `json:"log_types,omitempty"`
-	TokenId           *int   `json:"token_id,omitempty"`
-	ChannelId         *int   `json:"channel_id,omitempty"`
-	TokenName         string `json:"token_name,omitempty"`
-	Group             string `json:"group,omitempty"`
-	RequestId         string `json:"request_id,omitempty"`
-	UpstreamRequestId string `json:"upstream_request_id,omitempty"`
-	Username          string `json:"username,omitempty"`
-	ModelName         string `json:"model_name,omitempty"`
-	BillingMode       string `json:"billing_mode,omitempty"`
-	Language          string `json:"language,omitempty"`
+	ConfirmExisting    bool   `json:"confirm_existing,omitempty"`
+	ForceNew           bool   `json:"force_new,omitempty"`
+	StatementVersion   string `json:"statement_version,omitempty"`
+	ReportVersion      string `json:"report_version,omitempty"`
+	BillingDate        string `json:"billing_date,omitempty"`
+	ExpectedIncomplete *bool  `json:"expected_incomplete,omitempty"`
+	SourceJobID        string `json:"source_job_id,omitempty"`
+	JobType            string `json:"job_type"`
+	StartTimestamp     int64  `json:"start_timestamp"`
+	EndTimestamp       int64  `json:"end_timestamp"`
+	LogTypes           []int  `json:"log_types,omitempty"`
+	TokenId            *int   `json:"token_id,omitempty"`
+	ChannelId          *int   `json:"channel_id,omitempty"`
+	TokenName          string `json:"token_name,omitempty"`
+	Group              string `json:"group,omitempty"`
+	RequestId          string `json:"request_id,omitempty"`
+	UpstreamRequestId  string `json:"upstream_request_id,omitempty"`
+	Username           string `json:"username,omitempty"`
+	ModelName          string `json:"model_name,omitempty"`
+	BillingMode        string `json:"billing_mode,omitempty"`
+	Language           string `json:"language,omitempty"`
 }
 
 func parseCustomerExportRequest(c *gin.Context) (service.CustomerExportRequest, bool) {
@@ -44,21 +51,27 @@ func parseCustomerExportRequest(c *gin.Context) (service.CustomerExportRequest, 
 		return service.CustomerExportRequest{}, false
 	}
 	return service.CustomerExportRequest{
-		ReportVersion:     request.ReportVersion,
-		JobType:           request.JobType,
-		StartTimestamp:    request.StartTimestamp,
-		EndTimestamp:      request.EndTimestamp,
-		LogTypes:          request.LogTypes,
-		TokenId:           request.TokenId,
-		ChannelId:         request.ChannelId,
-		TokenName:         request.TokenName,
-		Group:             request.Group,
-		RequestId:         request.RequestId,
-		UpstreamRequestId: request.UpstreamRequestId,
-		Username:          request.Username,
-		ModelName:         request.ModelName,
-		BillingMode:       request.BillingMode,
-		Language:          request.Language,
+		ConfirmExisting:    request.ConfirmExisting,
+		ForceNew:           request.ForceNew,
+		ReportVersion:      request.ReportVersion,
+		StatementVersion:   request.StatementVersion,
+		BillingDate:        request.BillingDate,
+		ExpectedIncomplete: request.ExpectedIncomplete,
+		SourceJobID:        request.SourceJobID,
+		JobType:            request.JobType,
+		StartTimestamp:     request.StartTimestamp,
+		EndTimestamp:       request.EndTimestamp,
+		LogTypes:           request.LogTypes,
+		TokenId:            request.TokenId,
+		ChannelId:          request.ChannelId,
+		TokenName:          request.TokenName,
+		Group:              request.Group,
+		RequestId:          request.RequestId,
+		UpstreamRequestId:  request.UpstreamRequestId,
+		Username:           request.Username,
+		ModelName:          request.ModelName,
+		BillingMode:        request.BillingMode,
+		Language:           request.Language,
 	}, true
 }
 
@@ -69,6 +82,7 @@ func CreateSelfCustomerExport(c *gin.Context) {
 	}
 	request.ChannelId = nil
 	request.UpstreamRequestId = ""
+	request.AllowPendingVersion = c.GetInt("role") >= common.RoleAdminUser
 	job, err := service.SubmitCustomerExportJob(c.GetInt("id"), c.GetInt("id"), request)
 	if err != nil {
 		respondCustomerExportError(c, err)
@@ -110,7 +124,7 @@ func CreateAdminCustomerExport(c *gin.Context) {
 	var identityErr error
 	if request.JobType == model.CustomerExportJobTypeUsageLogs {
 		_, identityErr = model.GetBillingReconciliationUser(c.Request.Context(), userId)
-	} else {
+	} else if request.StatementVersion == "" || request.JobType != model.CustomerExportJobTypeStatementDetails {
 		_, identityErr = model.GetDailyReportCustomer(c.Request.Context(), userId)
 	}
 	if err := identityErr; err != nil {
@@ -121,6 +135,7 @@ func CreateAdminCustomerExport(c *gin.Context) {
 		respondCustomerExportError(c, err)
 		return
 	}
+	request.AllowPendingVersion = true
 	job, err := service.SubmitCustomerExportJob(c.GetInt("id"), userId, request)
 	if err != nil {
 		respondCustomerExportError(c, err)
@@ -183,6 +198,19 @@ func DownloadSelfCustomerExport(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if c.Query("verify_existing") == "true" {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+		available, err := service.CheckExistingAzureStatementExport(ctx, job)
+		cancel()
+		if err != nil {
+			respondCustomerExportError(c, err)
+			return
+		}
+		if !available {
+			c.JSON(http.StatusGone, gin.H{"success": false, "message": "export file is no longer available"})
+			return
+		}
+	}
 	respondCustomerExportDownload(c, job)
 }
 
@@ -239,6 +267,7 @@ func artifactGeneratedAt(artifact *model.CustomerExportArtifact) int64 {
 var customerExportDownloadTTL = 5 * time.Minute
 
 func respondCustomerExportError(c *gin.Context, err error) {
+	var message *common.Message
 	switch {
 	case errors.Is(err, model.ErrCustomerExportUserBusy):
 		c.JSON(http.StatusConflict, gin.H{"success": false, "message": "You already have an active export job. Wait for it to finish or cancel it."})
@@ -254,6 +283,8 @@ func respondCustomerExportError(c *gin.Context, err error) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "Export requires object storage to be configured."})
 	case errors.Is(err, service.ErrCustomerExportInvalidRequest):
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+	case errors.As(err, &message):
+		common.ApiErrorStatus(c, http.StatusConflict, message)
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "unable to process customer export"})
 	}

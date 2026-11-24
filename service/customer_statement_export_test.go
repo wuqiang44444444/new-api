@@ -26,18 +26,15 @@ func TestCustomerStatementSummaryContainsOnlyAdditiveModelRows(t *testing.T) {
 			assert.EqualValues(t, 1, count)
 			rows := readEstimateCsv(t, paths[0])
 			require.Len(t, rows, 2)
-			values := map[string]string{}
-			for i, name := range rows[0] {
-				values[name] = rows[1][i]
-			}
-			assert.Equal(t, "'=key", values[customerExportSummaryHeaderLabel(language, "api_key_name")])
-			assert.Equal(t, "2", values[customerExportSummaryHeaderLabel(language, "requests")])
+			values := reconciliationTestCells(t, customerSummaryColumns, rows[1])
+			assert.Equal(t, "'=key", values["api_key_name"])
+			assert.Equal(t, "2", values["requests"])
 			for key, value := range map[string]string{"net_amount": "1.00000000", "original_amount": "2.00000000", "discount_amount": "1.00000000", "gross_amount": "1.50000000", "refund_amount": "0.50000000"} {
-				assert.Equal(t, value, values[customerExportSummaryHeaderLabel(language, key)], key)
+				assert.Equal(t, value, values[key], key)
 			}
-			assert.Equal(t, []string{"10", "30", "1", ""}, rows[1][len(rows[1])-4:])
-			assert.NotContains(t, values, customerExportSummaryHeaderLabel(language, "row_type"))
-			assert.NotContains(t, values, customerExportSummaryHeaderLabel(language, "job_id"))
+			assert.Contains(t, values["notes"], "10/30")
+			assert.NotContains(t, values, "row_type")
+			assert.NotContains(t, values, "job_id")
 		})
 	}
 }
@@ -47,7 +44,7 @@ func TestCustomerStatementDetailsExposeCallsAndSignedAmounts(t *testing.T) {
 		t.Run(language, func(t *testing.T) {
 			writer, err := newCustomerExportCsvWriter(t.TempDir(), "export", 1)
 			require.NoError(t, err)
-			writer.useStatementDetails(language)
+			writer.useStatementDetails(language, "CNY")
 			scope := customerExportScopeColumns{Language: language, QuotaPerUnit: 100, Currency: "CNY", CurrencyRate: 7}
 			ratio := 0.5
 			rows := []model.CustomerExportRow{
@@ -84,23 +81,18 @@ func TestCustomerStatementDetailsExposeCallsAndSignedAmounts(t *testing.T) {
 			assert.Equal(t, "0.5", records[0]["final_ratio"])
 			assert.Equal(t, "7.00000000", records[0]["net_amount"])
 			assert.Equal(t, "14.00000000", records[0]["original_amount"])
-			assert.Equal(t, "7.00000000", records[0]["discount_amount"])
-			assert.Contains(t, records[0]["billing_line_items_usd"], "2 USD / 1000000 token; 0.002 USD")
 			assert.Equal(t, "req-1", records[1]["request_id"])
 			assert.Equal(t, "0", records[1]["request_count"])
 			assert.Equal(t, "-3.50000000", records[1]["net_amount"])
-			assert.Equal(t, "-3.50000000", records[1]["discount_amount"])
 			assert.Empty(t, records[2]["original_amount"])
 			assert.Empty(t, records[2]["input_tokens"])
-			assert.Empty(t, records[2]["discount_amount"])
-			assert.Equal(t, "0.00000000", records[3]["discount_amount"])
+			assert.Equal(t, "0.00000000", records[3]["original_amount"])
+			assert.NotContains(t, records[0], "billing_line_items_usd")
 			if language == "zh" {
 				assert.Equal(t, "入账时间", writer.header[0])
-				assert.Equal(t, "未记录", records[0]["contract_applicable"])
 				assert.Equal(t, "扣款", records[0]["event_type"])
 				assert.Equal(t, "退款", records[1]["event_type"])
 			} else {
-				assert.Equal(t, "Not recorded", records[0]["contract_applicable"])
 				assert.Equal(t, "Charge", records[0]["event_type"])
 				assert.Equal(t, "Refund", records[1]["event_type"])
 			}

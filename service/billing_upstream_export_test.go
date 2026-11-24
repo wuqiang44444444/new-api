@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/csv"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -80,60 +79,48 @@ func TestUpstreamExportFrozenScopeAndCurrentAuthorization(t *testing.T) {
 	records, err := csv.NewReader(strings.NewReader(strings.TrimPrefix(string(store.uploaded[artifact.Files[0].ObjectKey]), customerExportCsvBOM))).ReadAll()
 	require.NoError(t, err)
 	require.Len(t, records, 503)
-	first := records[1]
-	second := records[2]
-	assert.Equal(t, "'=channel", first[9])
-	assert.Equal(t, "1000001", first[19])
-	recalculated := slices.Index(records[0], "Recalculated test original")
-	require.NotEqual(t, -1, recalculated)
-	assert.Empty(t, first[recalculated])
-	assert.Empty(t, second[recalculated])
-	imageColumnsEnd := recalculated + 1 + len(frozenBillingDetailCSVHeader("en"))
-	assert.Equal(t, frozenBillingDetailCSVHeader("en"), records[0][recalculated+1:imageColumnsEnd])
-	assert.Equal(t, []string{"1", "30", "0", ""}, first[imageColumnsEnd:])
-	assert.Equal(t, "-200000", second[19])
-	assert.Equal(t, "0.12345678", first[25])
-	assert.Equal(t, "1", first[26])
-	assert.Equal(t, "up-1", first[30])
-	assert.Equal(t, "task-root", first[32])
-	assert.Equal(t, "refund", second[14])
-	assert.Equal(t, "6.5", first[35])
-	assert.Empty(t, second[35], "customer refunds do not cancel provider seconds")
-	assert.Equal(t, "123457", first[36])
-	assert.Equal(t, "-24691", second[36])
-	assert.Equal(t, "Test pricing", records[0][37])
-	assert.Equal(t, "Data quality reasons", records[0][38])
-	assert.Equal(t, "Seconds basis", records[0][39])
-	assert.Equal(t, "Recorded usage", first[39])
-	assert.Empty(t, records[3][35], "missing seconds must remain empty")
-	assert.Equal(t, "Original amount status", records[0][34])
-	assert.Equal(t, "Available", records[3][34], "an independently known original is available even without seconds")
-	assert.Contains(t, records[3][38], "lack the billable duration used at the time")
-	assert.Equal(t, "0", records[4][17], "recorded billing zero remains usable when the response omitted an optional meter")
-	assert.NotContains(t, records[4][38], "cache read")
-	assert.Equal(t, "Available", records[4][34])
-	assert.Equal(t, "0", records[5][17], "explicit cache zero remains zero")
-	assert.Equal(t, "Available", records[5][34], "test-only settlement scope does not mean evidence is missing")
-	assert.Equal(t, "1", records[5][19], "priced channel tests carry their recorded original")
-	assert.Equal(t, "ratio:priced", records[5][37])
-	assert.Empty(t, records[5][38], "priced tests are not a quality gap")
-	referenceSum := decimal.Zero
-	for _, record := range records[1:] {
-		if record[36] == "" {
-			continue
-		} // Test-only usage has no reference money.
-		value, parseErr := decimal.NewFromString(record[36])
-		require.NoError(t, parseErr)
-		referenceSum = referenceSum.Add(value)
-	}
-	assert.Equal(t, "98766", referenceSum.String(), "tiny rows round once before every aggregation")
+	first := reconciliationTestCells(t, upstreamDetailColumns, records[1])
+	second := reconciliationTestCells(t, upstreamDetailColumns, records[2])
 	filters, err := completed.DecodeFilters()
 	require.NoError(t, err)
 	require.NotNil(t, filters.Upstream.ProviderModelFallback)
 	assert.False(t, *filters.Upstream.ProviderModelFallback)
 	scope := customerExportScopeColumns{QuotaPerUnit: filters.QuotaPerUnit, Currency: filters.Currency, CurrencyRate: filters.CurrencyRate}
-	assert.Equal(t, exportCurrencyAmount("123457", scope), first[24])
-	assert.Equal(t, exportCurrencyAmount("-24691", scope), second[24])
+	assert.Equal(t, "'=channel", first["channel"])
+	assert.Equal(t, exportCurrencyAmount("1000001", scope), first["original_amount"])
+	assert.Equal(t, exportCurrencyAmount("-200000", scope), second["original_amount"])
+	assert.Equal(t, "0.12345678", first["discount"])
+	assert.Equal(t, "1", first["version"])
+	assert.Equal(t, "up-1", first["upstream_request"])
+	assert.Equal(t, "task-root", first["upstream_task"])
+	assert.Equal(t, "退款", second["event"])
+	assert.Equal(t, "6.5", first["seconds"])
+	assert.Empty(t, second["seconds"], "customer refunds do not cancel provider seconds")
+	assert.Equal(t, exportCurrencyAmount("123457", scope), first["reference_amount"])
+	assert.Equal(t, exportCurrencyAmount("-24691", scope), second["reference_amount"])
+	unknown := reconciliationTestCells(t, upstreamDetailColumns, records[3])
+	assert.Empty(t, unknown["seconds"])
+	assert.Equal(t, "已核算", unknown["status"])
+	assert.Contains(t, unknown["notes"], "未保存当时的计费秒数")
+	for _, i := range []int{4, 5} {
+		row := reconciliationTestCells(t, upstreamDetailColumns, records[i])
+		assert.Equal(t, "0", row["cache_read"])
+		assert.Equal(t, "已核算", row["status"])
+	}
+	pricedTest := reconciliationTestCells(t, upstreamDetailColumns, records[5])
+	assert.Equal(t, exportCurrencyAmount("1", scope), pricedTest["original_amount"])
+	assert.Contains(t, pricedTest["notes"], "渠道测试计价 priced")
+	referenceSum := decimal.Zero
+	for _, record := range records[1:] {
+		cell := reconciliationTestCells(t, upstreamDetailColumns, record)["reference_amount"]
+		if cell == "" {
+			continue
+		}
+		value, parseErr := decimal.NewFromString(cell)
+		require.NoError(t, parseErr)
+		referenceSum = referenceSum.Add(value)
+	}
+	assert.Equal(t, exportCurrencyAmount("98766", scope), referenceSum.StringFixed(8), "tiny rows round once before every aggregation")
 	fresh, err := SubmitUpstreamExportJob(context.Background(), actor.Id, request, []int{9601}, urlKey)
 	require.NoError(t, err)
 	assert.NotEqual(t, completed.JobID, fresh.JobID)
@@ -224,10 +211,11 @@ func TestUpstreamEvidenceExportFreezesGlobalCategoryAndResubmission(t *testing.T
 	records, err := csv.NewReader(strings.NewReader(string(store.uploaded[artifact.Files[0].ObjectKey]))).ReadAll()
 	require.NoError(t, err)
 	require.Len(t, records, 2)
-	assert.Equal(t, "priced-test", records[1][29])
-	assert.Equal(t, "9612", records[1][8], "deleted channels remain included")
-	assert.Empty(t, records[1][9], "new channel metadata must not change a frozen global export")
-	assert.Equal(t, "1", records[1][25])
+	row := reconciliationTestCells(t, upstreamDetailColumns, records[1])
+	assert.Equal(t, "priced-test", row["request"])
+	assert.Equal(t, "9612", row["channel_id"], "deleted channels remain included")
+	assert.Empty(t, row["channel"], "new channel metadata must not change a frozen global export")
+	assert.Equal(t, "1", row["discount"])
 	resubmitted, err := ResubmitUpstreamExportJob(actor.Id, job.JobID)
 	require.NoError(t, err)
 	copyFilters, err := resubmitted.DecodeFilters()
@@ -257,8 +245,8 @@ func TestUpstreamEvidenceExportFreezesGlobalCategoryAndResubmission(t *testing.T
 	allRecords, err := csv.NewReader(strings.NewReader(string(store.uploaded[allArtifact.Files[0].ObjectKey]))).ReadAll()
 	require.NoError(t, err)
 	require.Len(t, allRecords, 3)
-	assert.Equal(t, "priced-test", allRecords[1][29])
-	assert.Equal(t, "ordinary", allRecords[2][29])
+	assert.Equal(t, "priced-test", reconciliationTestCells(t, upstreamDetailColumns, allRecords[1])["request"])
+	assert.Equal(t, "ordinary", reconciliationTestCells(t, upstreamDetailColumns, allRecords[2])["request"])
 	request.UpstreamEvidenceFilter = "typo"
 	_, err = SubmitUpstreamExportJob(context.Background(), actor.Id, request, nil, "")
 	require.ErrorIs(t, err, ErrCustomerExportInvalidRequest)

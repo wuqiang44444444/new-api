@@ -45,38 +45,26 @@ func TestCustomerExportCSVIncludesSafeMeteredComponents(t *testing.T) {
 	require.Len(t, records, 5, "components must not duplicate ledger rows")
 	rows := map[string]map[string]string{}
 	for _, record := range records[1:] {
-		row := map[string]string{}
-		for i, key := range records[0] {
-			row[key] = record[i]
-		}
+		row := reconciliationTestCells(t, adminUsageRecordColumns, record)
 		rows[row["request_id"]] = row
 	}
-	for _, tc := range []struct {
-		id, unit, tier, basis                    string
-		quantity, price, subtotal, priceQuantity float64
-	}{
-		{"native", "token", "", "frozen_quota_conversion", 1000, 2, .002, 1000000},
-		{"seconds", "second", "base", "recorded_usd_price", 5, .4, 2, 1},
-	} {
-		row := rows[tc.id]
-		assert.Equal(t, "available", row["billing_explanation_status"])
-		assert.Equal(t, tc.tier, row["matched_tier"])
-		assert.Equal(t, tc.basis, row["price_conversion_basis"])
-		var lines []map[string]any
-		require.NoError(t, common.UnmarshalJsonStr(row["billing_line_items_usd"], &lines))
-		require.Len(t, lines, 1)
-		assert.Equal(t, tc.quantity, lines[0]["quantity"])
-		assert.Equal(t, tc.unit, lines[0]["unit"])
-		assert.Equal(t, tc.price, lines[0]["unit_price_usd"])
-		assert.Equal(t, tc.priceQuantity, lines[0]["unit_price_quantity"])
-		assert.InDelta(t, tc.subtotal, lines[0]["subtotal_usd"], 1e-10)
-	}
-	assert.Equal(t, "unavailable", rows["unknown"]["billing_explanation_status"])
+	assert.Equal(t, []string{
+		"入账时间", "请求 ID", "入账类型", "客户 ID", "用户名", "令牌", "令牌 ID", "客户模型", "流",
+		"净额 (USD)", "原价 (USD)", "入账额度", "折前额度", "是否计入客户账单", "合同 ID", "合同版本", "有效组倍率", "合同倍率",
+		"模型最终倍率", "计费方式", "计入请求数", "输入 Token", "输出 Token", "缓存读取 Token", "普通写入 Token", "5 分钟写入 Token",
+		"1 小时写入 Token", "12 小时写入 Token", "计费张数", "计费秒数", "用量及单价明细（USD，折扣前）", "金额无法计算原因",
+		"任务合同应收 (USD)", "任务实际扣款 (USD)", "任务扣款差额 (USD)", "字段版本", "导出任务 ID", "币种", "单位金额对应额度", "汇率",
+	}, records[0])
+	assert.Equal(t, "28", rows["native"]["field_version"])
+	assert.Equal(t, "否", rows["native"]["is_stream"])
+	assert.Empty(t, rows["refund"]["is_stream"])
+	assert.Contains(t, rows["native"]["billing_line_items_usd"], "1000 token; 2 USD / 1000000 token; 0.002 USD")
+	assert.Contains(t, rows["seconds"]["billing_line_items_usd"], "5 second; 0.4 USD / 1 second; 2 USD")
+	assert.Equal(t, "5", rows["seconds"]["billable_seconds"])
 	assert.Empty(t, rows["unknown"]["billing_line_items_usd"])
-	assert.Equal(t, "historical", rows["unknown"]["matched_tier"])
-	assert.Equal(t, "not_applicable", rows["refund"]["billing_explanation_status"])
 	assert.Empty(t, rows["refund"]["billing_line_items_usd"])
 	assert.Equal(t, "-0.00001000", rows["refund"]["net_amount"])
+
 }
 
 func TestCustomerExportWaitingTransitionsAreVisibleAndKeepCounters(t *testing.T) {

@@ -19,25 +19,22 @@ func TestUsageAnalyticsStreamOutcomesInAllExports(t *testing.T) {
 		{UserId: 42, TokenId: 991, ChannelId: 991, CreatedAt: period.StartTimestamp + 1, Type: model.LogTypeConsume, Quota: 100, ModelName: "chat", Other: `{"contract_applicable":false,"group_ratio":1,"model_ratio":1,"stream_status":{"status":"error","end_reason":"client_gone"}}`},
 		{UserId: 42, TokenId: 991, ChannelId: 991, CreatedAt: period.StartTimestamp + 86401, Type: model.LogTypeConsume, Quota: 200, ModelName: "chat", Other: `{"contract_applicable":false,"group_ratio":1,"model_ratio":1,"stream_status":{"status":"error","end_reason":"eof","errors":["response_failed"]}}`},
 	}).Error)
-	filters := model.CustomerExportFilters{StartTimestamp: period.StartTimestamp, EndTimestamp: period.EndTimestamp, Timezone: model.UsageAnalyticsTimezone, Language: "en", QuotaPerUnit: 100, CurrencyRate: 1}
+	filters := model.CustomerExportFilters{StartTimestamp: period.StartTimestamp, EndTimestamp: period.EndTimestamp, Timezone: model.UsageAnalyticsTimezone, Language: "en", UsageExportGrain: "period", QuotaPerUnit: 100, CurrencyRate: 1}
 	filters.UsageReportDays = freezeUsageExportTestDays(t, period, 2)
 	for _, view := range []string{"customer", "upstream", "customers"} {
 		t.Run(view, func(t *testing.T) {
 			rows, _, err := usageAnalyticsExportRows(context.Background(), &model.CustomerExportJob{JobID: "stream-outcomes", TargetUserId: 42}, view, period, filters, customerExportScopeColumns{QuotaPerUnit: 100, CurrencyRate: 1, Currency: "USD"})
 			require.NoError(t, err)
 			require.NotEmpty(t, rows)
-			grand := rows[len(rows)-1]
-			require.Equal(t, "grand_total", grand[0])
-			header := usageAnalyticsExportHeader("en", view)
-			cells := make(map[string]string, len(header))
-			for i, name := range header {
-				cells[name] = grand[i]
+			require.Len(t, rows, 1)
+			cells := usageTestCells(t, rows[0], view, "period")
+			assert.Equal(t, "2", cells["calls"])
+			assert.Equal(t, "0", cells["success"])
+			assert.Equal(t, "1", cells["failure"])
+			assert.Equal(t, "1", cells["cancelled"])
+			if view != "upstream" {
+				assert.Equal(t, "3.00000000", cells["net_amount"])
 			}
-			assert.Equal(t, "2", cells["Calls"])
-			assert.Equal(t, "0", cells["Success"])
-			assert.Equal(t, "1", cells["Failure"])
-			assert.Equal(t, "1", cells["Cancelled"])
-			assert.Equal(t, "300", cells["Net quota"])
 		})
 	}
 }

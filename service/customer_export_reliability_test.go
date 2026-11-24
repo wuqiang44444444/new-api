@@ -66,13 +66,13 @@ func TestCustomerExportSummaryEmptyMonthAndFrozenCurrency(t *testing.T) {
 	rows, err := csv.NewReader(strings.NewReader(strings.TrimPrefix(string(raw), customerExportCsvBOM))).ReadAll()
 	require.NoError(t, err)
 	values := map[string]string{}
-	for i, key := range customerExportSummaryColumnOrder {
-		values[key] = rows[1][i]
+	for i, column := range customerSummaryColumns {
+		values[column.key] = rows[1][i]
 	}
 	assert.Empty(t, values["input_tokens"])
 	assert.Equal(t, "7.00000000", values["net_amount"])
 	assert.Equal(t, "7.00000000", values["discount_amount"])
-	assert.Equal(t, formatExportTimestamp(1000), values["generated_at"])
+	assert.Contains(t, rows[0], "Net booked amount (CNY)")
 }
 
 func TestCustomerBillingExplanationUsesFrozenTokenAndTaskUnits(t *testing.T) {

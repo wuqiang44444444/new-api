@@ -152,8 +152,15 @@ if [[ "${1:-}" == "--redis-only" && $# == 1 ]]; then
   wait "$!"
   exit
 fi
-if (( $# != 0 )); then
-  echo "用法：./start.sh [--redis-only]" >&2
+postgres_service=postgres
+postgres_database=yuan_gateway_dev
+postgres_application=yuan-gateway-dev
+if [[ $# == 1 && "$1" == cn ]]; then
+  postgres_service=postgres-cn
+  postgres_database=yuan_gateway_dev_cn
+  postgres_application=yuan-gateway-dev-cn
+elif (( $# != 0 )); then
+  echo "用法：./start.sh [cn | --redis-only]" >&2
   exit 1
 fi
 
@@ -195,28 +202,29 @@ dev_compose=(docker compose -p yuan-gateway -f "$ROOT_DIR/docker-compose.dev.yml
 if [[ -f "$ROOT_DIR/.env" ]]; then
   dev_compose+=(--env-file "$ROOT_DIR/.env")
 fi
-if ! "${dev_compose[@]}" up -d --wait --wait-timeout "$STARTUP_TIMEOUT" --no-recreate postgres; then
-  echo "yuan-gateway 的 postgres 服务未就绪。" >&2
+if ! "${dev_compose[@]}" up -d --wait --wait-timeout "$STARTUP_TIMEOUT" --no-recreate "$postgres_service"; then
+  echo "yuan-gateway 的 $postgres_service 服务未就绪。" >&2
   exit 1
 fi
-if ! postgres_address=$("${dev_compose[@]}" port postgres 5432) ||
+if ! postgres_address=$("${dev_compose[@]}" port "$postgres_service" 5432) ||
   [[ ! "$postgres_address" =~ ^127\.0\.0\.1:[0-9]+$ ]]; then
-  echo "无法获取 yuan-gateway 的 postgres 服务在本机回环地址上发布的端口。" >&2
+  echo "无法获取 yuan-gateway 的 $postgres_service 服务在本机回环地址上发布的端口。" >&2
   exit 1
 fi
 postgres_port=${postgres_address##*:}
 if [[ "$postgres_port" == "$BACKEND_PORT" || "$postgres_port" == "$FRONTEND_PORT" ]]; then
-  echo "前后端端口不能占用 postgres 发布端口：$postgres_port" >&2
+  echo "前后端端口不能占用 $postgres_service 发布端口：$postgres_port" >&2
   exit 1
 fi
 if ! postgres_password=$(
-  "${dev_compose[@]}" exec -T postgres sh -c 'printf %s "$POSTGRES_PASSWORD"' |
+  # shellcheck disable=SC2016 # Expand the password inside the container.
+  "${dev_compose[@]}" exec -T "$postgres_service" sh -c 'printf %s "$POSTGRES_PASSWORD"' |
     bun -e 'process.stdout.write(encodeURIComponent(await Bun.stdin.text()))'
 ) || [[ -z "$postgres_password" ]]; then
-  echo "无法读取 yuan-gateway 的 postgres 容器凭据。" >&2
+  echo "无法读取 yuan-gateway 的 $postgres_service 容器凭据。" >&2
   exit 1
 fi
-SQL_DSN="postgresql://yuan_gateway:$postgres_password@$postgres_address/yuan_gateway_dev?sslmode=disable&application_name=yuan-gateway-dev"
+SQL_DSN="postgresql://yuan_gateway:$postgres_password@$postgres_address/$postgres_database?sslmode=disable&application_name=$postgres_application"
 unset postgres_password
 
 mkdir -p "$LOG_DIR"
@@ -243,7 +251,7 @@ echo "正在启动后端，端口：$BACKEND_PORT"
 (
   cd "$ROOT_DIR"
   export SQL_DSN
-  exec env PORT="$BACKEND_PORT" go run .
+  exec env PORT="$BACKEND_PORT" go run -tags yuan_gateway_local_dev .
 ) >>"$BACKEND_LOG" 2>&1 &
 BACKEND_PID=$!
 

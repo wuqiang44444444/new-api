@@ -127,8 +127,9 @@ func TestUpstreamSubmissionRetryKeepsOriginalLogBoundary(t *testing.T) {
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, total)
 	request.Language = "en"
-	_, err = SubmitUpstreamExportJob(context.Background(), actor.Id, request, []int{9693}, "")
-	assert.ErrorIs(t, err, model.ErrCustomerExportUserBusy, "a different requested language must not reuse the file")
+	retry, err = SubmitUpstreamExportJob(context.Background(), actor.Id, request, []int{9693}, "")
+	require.NoError(t, err)
+	assert.Equal(t, first.JobID, retry.JobID, "interface language does not change the Chinese output format")
 	_, err = model.CancelCustomerExportJob(first.JobID, actor.Id)
 	require.NoError(t, err)
 	request.Language = "zh"

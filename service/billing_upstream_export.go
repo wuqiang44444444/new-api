@@ -83,104 +83,12 @@ func executeUpstreamExport(ctx context.Context, job *model.CustomerExportJob, fi
 		return nil, err
 	}
 	defer writer.Cleanup()
-	writer.header = []string{
-		"Job ID",
-		"Generated at",
-		"Period start (Asia/Shanghai)",
-		"Period end (exclusive, Asia/Shanghai)",
-		"URL grouping",
-		"Upstream name",
-		"Row ID",
-		"Time",
-		"Channel ID",
-		"Channel",
-		"Customer model",
-		"Provider model",
-		"Provider model fallback",
-		"Billing mode",
-		"Row kind",
-		"Input tokens",
-		"Output tokens",
-		"Cache read tokens",
-		"Cache write tokens",
-		"Original quota",
-		"Currency",
-		"Quota per unit",
-		"Currency rate",
-		"Original amount (local official price)",
-		"Calculated amount (after channel discount)",
-		"Channel discount",
-		"Discount version",
-		"Discount source",
-		"Source month",
-		"Our request ID",
-		"Upstream request ID",
-		"Platform task ID",
-		"Upstream task ID",
-		"Amount unavailable reasons",
-		"Original amount status",
-		"Billable seconds",
-		"Reference quota",
-		"Test pricing",
-		"Data quality reasons",
-		"Seconds basis",
-		"Test amount basis", "Recorded test fee", "Recalculated test original",
+	language := filters.Language
+	writer.header = csvLabels(language, filters.Currency, upstreamDetailColumns)
+	coverage := csvReportCoverage(language, filters.BillingReportCoverage)
+	if coverage != "" {
+		writer.prefix += "-partial"
 	}
-	if filters.Language == "zh" {
-		writer.header = []string{
-			"任务 ID",
-			"生成时间",
-			"账期开始（上海时区）",
-			"账期结束（不含，上海时区）",
-			"URL 归组",
-			"上游名称",
-			"记录 ID",
-			"时间",
-			"渠道 ID",
-			"渠道",
-			"客户模型",
-			"上游模型",
-			"上游模型未记录",
-			"计费模式",
-			"记录类型",
-			"输入 Token",
-			"输出 Token",
-			"缓存读取 Token",
-			"缓存写入 Token",
-			"本地原价 quota",
-			"币种",
-			"单位 quota",
-			"汇率",
-			"原价金额（本地官方价）",
-			"核算金额（按渠道折扣）",
-			"渠道折扣",
-			"折扣版本",
-			"折扣来源",
-			"来源月份",
-			"我方请求 ID",
-			"上游请求 ID",
-			"平台任务 ID",
-			"上游任务 ID",
-			"金额无法计算原因",
-			"原价核算状态",
-			"计费秒数",
-			"折后参考 quota",
-			"测试计价",
-			"数据质量说明",
-			"秒数依据",
-			"测试金额依据", "原测试记录金额", "复算测试原价",
-		}
-	}
-	if filters.Upstream.URLKey == "" {
-		writer.header[4] = "Channel scope"
-		if filters.Language == "zh" {
-			writer.header[4] = "渠道范围"
-		}
-	}
-	if filters.FieldVersion >= dailyBillingExportFieldVersion {
-		writer.header = append(writer.header, frozenBillingDetailCSVHeader(filters.Language)...)
-	}
-	writer.setBillingCoverage(filters)
 	scope := customerExportScopeColumns{QuotaPerUnit: filters.QuotaPerUnit, Currency: filters.Currency, CurrencyRate: filters.CurrencyRate, GeneratedAt: common.GetTimestamp()}
 	filter := model.UpstreamBillingDetailFilter{URLKey: filters.Upstream.URLKey, EvidenceFilter: filters.Upstream.EvidenceFilter, Start: filters.StartTimestamp, End: filters.EndTimestamp - 1, ChannelIds: filters.Upstream.ChannelIds, ProviderModel: filters.ModelName, ProviderModelFallback: filters.Upstream.ProviderModelFallback, BillingMode: filters.BillingMode, RequestId: filters.RequestId, UpstreamRequestId: filters.UpstreamRequestId}
 	progress := model.CustomerExportProgress{}
@@ -192,98 +100,60 @@ func executeUpstreamExport(ctx context.Context, job *model.CustomerExportJob, fi
 		return gate(ctx)
 	}}, func(row model.UpstreamBillingDetailItem) error {
 		channel := filters.Upstream.Channel(row.ChannelId, filters.StartTimestamp)
-		reference, referenceQuota, discount, version, source, sourceMonth := "", "", "", "", "", ""
+		var reference, discount, version string
 		if d := channel.Discount; d != nil {
 			coefficient := d.ValueAt(row.Time)
-			discount, version, source = coefficient.String(), strconv.FormatInt(d.Version, 10), d.Source
-			sourceMonth = formatExportTimestamp(d.SourcePeriod)
-			if original, e := decimal.NewFromString(row.OriginalExactQuota); e == nil {
-				referenceQuota = model.UpstreamReferenceQuota(original, coefficient).String()
-				reference = exportCurrencyAmount(referenceQuota, scope)
+			discount, version = coefficient.String(), strconv.FormatInt(d.Version, 10)
+			if original, err := decimal.NewFromString(row.OriginalExactQuota); err == nil {
+				reference = exportCurrencyAmount(model.UpstreamReferenceQuota(original, coefficient).String(), scope)
 			}
 		}
-		cacheRead := strconv.FormatInt(row.CacheReadTokens, 10)
-		if row.DataQuality.CacheReadUnavailableRequests > 0 {
-			cacheRead = ""
+		name := filters.Upstream.GroupName
+		if filters.Upstream.URLKey == "" {
+			name = channel.UpstreamName
 		}
-		cacheWrite := strconv.FormatInt(row.CacheWriteTokens, 10)
-		if row.DataQuality.CacheWriteUnavailableRequests > 0 {
-			cacheWrite = ""
+		values := map[string]string{
+			"time": formatExportTimestamp(row.Time), "channel_id": strconv.Itoa(row.ChannelId),
+			"upstream_request": exportCsvCellGuard(row.UpstreamRequestId), "request": exportCsvCellGuard(row.RequestId),
+			"event":   customerStatementExportValue(language, "event_type", row.Event),
+			"channel": exportCsvCellGuard(channel.Name), "name": exportCsvCellGuard(name),
+			"url": exportCsvCellGuard(row.URLKey), "provider_model": exportCsvCellGuard(row.ProviderModel),
+			"customer_model": exportCsvCellGuard(row.CustomerModel), "stream": csvStream(language, row.IsStream),
+			"reference_amount": reference, "original_amount": exportCurrencyAmount(row.OriginalExactQuota, scope),
+			"discount": discount, "version": version, "status": upstreamExportOriginalStatus(row.OriginalAmount, language),
+			"mode":  customerStatementExportValue(language, "billing_mode", row.BillingMode),
+			"input": strconv.FormatInt(row.RecordedInputTokens, 10), "output": strconv.FormatInt(row.OutputTokens, 10),
+			"cache_read": strconv.FormatInt(row.CacheReadTokens, 10), "images": csvOptionalCount(row.BillableImageCount),
+			"completed": csvOptionalCount(row.CompletedImageCount), "row_id": strconv.FormatInt(row.RowId, 10),
+			"task": exportCsvCellGuard(row.PlatformTaskId), "upstream_task": exportCsvCellGuard(row.UpstreamTaskId),
 		}
-		secondsBasis := row.SecondsSource
-		switch row.SecondsSource {
-		case "billing_parameters":
-			secondsBasis = "Verified original billing parameters"
-			if filters.Language == "zh" {
-				secondsBasis = "按当时计价参数复算一致"
-			}
-		case "refunded_hold":
-			secondsBasis = "Customer-refunded task hold"
-			if filters.Language == "zh" {
-				secondsBasis = "已退还客户的任务预扣"
-			}
-		case "recorded_usage":
-			secondsBasis = "Recorded usage"
-			if filters.Language == "zh" {
-				secondsBasis = "已记录用量"
-			}
-		}
-		seconds := ""
 		if row.Seconds != nil {
-			seconds = row.Seconds.String()
+			values["seconds"] = row.Seconds.String()
 		}
-		testPricing := ""
+		if row.DataQuality.CacheReadUnavailableRequests > 0 {
+			values["cache_read"] = ""
+		}
+		if row.DataQuality.InputTokensUnavailableRequests > 0 {
+			values["input"] = ""
+		}
+		cacheCells, cacheNote := csvCacheWrites(language, row.CacheWrites, row.CacheWriteTokens)
+		csvCacheWriteValues(values, cacheCells)
+		var providerNote, replayNote, testNote string
+		if row.ProviderModelFallback {
+			providerNote = csvText(language, "Upstream model not recorded", "上游模型未记录")
+		}
+		if replay := row.FrozenReplay; replay != nil {
+			replayNote = replay.Reason
+			if replay.DeltaQuota != nil && *replay.DeltaQuota != 0 {
+				replayNote = csvNotes(replayNote, csvText(language, "Settlement difference (quota) ", "入账差额（额度） ")+strconv.FormatInt(*replay.DeltaQuota, 10))
+			}
+		}
 		if row.TestPricing != nil {
-			testPricing = row.TestPricing.Mode + ":" + row.TestPricing.Status
+			testNote = csvText(language, "Channel test pricing ", "渠道测试计价 ") + row.TestPricing.Status
 		}
-		testBasis, recordedFee, recomputedFee := "", "", ""
-		if row.TestPricing != nil {
-			switch row.TestPricing.Basis {
-			case "historical_replay":
-				testBasis = "Recalculated from recorded prices and usage"
-				if filters.Language == "zh" {
-					testBasis = "按历史价格与用量复算"
-				}
-			case "recorded_expression_result":
-				testBasis = "Recorded expression result; group multiplier 1"
-				if filters.Language == "zh" {
-					testBasis = "历史表达式计算金额（分组倍率 1）"
-				}
-			}
-			if row.TestPricing.RecordedQuota != nil {
-				recordedFee = exportCurrencyAmount(strconv.FormatInt(*row.TestPricing.RecordedQuota, 10), scope)
-			}
-			if row.TestPricing.RecomputedQuota != nil {
-				recomputedFee = exportCurrencyAmount(strconv.FormatInt(*row.TestPricing.RecomputedQuota, 10), scope)
-			}
-		}
-		identity, upstreamName := filters.Upstream.URLKey, filters.Upstream.GroupName
-		if identity == "" {
-			identity, upstreamName = strconv.Itoa(row.ChannelId), channel.UpstreamName
-		}
-		record := []string{
-			job.JobID, formatExportTimestamp(scope.GeneratedAt),
-			formatExportTimestamp(filters.StartTimestamp), formatExportTimestamp(filters.EndTimestamp),
-			exportCsvCellGuard(identity), exportCsvCellGuard(upstreamName),
-			strconv.FormatInt(row.RowId, 10),
-			formatExportTimestamp(row.Time), strconv.Itoa(row.ChannelId), exportCsvCellGuard(channel.Name),
-			exportCsvCellGuard(row.CustomerModel), exportCsvCellGuard(row.ProviderModel),
-			exportYesNo(row.ProviderModelFallback), row.BillingMode, row.Event,
-			strconv.FormatInt(row.RecordedInputTokens, 10), strconv.FormatInt(row.OutputTokens, 10),
-			cacheRead, cacheWrite, row.OriginalExactQuota,
-			filters.Currency, strconv.FormatFloat(filters.QuotaPerUnit, 'f', -1, 64),
-			strconv.FormatFloat(filters.CurrencyRate, 'f', -1, 64),
-			exportCurrencyAmount(row.OriginalExactQuota, scope), reference,
-			discount, version, source, sourceMonth,
-			exportCsvCellGuard(row.RequestId), exportCsvCellGuard(row.UpstreamRequestId),
-			exportCsvCellGuard(row.PlatformTaskId), exportCsvCellGuard(row.UpstreamTaskId),
-			customerExportEstimateReasons(filters.Language, row.EstimateReasons), upstreamExportOriginalStatus(row.OriginalAmount, filters.Language), seconds, referenceQuota, testPricing,
-			upstreamExportQualityReasons(row.DataQuality, filters.Language, true), secondsBasis, testBasis, recordedFee, recomputedFee,
-		}
-		if filters.FieldVersion >= dailyBillingExportFieldVersion {
-			record = append(record, frozenBillingDetailCSVCells(row)...)
-		}
-		if err := writer.AppendRecord(record); err != nil {
+		values["notes"] = csvNotes(cacheNote, providerNote, replayNote, testNote, csvDurationNote(language, row.BillableDurations),
+			customerExportEstimateReasons(language, row.EstimateReasons), upstreamExportQualityReasons(row.DataQuality, language, true))
+		if err := writer.AppendRecord(csvProjection(upstreamDetailColumns, values)); err != nil {
 			return err
 		}
 		progress.Matched++
@@ -304,7 +174,11 @@ func executeUpstreamExport(ctx context.Context, job *model.CustomerExportJob, fi
 	if err := model.UpdateCustomerExportProgress(ctx, job.JobID, job.Executor, progress); err != nil {
 		return nil, err
 	}
-	return uploadCustomerExportArtifact(ctx, job.JobID, files, paths, lines)
+	artifact, err := uploadCustomerExportArtifact(ctx, job.JobID, files, paths, lines)
+	if err == nil {
+		artifact.MissingDates = model.CustomerStatementExportMissingDates(ctx, filters)
+	}
+	return artifact, err
 }
 
 // Resubmission retains the original scope, including channel membership and
@@ -338,6 +212,7 @@ func ResubmitUpstreamExportJob(actorID int, sourceJobID string) (*model.Customer
 		}
 	}
 	filters.FieldVersion = customerExportFormatVersion(source.JobType)
+	filters.Language = billingExportLanguage
 	job, created, err := model.CreateCustomerExportJob(actorID, 0, source.JobType, filters, model.CustomerExportReuse{RequireExactActiveFilters: true})
 	if err != nil {
 		return nil, err

@@ -9,6 +9,27 @@ import (
 
 var ErrCustomerExportCancelled = errors.New("customer export cancelled")
 
+// UpgradeCustomerExportFormat changes the requested format before any output
+// has been staged. The original scope and its report pins stay on the job.
+func UpgradeCustomerExportFormat(ctx context.Context, job *CustomerExportJob, filters CustomerExportFilters) error {
+	raw, err := common.Marshal(filters)
+	if err != nil {
+		return err
+	}
+	result := DB.WithContext(ctx).Model(&CustomerExportJob{}).
+		Where("job_id = ? AND executor = ? AND status = ? AND lease_until > ? AND cancel_requested = ? AND artifact = ? AND filters = ?",
+			job.JobID, job.Executor, CustomerExportJobStatusRunning, common.GetTimestamp(), false, "", job.Filters).
+		Update("filters", string(raw))
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrCustomerExportStateConflict
+	}
+	job.Filters = string(raw)
+	return nil
+}
+
 // CheckCustomerExportExecution fences both the worker and its current authority.
 // Expired leases cannot be resurrected, even before recovery has run.
 func CheckCustomerExportExecution(ctx context.Context, jobID, executor string, now int64) error {

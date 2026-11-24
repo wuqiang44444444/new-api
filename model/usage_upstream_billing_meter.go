@@ -28,6 +28,11 @@ func setUpstreamUsageMeter(metrics *UsageAnalyticsMetrics, mode string, imageCou
 // Aggregate the pricing inputs rather than the raw token columns. Context
 // length (len) is used only for tier selection and is never a second meter.
 func setUpstreamExpressionTokenMeter(metrics *UsageAnalyticsMetrics, replay *FrozenChargeReplay, calls int64) {
+	observedWrites := metrics.CacheWriteTokens
+	if metrics.CacheWrites == nil {
+		// Keep unknown actual usage separate from nonzero pricing operands.
+		metrics.CacheWrites = &BillingCacheWrites{Unclassified: observedWrites}
+	}
 	metrics.InputTokens, metrics.OutputTokens = 0, 0
 	metrics.CacheReadTokens, metrics.CacheWriteTokens = 0, 0
 	metrics.TokenDetails = nil
@@ -43,7 +48,7 @@ func setUpstreamExpressionTokenMeter(metrics *UsageAnalyticsMetrics, replay *Fro
 		}
 		count := int64(value)
 		switch key {
-		case "p", "ai", "img", "cr", "img_cr", "cc", "cc1h":
+		case "p", "ai", "img", "cr", "img_cr", "cc", "cc1h", "cc12h":
 			addBillingStatementValue(&metrics.InputTokens, count)
 		case "c", "ao", "img_o":
 			addBillingStatementValue(&metrics.OutputTokens, count)
@@ -51,8 +56,11 @@ func setUpstreamExpressionTokenMeter(metrics *UsageAnalyticsMetrics, replay *Fro
 		switch key {
 		case "cr", "img_cr":
 			addBillingStatementValue(&metrics.CacheReadTokens, count)
-		case "cc", "cc1h":
+		case "cc", "cc1h", "cc12h":
 			addBillingStatementValue(&metrics.CacheWriteTokens, count)
 		}
+	}
+	if metrics.RowsMissingTokens == 0 && observedWrites != metrics.CacheWriteTokens {
+		metrics.CacheWritePricingAdjustedRows = max(calls, 1)
 	}
 }

@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -32,6 +33,19 @@ vi.mock('sonner', () => ({
 }))
 
 const period = { start_timestamp: 1788192000, end_timestamp: 1790783999 }
+const exportDays = [
+  {
+    date: '2026-09-05',
+    start_timestamp: period.start_timestamp + 4 * 86400,
+    end_timestamp: period.start_timestamp + 5 * 86400,
+    incomplete: true,
+  },
+  {
+    date: '2026-09-03',
+    start_timestamp: period.start_timestamp + 2 * 86400,
+    end_timestamp: period.start_timestamp + 3 * 86400,
+  },
+]
 const usage = {
   requests: 2,
   billable_calls: 0,
@@ -204,10 +218,21 @@ async function mount(
   return { view, i18n, client, queuedExport }
 }
 
-async function openExportDrawer() {
+async function selectExportContent(drawer: HTMLElement, label: string) {
+  await userEvent.click(
+    within(drawer).getByRole('combobox', { name: 'Export content' })
+  )
+  await userEvent.click(await screen.findByRole('option', { name: label }))
+}
+
+async function openExportDrawer(content?: string) {
   const user = userEvent.setup()
   await user.click(screen.getByRole('button', { name: 'Export and download' }))
-  return screen.findByRole('dialog', { name: 'Export and download' })
+  const drawer = await screen.findByRole('dialog', {
+    name: 'Export and download',
+  })
+  if (content) await selectExportContent(drawer, content)
+  return drawer
 }
 
 it('switches a pinned customer bill to fresh coverage, totals, detail links, and exports', async () => {
@@ -286,7 +311,7 @@ it('switches a pinned customer bill to fresh coverage, totals, detail links, and
     },
   })
 
-  const drawer = await openExportDrawer()
+  const drawer = await openExportDrawer('Statement summary')
   await userEvent.click(
     within(drawer).getByRole('button', { name: 'Export CSV' })
   )
@@ -302,6 +327,10 @@ it('submits a server-side statement export with the frozen month and language', 
   const user = userEvent.setup()
   await user.click(screen.getByRole('button', { name: 'Export and download' }))
   expect(api.post).not.toHaveBeenCalled()
+  await selectExportContent(
+    screen.getByRole('dialog', { name: 'Export and download' }),
+    'Statement summary'
+  )
   const exportCSV = await screen.findByRole('button', { name: 'Export CSV' })
   await user.click(exportCSV)
   await vi.waitFor(() => expect(api.post).toHaveBeenCalled())
@@ -309,7 +338,7 @@ it('submits a server-side statement export with the frozen month and language', 
     job_type: 'statement_summary',
     start_timestamp: period.start_timestamp,
     end_timestamp: period.end_timestamp + 1,
-    language: 'en',
+    language: 'zh',
   })
   expect(
     screen.getByRole('dialog', { name: 'Export and download' })
@@ -318,7 +347,7 @@ it('submits a server-side statement export with the frozen month and language', 
 
 it('uses the shared drawer and submits admin exports for the selected customer', async () => {
   await mount({ envelope: statementEnvelope(), isAdmin: true, userId: 7 })
-  const drawer = await openExportDrawer()
+  const drawer = await openExportDrawer('Statement summary')
   expect(within(drawer).getByText('customer · #7')).toBeVisible()
   expect(api.post).not.toHaveBeenCalled()
   fireEvent.click(within(drawer).getByRole('button', { name: 'Export CSV' }))
@@ -329,7 +358,7 @@ it('uses the shared drawer and submits admin exports for the selected customer',
         job_type: 'statement_summary',
         start_timestamp: period.start_timestamp,
         end_timestamp: period.end_timestamp + 1,
-        language: 'en',
+        language: 'zh',
       },
       { params: { user_id: 7 } }
     )
@@ -599,7 +628,7 @@ it('shows model totals and details directly on the bill for a single API key', a
 })
 
 it.each([false, true])(
-  'downloads the displayed version without creating a new export (admin: %s)',
+  'exports a single day from the displayed version and downloads its stored summary (admin: %s)',
   async (isAdmin) => {
     const versionPath = isAdmin
       ? '/api/billing/admin/customer-statement-versions'
@@ -632,6 +661,7 @@ it.each([false, true])(
           versions: [envelope.billing_version],
         }
       }
+      if (url.endsWith('detail-export-days')) data = { days: exportDays }
       if (url === '/api/billing/exports') data = { items: [], total: 0 }
       return { data: { success: true, data } }
     })
@@ -659,28 +689,46 @@ it.each([false, true])(
         name: 'September 2026 statement · v1',
       })
     ).toBeTruthy()
-    const user = userEvent.setup()
-    await user.click(
-      within(drawer).getByRole('combobox', { name: 'Export content' })
-    )
-    await user.click(
-      await screen.findByRole('option', { name: 'Statement details' })
-    )
-    fireEvent.click(
-      within(drawer).getByRole('button', {
-        name: 'Download CSV',
+    const date = within(drawer).getByRole('combobox', { name: 'Billing date' })
+    await vi.waitFor(() => expect(date).toHaveValue('2026-09-05'))
+    expect(api.get).toHaveBeenCalledWith(
+      isAdmin
+        ? '/api/billing/admin/customer-detail-export-days'
+        : '/api/billing/statement/self/detail-export-days',
+      expect.objectContaining({
+        params: expect.objectContaining({
+          statement_version: 'frozen-version',
+        }),
       })
+    )
+    await userEvent.click(
+      within(drawer).getByRole('button', { name: 'Export CSV' })
+    )
+    await vi.waitFor(() => expect(api.post).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(api.post).mock.calls[0][1]).toEqual({
+      job_type: 'statement_details',
+      start_timestamp: exportDays[0].start_timestamp,
+      end_timestamp: exportDays[0].end_timestamp,
+      statement_version: 'frozen-version',
+      confirm_existing: true,
+      language: 'zh',
+    })
+    await selectExportContent(drawer, 'Statement summary')
+    await userEvent.click(
+      within(drawer).getByRole('button', { name: 'Download CSV' })
     )
     await vi.waitFor(() =>
       expect(api.get).toHaveBeenCalledWith(
         `${versionPath}/frozen-version/download`,
-        { params: { role: 'detail_csv' } }
+        { params: {} }
       )
     )
     await vi.waitFor(() => expect(click).toHaveBeenCalledTimes(1))
-    expect(api.post).not.toHaveBeenCalled()
-    await user.keyboard('{Escape}')
-    await user.click(screen.getByRole('button', { name: /Version history/ }))
+    expect(api.post).toHaveBeenCalledTimes(1)
+    await userEvent.keyboard('{Escape}')
+    await userEvent.click(
+      screen.getByRole('button', { name: /Version history/ })
+    )
     const versions = screen.getByRole('dialog', { name: 'Version history' })
     expect(
       within(versions).getByRole('button', {
@@ -793,6 +841,7 @@ it('pins the submitted export above history and clears the pin when history is r
   })
   fireEvent.click(screen.getByRole('button', { name: 'Export and download' }))
   const drawer = screen.getByRole('dialog', { name: 'Export and download' })
+  await selectExportContent(drawer, 'Statement summary')
   expect(
     within(drawer).getByRole('heading', { name: 'September 2026 statement' })
   ).toBeTruthy()
@@ -835,6 +884,7 @@ it('downloads a reusable single file from My billing and keeps the drawer open',
   })
   fireEvent.click(screen.getByRole('button', { name: 'Export and download' }))
   const drawer = screen.getByRole('dialog', { name: 'Export and download' })
+  await selectExportContent(drawer, 'Statement summary')
   fireEvent.click(within(drawer).getByRole('button', { name: 'Export CSV' }))
   await vi.waitFor(() => expect(click).toHaveBeenCalledTimes(1))
   expect(drawer).toBeVisible()
@@ -844,21 +894,201 @@ it('downloads a reusable single file from My billing and keeps the drawer open',
   )
 })
 
-it('lets the customer choose statement details in the export drawer', async () => {
-  await mount({ envelope: statementEnvelope() })
-  fireEvent.click(screen.getByRole('button', { name: 'Export and download' }))
-  const user = userEvent.setup()
-  await user.click(screen.getByRole('combobox', { name: 'Export content' }))
-  await user.click(
-    await screen.findByRole('option', { name: 'Statement details' })
-  )
-  fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }))
+it('defaults to the latest available date and submits only the selected day', async () => {
+  const envelope = statementEnvelope()
+  envelope.billing_report = {
+    version: 'frozen-report',
+    published_days: 2,
+    expected_days: 30,
+    as_of: period.end_timestamp,
+  }
+  vi.mocked(api.get).mockImplementation(async (url) => ({
+    data: {
+      success: true,
+      data: url.endsWith('detail-export-days')
+        ? { days: exportDays }
+        : { items: [], total: 0, versions: [] },
+    },
+  }))
+  const { queuedExport, client } = await mount({ envelope })
+  vi.mocked(api.post).mockResolvedValueOnce({
+    data: {
+      success: true,
+      data: {
+        ...queuedExport,
+        job_type: 'statement_details',
+        filters: {
+          ...queuedExport.filters,
+          start_timestamp: exportDays[1].start_timestamp,
+          end_timestamp: exportDays[1].end_timestamp,
+          billing_report_coverage: { estimated_at: period.end_timestamp },
+        },
+      },
+    },
+  })
+  const drawer = await openExportDrawer()
+  const date = within(drawer).getByRole('combobox', { name: 'Billing date' })
+  await vi.waitFor(() => expect(date).toHaveValue('2026-09-05'))
+  expect(within(date).getAllByRole('option')).toHaveLength(2)
+  expect(
+    within(date).getByRole('option', { name: /Partial data/ })
+  ).toBeVisible()
+  for (const label of ['Start', 'End', 'Token name', 'Model', 'Request ID']) {
+    expect(within(drawer).queryByLabelText(label)).toBeNull()
+  }
+  await userEvent.selectOptions(date, '2026-09-03')
+  act(() => {
+    client.setQueriesData(
+      { queryKey: ['billing-customer-reconciliation'] },
+      {
+        ...envelope,
+        billing_report: {
+          ...envelope.billing_report,
+          version: 'refreshed-report',
+        },
+      }
+    )
+  })
   await vi.waitFor(() =>
-    expect(api.post).toHaveBeenCalledWith(
-      '/api/billing/exports',
-      expect.objectContaining({ job_type: 'statement_details' })
+    expect(api.get).toHaveBeenCalledWith(
+      '/api/billing/statement/self/detail-export-days',
+      expect.objectContaining({
+        params: expect.objectContaining({ report_version: 'refreshed-report' }),
+      })
     )
   )
+  await vi.waitFor(() => expect(date).toHaveValue('2026-09-03'))
+  await userEvent.click(
+    within(drawer).getByRole('button', { name: 'Export CSV' })
+  )
+  await vi.waitFor(() =>
+    expect(api.post).toHaveBeenCalledWith('/api/billing/exports', {
+      job_type: 'statement_details',
+      language: 'zh',
+      report_version: 'refreshed-report',
+      confirm_existing: true,
+      start_timestamp: exportDays[1].start_timestamp,
+      end_timestamp: exportDays[1].end_timestamp,
+    })
+  )
+  expect(
+    await within(drawer).findByRole('heading', {
+      name: 'September 3, 2026 Statement details',
+    })
+  ).toBeVisible()
+  expect(await within(drawer).findByText('Partial data')).toBeVisible()
+  await userEvent.keyboard('{Escape}')
+  const reopened = await openExportDrawer()
+  await vi.waitFor(() =>
+    expect(within(reopened).getByLabelText('Billing date')).toHaveValue(
+      '2026-09-05'
+    )
+  )
+})
+
+it.each(['Download existing export', 'Generate new export'])(
+  'asks before reusing an Azure export and handles %s',
+  async (choice) => {
+    const envelope = statementEnvelope()
+    envelope.billing_report = {
+      version: 'frozen-report',
+      published_days: 1,
+      expected_days: 30,
+      as_of: period.end_timestamp,
+    }
+    const file = {
+      file_name: 'daily-details.csv',
+      url: 'https://example.test/daily-details.csv',
+    }
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {})
+    vi.mocked(api.get).mockImplementation(async (url) => {
+      if (url.endsWith('/download')) {
+        return { data: { success: true, data: { files: [file] } } }
+      }
+      if (url.endsWith('detail-export-days')) {
+        return { data: { success: true, data: { days: exportDays } } }
+      }
+      return {
+        data: { success: true, data: { items: [], total: 0, versions: [] } },
+      }
+    })
+    const { queuedExport } = await mount({ envelope })
+    vi.mocked(api.post).mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          ...queuedExport,
+          job_id: 'old-export',
+          job_type: 'statement_details',
+          status: 'succeeded',
+          confirm_existing: true,
+        },
+      },
+    })
+    const drawer = await openExportDrawer()
+    const button = within(drawer).getByRole('button', { name: 'Export CSV' })
+    await vi.waitFor(() => expect(button).toBeEnabled())
+    await userEvent.click(button)
+    const confirmation = await screen.findByRole('alertdialog', {
+      name: 'An export is already available',
+    })
+    expect(click).not.toHaveBeenCalled()
+    expect(api.post).toHaveBeenCalledTimes(1)
+    await userEvent.click(
+      within(confirmation).getByRole('button', { name: choice })
+    )
+    if (choice === 'Download existing export') {
+      await vi.waitFor(() => expect(click).toHaveBeenCalledTimes(1))
+      expect(api.get).toHaveBeenCalledWith(
+        '/api/billing/exports/old-export/download',
+        expect.objectContaining({ params: { verify_existing: true } })
+      )
+      expect(api.post).toHaveBeenCalledTimes(1)
+    } else {
+      await vi.waitFor(() => expect(api.post).toHaveBeenCalledTimes(2))
+      expect(vi.mocked(api.post).mock.calls[1][1]).toMatchObject({
+        force_new: true,
+        report_version: 'frozen-report',
+        start_timestamp: exportDays[0].start_timestamp,
+        end_timestamp: exportDays[0].end_timestamp,
+      })
+      expect(click).not.toHaveBeenCalled()
+    }
+  }
+)
+
+it('keeps the date export disabled when the period has no available detail', async () => {
+  const envelope = statementEnvelope()
+  envelope.billing_report = {
+    version: '-',
+    published_days: 0,
+    expected_days: 30,
+    as_of: period.end_timestamp,
+  }
+  vi.mocked(api.get).mockImplementation(async (url) => ({
+    data: {
+      success: true,
+      data: url.endsWith('detail-export-days')
+        ? { days: [] }
+        : { items: [], total: 0, versions: [] },
+    },
+  }))
+  await mount({ envelope })
+  const drawer = await openExportDrawer()
+  expect(await within(drawer).findByText('No records to export.')).toBeVisible()
+  expect(
+    within(drawer).getByRole('combobox', { name: 'Billing date' })
+  ).toBeDisabled()
+  expect(
+    within(drawer).getByRole('button', { name: 'Export CSV' })
+  ).toBeDisabled()
+  await selectExportContent(drawer, 'Statement summary')
+  expect(
+    within(drawer).getByRole('button', { name: 'Export CSV' })
+  ).toBeEnabled()
+  expect(api.post).not.toHaveBeenCalled()
 })
 
 it('keeps the drawer available for retry after a submission failure', async () => {
@@ -866,7 +1096,7 @@ it('keeps the drawer available for retry after a submission failure', async () =
   vi.mocked(api.post).mockRejectedValueOnce(
     new Error('Export service is busy.')
   )
-  const drawer = await openExportDrawer()
+  const drawer = await openExportDrawer('Statement summary')
   fireEvent.click(within(drawer).getByRole('button', { name: 'Export CSV' }))
   await vi.waitFor(() =>
     expect(toast.error).toHaveBeenCalledWith('Export service is busy.')
@@ -889,7 +1119,7 @@ it('disables export while the export submission is pending', async () => {
         complete = resolve
       })
   )
-  const drawer = await openExportDrawer()
+  const drawer = await openExportDrawer('Statement summary')
   const submit = within(drawer).getByRole('button', { name: 'Export CSV' })
   fireEvent.click(submit)
   await vi.waitFor(() => expect(submit).toBeDisabled())
@@ -996,22 +1226,15 @@ it('keeps admin model discounts, net amounts and detail links without standalone
   expect(details.get('tokenId')).toBe('4')
 })
 
-it('explains summary aggregation and per-call billing events before export', async () => {
+it('shows the billing date only for statement details', async () => {
   await mount({ envelope: statementEnvelope(), isAdmin: true, userId: 7 })
-  await openExportDrawer()
+  const drawer = await openExportDrawer()
+  expect(within(drawer).getByLabelText('Billing date')).toBeVisible()
+  await selectExportContent(drawer, 'Statement summary')
+  expect(within(drawer).queryByLabelText('Billing date')).toBeNull()
   expect(
-    await screen.findByText(
+    within(drawer).getByText(
       'Totals grouped by API Key, model, and billing mode.'
     )
-  ).toBeTruthy()
-  const user = userEvent.setup()
-  await user.click(screen.getByRole('combobox', { name: 'Export content' }))
-  await user.click(
-    await screen.findByRole('option', { name: 'Statement details' })
-  )
-  expect(
-    await screen.findByText(
-      'Per-call billing records: time, request ID, usage, amounts and discount factors. Charges and refunds are separate rows; refunds have negative net amounts.'
-    )
-  ).toBeTruthy()
+  ).toBeVisible()
 })

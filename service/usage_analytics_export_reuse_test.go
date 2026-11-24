@@ -195,9 +195,7 @@ func TestAdminCustomerUsageCSVSupportsNaturalMonthForBothScopes(t *testing.T) {
 			require.NoError(t, err)
 			var days []string
 			for _, row := range rows[1:] {
-				if row[0] == "daily" {
-					days = append(days, row[1])
-				}
+				days = append(days, row[0])
 			}
 			assert.Contains(t, days, "2026-09-30")
 			assert.NotContains(t, days, "2026-10-01")

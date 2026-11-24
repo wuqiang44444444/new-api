@@ -68,7 +68,7 @@ func CheckCustomerStatementExportSource(ctx context.Context, db *gorm.DB) error 
 }
 
 func CustomerStatementExportMissingDates(ctx context.Context, filters CustomerExportFilters) []string {
-	if filters.BillingReportCoverage == nil {
+	if filters.BillingReportCoverage == nil || BillingReportFromContext(ctx) == nil {
 		return nil
 	}
 	published := make(map[int64]bool)
@@ -154,7 +154,11 @@ func ReadCustomerStatementExportEvents(ctx context.Context, db *gorm.DB, userID 
 	var page CustomerStatementExportPage
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
-		page, err = readCustomerStatementExportPage(ctx, tx, userID, filters, cursor, limit)
+		if filters.StatementDraftId != "" {
+			page, err = readCustomerStatementVersionExportPage(ctx, tx, userID, filters, cursor, limit)
+		} else {
+			page, err = readCustomerStatementExportPage(ctx, tx, userID, filters, cursor, limit)
+		}
 		return err
 	}, &sql.TxOptions{ReadOnly: true})
 	return page, err
@@ -209,16 +213,12 @@ func readCustomerStatementExportPage(ctx context.Context, db *gorm.DB, userID in
 		if err != nil {
 			return page, err
 		}
-		amount := detail.Export.Quota
-		switch {
-		case row.LogType == LogTypeConsume && detail.Export.EventType == "consume":
-		case row.LogType == LogTypeRefund && detail.Export.EventType == "refund":
-			amount = -amount
-		default:
-			return page, errors.New("invalid funding event in frozen statement export")
-		}
-		if detail.Export.Quota < 0 || amount != row.CustomerCharge {
+		amount, err := customerExportEventCharge(detail.Export, row.LogType)
+		if err != nil || amount != row.CustomerCharge {
 			return page, errors.New("frozen statement export amount does not match its funding event")
+		}
+		if detail.Export.IsStream == nil && detail.IsStream {
+			detail.Export.IsStream = &detail.IsStream
 		}
 		page.Events = append(page.Events, CustomerStatementExportEvent{SourceID: row.SourceID, Row: detail.Export, Charge: row.CustomerCharge})
 	}
@@ -233,8 +233,9 @@ func readCustomerStatementExportPage(ctx context.Context, db *gorm.DB, userID in
 }
 
 type CustomerStatementExportCheckpoint struct {
-	Cursor      int64 `json:"cursor"`
-	PendingFile bool  `json:"pending_file,omitempty"`
+	Cursor        int64 `json:"cursor"`
+	PendingFile   bool  `json:"pending_file,omitempty"`
+	RetryPartRows int64 `json:"retry_part_rows,omitempty"`
 }
 
 type CustomerStatementExportTotals struct {

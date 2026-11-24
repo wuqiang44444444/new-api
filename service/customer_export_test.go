@@ -140,7 +140,7 @@ func TestCustomerExportCsvWriterGuardAndShards(t *testing.T) {
 	assert.Len(t, paths, len(files))
 	for _, file := range files {
 		assert.NotEmpty(t, file.Sha256)
-		assert.EqualValues(t, file.SizeBytes, file.SizeBytes)
+		assert.Positive(t, file.SizeBytes)
 	}
 	writer.Cleanup()
 
@@ -150,7 +150,7 @@ func TestCustomerExportCsvWriterGuardAndShards(t *testing.T) {
 	defer writer2.Cleanup()
 	require.NoError(t, writer2.AppendRow(model.CustomerExportRow{
 		EventType: "consume", RecordTime: 1500, TokenId: 3, TokenName: "=1+1",
-		CustomerModel: "模型A", BillingMode: "token", GroupName: "group,\"quoted\"",
+		RequestId: "req,\"quoted\"", CustomerModel: "模型A\n第二行", BillingMode: "token", GroupName: "group,\"quoted\"",
 		ContractName: "line\nbreak", Quota: 15, QualityStatus: "estimate",
 	}, scope))
 	files2, paths2, lines2, _, err := writer2.Finish()
@@ -164,10 +164,11 @@ func TestCustomerExportCsvWriterGuardAndShards(t *testing.T) {
 	records, err := reader.ReadAll()
 	require.NoError(t, err)
 	require.Len(t, records, 2)
-	dataRow := records[1]
-	assert.Equal(t, "'=1+1", dataRow[13], "token name gets the injection guard prefix")
-	assert.Equal(t, "group,\"quoted\"", dataRow[23], "embedded quotes and commas round-trip")
-	assert.Equal(t, "line\nbreak", dataRow[27], "newline text stays inside one cell")
+	dataRow := reconciliationTestCells(t, adminUsageRecordColumns, records[1])
+	assert.Equal(t, "'=1+1", dataRow["token_name"])
+	assert.Equal(t, "req,\"quoted\"", dataRow["request_id"])
+	assert.Equal(t, "模型A\n第二行", dataRow["customer_model"])
+	assert.Contains(t, records[0], "令牌")
 }
 
 func TestExecuteCustomerExportLogScanEndToEnd(t *testing.T) {
@@ -205,7 +206,8 @@ func TestExecuteCustomerExportLogScanEndToEnd(t *testing.T) {
 	uploaded, ok := store.uploaded[artifact.Files[0].ObjectKey]
 	require.True(t, ok, "artifact must be uploaded to the private namespace")
 	assert.True(t, strings.HasPrefix(string(uploaded), customerExportCsvBOM))
-	assert.Contains(t, string(uploaded), "年度合同")
+	assert.Contains(t, string(uploaded), "合同版本")
+	assert.Contains(t, string(uploaded), ",2,0.5,0.3,0.15,")
 }
 
 func TestExecuteCustomerExportLogScanEmptyResult(t *testing.T) {

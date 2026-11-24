@@ -6,8 +6,8 @@
   "scripts": {
     "dev": "bun run docs:validate && rsbuild dev",
     "build": "bun run docs:validate && rsbuild build && bun run docs:validate:dist && bun run branding:validate:dist",
-    "build:check": "bun check -b && rsbuild build",
-    "typecheck": "bun check -b",
+    "build:check": "bun run typecheck && rsbuild build",
+    "typecheck": "tsgo -b",
     "lint": "oxlint -c .oxlintrc.json .",
     "lint:fix": "oxlint -c .oxlintrc.json . --fix",
     "lint:plugins": "cd ../plugins && oxlint -c .oxlintrc.json .",

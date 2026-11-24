@@ -17,6 +17,7 @@ import { CustomerStatementsListView } from '../customer-statements-list'
 
 const exportsApi = vi.hoisted(() => ({
   createCustomerStatementsExport: vi.fn(),
+  getCustomerStatementExportDays: vi.fn(),
   listSelfExports: vi.fn(),
   requestExportDownload: vi.fn(),
   downloadExportFile: vi.fn(),
@@ -64,43 +65,42 @@ async function renderStatement(
     data_quality: { status: 'partial', unknown_billing_mode_requests: 370 },
     last_activity_at: 1789038325,
   }
-  client.setQueryData(
-    [
-      'billing-customer-statements',
-      1000,
-      1200,
-      search,
-      'all',
-      'net_quota',
-      'desc',
-      1,
-      20,
-    ],
-    {
-      generated_at: 1789061550,
-      billing_report: {
-        version: reportVersion,
-        published_days: 1,
-        expected_days: 1,
-        as_of: 1789061550,
-      },
-      result: {
-        recorded_original_amounts: true,
-        items: [item],
-        summary: { ...item, customer_count: 1 },
-        total,
-        page: 1,
-        page_size: 20,
-      },
-    }
-  )
+  const initialPeriod = { start_timestamp: 1000, end_timestamp: 1200 }
+  const billingQueryKey = (period: typeof initialPeriod) => [
+    'billing-customer-statements',
+    period.start_timestamp,
+    period.end_timestamp,
+    search,
+    'all',
+    'net_quota',
+    'desc',
+    1,
+    20,
+  ]
+  client.setQueryData(billingQueryKey(initialPeriod), {
+    generated_at: 1789061550,
+    billing_report: {
+      version: reportVersion,
+      published_days: 1,
+      expected_days: 1,
+      as_of: 1789061550,
+    },
+    result: {
+      recorded_original_amounts: true,
+      items: [item],
+      summary: { ...item, customer_count: 1 },
+      total,
+      page: 1,
+      page_size: 20,
+    },
+  })
   const onSelectUser = vi.fn()
   const onSearchChange = vi.fn()
-  const view = render(
+  const billingView = (period: typeof initialPeriod) => (
     <I18nextProvider i18n={i18n}>
       <QueryClientProvider client={client}>
         <CustomerStatementsListView
-          period={{ start_timestamp: 1000, end_timestamp: 1200 }}
+          period={period}
           search={{ customerSearch: search }}
           onSelectUser={onSelectUser}
           onSearchChange={onSearchChange}
@@ -108,9 +108,17 @@ async function renderStatement(
       </QueryClientProvider>
     </I18nextProvider>
   )
+  const view = render(billingView(initialPeriod))
   return {
     onSelectUser,
     onSearchChange,
+    changePeriod: (period: typeof initialPeriod) => {
+      client.setQueryData(
+        billingQueryKey(period),
+        client.getQueryData(billingQueryKey(initialPeriod))
+      )
+      view.rerender(billingView(period))
+    },
     cleanup: () => {
       view.unmount()
       client.clear()
@@ -285,6 +293,7 @@ it('keeps settled list price and savings unknown when the API lacks historical p
 })
 
 it('exports every customer in the selected month even when the list is filtered', async () => {
+  exportsApi.getCustomerStatementExportDays.mockResolvedValue({ days: [] })
   exportsApi.createCustomerStatementsExport.mockResolvedValue({
     job_id: 'all-statements',
     status: 'succeeded',
@@ -302,6 +311,7 @@ it('exports every customer in the selected month even when the list is filtered'
     const drawer = within(
       screen.getByRole('dialog', { name: 'Export and download' })
     )
+    await userEvent.click(drawer.getByRole('tab', { name: 'By month' }))
     expect(drawer.getByText('All customers')).toBeVisible()
     await userEvent.click(drawer.getByRole('button', { name: 'Export CSV' }))
     expect(
@@ -316,6 +326,165 @@ it('exports every customer in the selected month even when the list is filtered'
         'https://example.test/statements.csv'
       )
     )
+  } finally {
+    view.cleanup()
+  }
+})
+
+it('defaults to the latest complete day and submits only its frozen version', async () => {
+  exportsApi.createCustomerStatementsExport.mockReset().mockResolvedValue({
+    job_id: 'daily-statements',
+    status: 'succeeded',
+    artifact: { files: [{ file_name: 'customer-statements-2026-11-20.csv' }] },
+  })
+  exportsApi.getCustomerStatementExportDays.mockResolvedValue({
+    default_date: '2026-11-20',
+    days: [
+      { date: '2026-11-22', status: 'in_progress' },
+      { date: '2026-11-21', status: 'empty' },
+      { date: '2026-11-20', status: 'complete', report_version: 'frozen-day' },
+      {
+        date: '2026-11-19',
+        status: 'incomplete',
+        report_version: 'partial-day',
+      },
+    ],
+  })
+  exportsApi.listSelfExports.mockResolvedValue({ items: [], total: 0 })
+  exportsApi.requestExportDownload.mockResolvedValue({
+    files: [{ url: 'https://example.test/daily-statements.csv' }],
+  })
+  const view = await renderStatement(false, 'en', 'randy')
+  try {
+    const user = userEvent.setup()
+    await user.click(
+      screen.getByRole('button', { name: 'Export and download' })
+    )
+    const drawer = within(
+      screen.getByRole('dialog', { name: 'Export and download' })
+    )
+    const date = drawer.getByRole('combobox', { name: 'Billing date' })
+    const button = drawer.getByRole('button', { name: 'Export CSV' })
+    expect(drawer.getByRole('tab', { name: 'By day' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+    await waitFor(() => expect(date).toHaveValue('2026-11-20'))
+    expect(
+      drawer.getByText('Latest complete day available to export')
+    ).toBeVisible()
+
+    expect(within(date).getByRole('option', { name: /In Progress/ })).toBeDisabled()
+    expect(
+      within(date).getByRole('option', { name: /No billing records/ })
+    ).toBeDisabled()
+    expect(button).toBeEnabled()
+    await user.selectOptions(date, '2026-11-19')
+    expect(drawer.getByRole('status')).toHaveTextContent(
+      'The CSV will indicate incomplete coverage.'
+    )
+    expect(button).toBeEnabled()
+    await user.selectOptions(date, '2026-11-20')
+    await user.click(button)
+    expect(
+      exportsApi.createCustomerStatementsExport
+    ).toHaveBeenCalledExactlyOnceWith({
+      billing_date: '2026-11-20',
+      report_version: 'frozen-day',
+      expected_incomplete: false,
+    })
+  } finally {
+    view.cleanup()
+  }
+})
+
+it('keeps the attempted date visible when its coverage changes before export', async () => {
+  exportsApi.getCustomerStatementExportDays
+    .mockReset()
+    .mockResolvedValueOnce({
+      default_date: '2026-11-20',
+      days: [
+        {
+          date: '2026-11-20',
+          status: 'complete',
+          report_version: 'same-version',
+        },
+      ],
+    })
+    .mockResolvedValue({
+      days: [
+        {
+          date: '2026-11-20',
+          status: 'incomplete',
+          report_version: 'same-version',
+        },
+      ],
+    })
+  exportsApi.createCustomerStatementsExport
+    .mockReset()
+    .mockRejectedValueOnce(
+      new Error(
+        'Billing coverage changed. Review the selected date and try again.'
+      )
+    )
+    .mockResolvedValue({
+      job_id: 'daily-after-confirmation',
+      status: 'succeeded',
+      artifact: {
+        files: [{ file_name: 'customer-statements-2026-11-20.csv' }],
+      },
+    })
+  exportsApi.listSelfExports.mockResolvedValue({ items: [], total: 0 })
+  exportsApi.requestExportDownload.mockResolvedValue({
+    files: [{ url: 'https://example.test/daily-statements.csv' }],
+  })
+  const view = await renderStatement()
+  try {
+    const user = userEvent.setup()
+    await user.click(
+      screen.getByRole('button', { name: 'Export and download' })
+    )
+    const drawer = within(
+      screen.getByRole('dialog', { name: 'Export and download' })
+    )
+    const date = drawer.getByRole('combobox', { name: 'Billing date' })
+    await waitFor(() => expect(date).toHaveValue('2026-11-20'))
+    await user.click(drawer.getByRole('button', { name: 'Export CSV' }))
+    expect(
+      await drawer.findByText('The CSV will indicate incomplete coverage.')
+    ).toBeVisible()
+    expect(date).toHaveValue('2026-11-20')
+    expect(exportsApi.createCustomerStatementsExport).toHaveBeenCalledTimes(1)
+    await user.click(drawer.getByRole('button', { name: 'Export CSV' }))
+    expect(exportsApi.createCustomerStatementsExport).toHaveBeenLastCalledWith({
+      billing_date: '2026-11-20',
+      report_version: 'same-version',
+      expected_incomplete: true,
+    })
+  } finally {
+    view.cleanup()
+  }
+})
+
+it('preserves the monthly export tab when the billing period changes', async () => {
+  exportsApi.getCustomerStatementExportDays.mockResolvedValue({ days: [] })
+  exportsApi.listSelfExports.mockResolvedValue({ items: [], total: 0 })
+  const view = await renderStatement()
+  try {
+    const user = userEvent.setup()
+    await user.click(
+      screen.getByRole('button', { name: 'Export and download' })
+    )
+    await user.click(screen.getByRole('tab', { name: 'By month' }))
+    view.changePeriod({
+      start_timestamp: 1788192000,
+      end_timestamp: 1790783999,
+    })
+    expect(screen.getByRole('tab', { name: 'By month' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+    expect(screen.getByText('September 2026')).toBeVisible()
   } finally {
     view.cleanup()
   }

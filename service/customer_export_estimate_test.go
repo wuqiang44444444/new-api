@@ -27,14 +27,11 @@ func TestCustomerStatementExportOmitsUnknownAmountsWhileUsageExportRetainsReason
 			require.NoError(t, err)
 			require.Len(t, paths, 1)
 			records := readEstimateCsv(t, paths[0])
-			header := map[string]int{}
-			for i, name := range records[0] {
-				header[name] = i
-			}
-			assert.NotContains(t, header, customerExportSummaryHeaderLabel(language, "amount_unavailable_reasons"))
 			require.Len(t, records, 2)
-			assert.Empty(t, records[1][header[customerExportSummaryHeaderLabel(language, "original_amount")]])
-			assert.Equal(t, "0.00020000", records[1][header[customerExportSummaryHeaderLabel(language, "net_amount")]])
+			values := reconciliationTestCells(t, customerSummaryColumns, records[1])
+			assert.Empty(t, values["original_amount"])
+			assert.Equal(t, "0.00020000", values["net_amount"])
+			assert.NotEmpty(t, values["notes"])
 		})
 	}
 	writer, err := newCustomerExportCsvWriter(t.TempDir(), "detail", 1<<20)
@@ -44,16 +41,13 @@ func TestCustomerStatementExportOmitsUnknownAmountsWhileUsageExportRetainsReason
 	_, paths, _, _, err := writer.Finish()
 	require.NoError(t, err)
 	records := readEstimateCsv(t, paths[0])
-	header := map[string]int{}
-	for i, name := range records[0] {
-		header[name] = i
-	}
-	require.Contains(t, header, "amount_unavailable_reasons")
-	assert.Equal(t, "Cannot calculate: historical contract status not recorded", records[1][header["amount_unavailable_reasons"]])
-	assert.Empty(t, records[1][header["original_amount"]])
-	assert.Empty(t, records[2][header["amount_unavailable_reasons"]])
-	assert.Equal(t, "0", records[2][header["original_quota"]])
-	assert.NotEmpty(t, records[2][header["discount_amount"]])
+	first := reconciliationTestCells(t, adminUsageRecordColumns, records[1])
+	second := reconciliationTestCells(t, adminUsageRecordColumns, records[2])
+	assert.Equal(t, "无法计算：历史合同状态未记录", first["amount_unavailable_reasons"])
+	assert.Empty(t, first["original_amount"])
+	assert.Empty(t, second["amount_unavailable_reasons"])
+	assert.Equal(t, "0", second["original_quota"])
+	assert.Equal(t, "0.00000000", second["original_amount"])
 }
 
 func readEstimateCsv(t *testing.T, path string) [][]string {
@@ -75,17 +69,20 @@ func TestCustomerExportModelSavingsMatchOriginalMinusNet(t *testing.T) {
 	_, paths, _, err := writeCustomerExportSummaryCsv(t.TempDir(), scope, "en", statement)
 	require.NoError(t, err)
 	rows := readEstimateCsv(t, paths[0])
-	header := map[string]int{}
-	for i, label := range rows[0] {
-		header[label] = i
-	}
-	modelColumn := header[customerExportSummaryHeaderLabel("en", "model")]
-	savingsColumn := header[customerExportSummaryHeaderLabel("en", "discount_amount")]
 	seen := map[string]string{}
 	for _, row := range rows[1:] {
-		if name := row[modelColumn]; name != "" {
-			seen[name] = row[savingsColumn]
-		}
+		cells := reconciliationTestCells(t, customerSummaryColumns, row)
+		seen[cells["model"]] = cells["discount_amount"]
 	}
 	assert.Equal(t, map[string]string{"known": "0.00020000", "unknown": ""}, seen)
+}
+
+func reconciliationTestCells(t *testing.T, columns []reconciliationCSVColumn, row []string) map[string]string {
+	t.Helper()
+	require.Len(t, row, len(columns))
+	values := make(map[string]string, len(columns))
+	for index, column := range columns {
+		values[column.key] = row[index]
+	}
+	return values
 }

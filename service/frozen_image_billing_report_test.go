@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/base64"
-	"strconv"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -80,22 +79,22 @@ func TestFrozenImageBillingReport(t *testing.T) {
 	rows, _, err := usageAnalyticsExportRows(ctx, &model.CustomerExportJob{}, usageAnalyticsExportTypeUpstream, period, filters, customerExportScopeColumns{})
 	require.NoError(t, err)
 	require.NotEmpty(t, rows)
-	total := rows[len(rows)-1]
-	assert.Equal(t, []string{"2", "1", "1", "", ""}, total[len(total)-5:])
 	var imageTotal, tokenTotal bool
 	for _, row := range rows {
-		switch {
-		case row[0] == "period_total" && row[12] == "per_image":
-			imageTotal = true
-			assert.Empty(t, row[18])
-			assert.Empty(t, row[19])
-			assert.Equal(t, "2", row[len(row)-5])
-		case row[0] == "period_total" && row[12] == "token":
+		cells := usageTestCells(t, row, "upstream", "")
+		switch cells["mode"] {
+		case "Per image":
+			if cells["images"] == "2" {
+				imageTotal = true
+			}
+			assert.Empty(t, cells["input"])
+			assert.Empty(t, cells["output"])
+		case "Per token":
 			tokenTotal = true
-			assert.Equal(t, "8", row[18])
-			assert.Equal(t, "1", row[19])
-			assert.Equal(t, "3", row[22])
-			assert.Empty(t, row[len(row)-5])
+			assert.Equal(t, "8", cells["input"])
+			assert.Equal(t, "1", cells["output"])
+			assert.Equal(t, "3", cells["completed"])
+			assert.Empty(t, cells["images"])
 		}
 	}
 	assert.True(t, imageTotal && tokenTotal)
@@ -120,8 +119,6 @@ func TestFrozenImageBillingReport(t *testing.T) {
 			assert.EqualValues(t, 40, *row.FrozenReplay.DeltaQuota)
 			assert.Equal(t, model.BillingOriginalReplayMismatch, row.FrozenReplay.Reason)
 			assert.Equal(t, map[string]float64{"p": 8, "c": 1}, row.FrozenReplay.TokenInputs)
-			cells := frozenBillingDetailCSVCells(row)
-			assert.Contains(t, cells, strconv.FormatInt(40, 10))
 		case "missing":
 			assert.True(t, row.BillableImageMissing)
 			assert.Equal(t, model.BillingOriginalReplayMissingUsage, row.FrozenReplay.Reason)

@@ -57,34 +57,45 @@ var (
 // CustomerExportFilters is the normalized, versioned submission scope. It is
 // frozen at acceptance and never re-resolved from current settings.
 type CustomerExportFilters struct {
-	ArchiveSourceJobID    string                    `json:"archive_source_job_id,omitempty"`
-	BillingReportCoverage *BillingExportCoverage    `json:"billing_report_coverage,omitempty"`
-	BillingReportVersion  string                    `json:"billing_report_version,omitempty"`
-	UsageReportDays       []UsageReportDayReference `json:"usage_report_days,omitempty"`
-	UsageReportSubtotal   bool                      `json:"usage_report_subtotal,omitempty"`
-	UsageView             string                    `json:"usage_view,omitempty"`
-	UsageSearch           string                    `json:"usage_search,omitempty"`
-	UsageURLKey           string                    `json:"usage_url_key,omitempty"`
-	Upstream              *UpstreamExportScope      `json:"upstream,omitempty"`
-	StatementDraftId      string                    `json:"statement_draft_id,omitempty"`
-	QuotaPerUnit          float64                   `json:"quota_per_unit"`
-	Currency              string                    `json:"currency"`
-	CurrencyRate          float64                   `json:"currency_rate"`
-	FieldVersion          int                       `json:"field_version"`
-	StartTimestamp        int64                     `json:"start_timestamp"` // 含起点
-	EndTimestamp          int64                     `json:"end_timestamp"`   // 不含终点（左闭右开）
-	LogTypes              []int                     `json:"log_types,omitempty"`
-	TokenId               *int                      `json:"token_id,omitempty"`
-	ChannelId             *int                      `json:"channel_id,omitempty"`
-	TokenName             string                    `json:"token_name,omitempty"`
-	Group                 string                    `json:"group,omitempty"`
-	RequestId             string                    `json:"request_id,omitempty"`
-	UpstreamRequestId     string                    `json:"upstream_request_id,omitempty"`
-	Username              string                    `json:"username,omitempty"`
-	ModelName             string                    `json:"model_name,omitempty"`
-	BillingMode           string                    `json:"billing_mode,omitempty"`
-	Timezone              string                    `json:"timezone"`
-	Language              string                    `json:"language,omitempty"`
+	ArchiveSourceJobID    string                     `json:"archive_source_job_id,omitempty"`
+	ArchiveDraftId        *string                    `json:"archive_statement_draft_id,omitempty"`
+	BillingDate           string                     `json:"billing_date,omitempty"`
+	BillingReportCoverage *BillingExportCoverage     `json:"billing_report_coverage,omitempty"`
+	BillingReportVersion  string                     `json:"billing_report_version,omitempty"`
+	UsageReportDays       []UsageReportDayReference  `json:"usage_report_days,omitempty"`
+	UsageIncompleteDates  []string                   `json:"usage_incomplete_dates,omitempty"`
+	UsageExpectedDays     *int                       `json:"usage_expected_days,omitempty"`
+	UsageExportGrain      string                     `json:"usage_export_grain,omitempty"`
+	UsageView             string                     `json:"usage_view,omitempty"`
+	UsageSearch           string                     `json:"usage_search,omitempty"`
+	UsageURLKey           string                     `json:"usage_url_key,omitempty"`
+	Upstream              *UpstreamExportScope       `json:"upstream,omitempty"`
+	StatementDraftId      string                     `json:"statement_draft_id,omitempty"`
+	StatementPartLimits   *StatementExportPartLimits `json:"statement_part_limits,omitempty"`
+	QuotaPerUnit          float64                    `json:"quota_per_unit"`
+	Currency              string                     `json:"currency"`
+	CurrencyRate          float64                    `json:"currency_rate"`
+	FieldVersion          int                        `json:"field_version"`
+	StartTimestamp        int64                      `json:"start_timestamp"` // 含起点
+	EndTimestamp          int64                      `json:"end_timestamp"`   // 不含终点（左闭右开）
+	LogTypes              []int                      `json:"log_types,omitempty"`
+	TokenId               *int                       `json:"token_id,omitempty"`
+	ChannelId             *int                       `json:"channel_id,omitempty"`
+	TokenName             string                     `json:"token_name,omitempty"`
+	Group                 string                     `json:"group,omitempty"`
+	RequestId             string                     `json:"request_id,omitempty"`
+	UpstreamRequestId     string                     `json:"upstream_request_id,omitempty"`
+	Username              string                     `json:"username,omitempty"`
+	ModelName             string                     `json:"model_name,omitempty"`
+	BillingMode           string                     `json:"billing_mode,omitempty"`
+	Timezone              string                     `json:"timezone"`
+	Language              string                     `json:"language,omitempty"`
+}
+
+// StatementExportPartLimits freezes the file boundaries across export attempts.
+type StatementExportPartLimits struct {
+	Rows  int `json:"rows"`
+	Bytes int `json:"bytes"`
 }
 
 // BillingExportCoverage records the coverage known when a daily report export is accepted.
@@ -116,17 +127,19 @@ type CustomerExportArchiveProgress struct {
 // CustomerExportArtifact describes published deliverables. Objects stay in the
 // private export namespace; the database stores references, never signed URLs.
 type CustomerExportArtifact struct {
-	SourceVersion   string                             `json:"source_version,omitempty"`
-	StoreIdentity   string                             `json:"store_identity,omitempty"`
-	Files           []CustomerExportArtifactFile       `json:"files"`
-	LineCount       int64                              `json:"line_count"`
-	SizeBytes       int64                              `json:"size_bytes"`
-	GeneratedAt     int64                              `json:"generated_at"`
-	ExpiresAt       int64                              `json:"expires_at"`
-	AutoReuseMatch  bool                               `json:"-"`
-	StatementTotals *CustomerStatementExportTotals     `json:"statement_totals,omitempty"`
-	Checkpoint      *CustomerStatementExportCheckpoint `json:"checkpoint,omitempty"`
-	MissingDates    []string                           `json:"missing_report_dates,omitempty"`
+	ObsoleteKeys     []string                           `json:"obsolete_keys,omitempty"`
+	SourceVersion    string                             `json:"source_version,omitempty"`
+	StoreIdentity    string                             `json:"store_identity,omitempty"`
+	Files            []CustomerExportArtifactFile       `json:"files"`
+	LineCount        int64                              `json:"line_count"`
+	SizeBytes        int64                              `json:"size_bytes"`
+	GeneratedAt      int64                              `json:"generated_at"`
+	ExpiresAt        int64                              `json:"expires_at"`
+	AutoReuseMatch   bool                               `json:"-"`
+	RequestNetAmount string                             `json:"request_net_amount,omitempty"`
+	StatementTotals  *CustomerStatementExportTotals     `json:"statement_totals,omitempty"`
+	Checkpoint       *CustomerStatementExportCheckpoint `json:"checkpoint,omitempty"`
+	MissingDates     []string                           `json:"missing_report_dates,omitempty"`
 }
 
 type CustomerExportArtifactFile struct {
@@ -139,6 +152,7 @@ type CustomerExportArtifactFile struct {
 }
 
 type CustomerExportJob struct {
+	ConfirmExisting  bool                    `json:"-" gorm:"-"`
 	ID               int64                   `json:"id"`
 	JobID            string                  `json:"job_id" gorm:"type:varchar(64);uniqueIndex"`
 	UserId           int                     `json:"user_id" gorm:"index;index:idx_customer_export_user_active,priority:1"`
@@ -246,6 +260,7 @@ func (job *CustomerExportJob) DecodeArtifact() *CustomerExportArtifact {
 }
 
 type CustomerExportJobView struct {
+	ConfirmExisting bool                    `json:"confirm_existing,omitempty"`
 	JobID           string                  `json:"job_id"`
 	UserId          int                     `json:"user_id"`
 	TargetUserId    int                     `json:"target_user_id"`
@@ -266,6 +281,7 @@ type CustomerExportJobView struct {
 // ToView 是客户安全的任务投影：不暴露执行器、槽位或内部状态列。
 func (job *CustomerExportJob) ToView() CustomerExportJobView {
 	view := CustomerExportJobView{
+		ConfirmExisting: job.ConfirmExisting,
 		JobID:           job.JobID,
 		UserId:          job.UserId,
 		TargetUserId:    job.TargetUserId,
@@ -281,6 +297,7 @@ func (job *CustomerExportJob) ToView() CustomerExportJobView {
 		ExpiresAt:       job.ExpiresAt,
 	}
 	if filters, err := job.DecodeFilters(); err == nil {
+		filters.ArchiveDraftId = nil
 		view.Filters = filters
 	}
 	if artifact := job.DecodeArtifact(); artifact != nil && job.Status == CustomerExportJobStatusSucceeded {
@@ -291,6 +308,7 @@ func (job *CustomerExportJob) ToView() CustomerExportJobView {
 		artifact.SourceVersion = ""
 		artifact.Checkpoint = nil
 		artifact.StatementTotals = nil
+		artifact.ObsoleteKeys = nil
 		view.Artifact = artifact
 	}
 	return view
@@ -306,17 +324,21 @@ func customerExportActiveKey(userId int) string {
 // 与固定槽位占用在同一短事务内提交；唯一冲突或无空槽整体回滚。相同申请
 // （同类型、同目标、同规范化条件）返回既有任务，不重复扫描；不同申请返回忙碌。
 func CreateCustomerExportJob(userId int, targetUserId int, jobType string, filters CustomerExportFilters, reuseOptions ...CustomerExportReuse) (*CustomerExportJob, bool, error) {
-	filtersText, err := common.Marshal(filters)
-	if err != nil {
-		return nil, false, err
-	}
 	var reuse CustomerExportReuse
 	if len(reuseOptions) > 0 {
 		reuse = reuseOptions[0]
 	}
+	return createCustomerExportJob(userId, targetUserId, jobType, filters, reuse, nil)
+}
+
+func createCustomerExportJob(userId int, targetUserId int, jobType string, filters CustomerExportFilters, reuse CustomerExportReuse, newJobError error) (*CustomerExportJob, bool, error) {
+	filtersText, err := common.Marshal(filters)
+	if err != nil {
+		return nil, false, err
+	}
 	activeKey := customerExportActiveKey(userId)
 	for attempt := 0; attempt < 2; attempt++ {
-		job, created, err := createCustomerExportJobOnce(userId, targetUserId, jobType, string(filtersText), activeKey, attempt > 0, reuse, filters)
+		job, created, err := createCustomerExportJobOnce(userId, targetUserId, jobType, string(filtersText), activeKey, attempt > 0, reuse, filters, newJobError)
 		if err == nil || !errors.Is(err, ErrCustomerExportStateConflict) {
 			return job, created, err
 		}
@@ -325,7 +347,7 @@ func CreateCustomerExportJob(userId int, targetUserId int, jobType string, filte
 	return nil, false, ErrCustomerExportUserBusy
 }
 
-func createCustomerExportJobOnce(userId int, targetUserId int, jobType string, filtersText string, activeKey string, lastAttempt bool, reuse CustomerExportReuse, filters CustomerExportFilters) (*CustomerExportJob, bool, error) {
+func createCustomerExportJobOnce(userId int, targetUserId int, jobType string, filtersText string, activeKey string, lastAttempt bool, reuse CustomerExportReuse, filters CustomerExportFilters, newJobError error) (*CustomerExportJob, bool, error) {
 	var created *CustomerExportJob
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var existing CustomerExportJob
@@ -346,6 +368,9 @@ func createCustomerExportJobOnce(userId int, targetUserId int, jobType string, f
 				return errCustomerExportDuplicate(existing.JobID)
 			}
 			return ErrCustomerExportUserBusy
+		}
+		if newJobError != nil {
+			return newJobError
 		}
 
 		jobID, err := GenerateCustomerExportJobID()
@@ -472,7 +497,8 @@ func ListCustomerExportJobs(ctx context.Context, userId, page, pageSize int) ([]
 			return nil, 0, err
 		}
 		for _, job := range jobs {
-			jobAuthorizable := job.JobType == CustomerExportJobTypeUpstreamDetails || job.JobType == CustomerExportJobTypeUpstreamSummary || job.JobType == CustomerExportJobTypeUsageSummary || job.JobType == CustomerExportJobTypeCustomerStatements
+			jobAuthorizable := job.JobType == CustomerExportJobTypeUpstreamDetails || job.JobType == CustomerExportJobTypeUpstreamSummary || job.JobType == CustomerExportJobTypeUsageSummary || job.JobType == CustomerExportJobTypeCustomerStatements ||
+				job.JobType == CustomerExportJobTypeStatementDetails || job.JobType == CustomerExportJobTypeStatementArchive
 			if jobAuthorizable && AuthorizeCustomerExportJob(ctx, job) != nil {
 				continue
 			}

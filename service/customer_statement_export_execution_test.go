@@ -173,9 +173,9 @@ func TestStatementDetailsKeepsShardsAndAmountsAcrossPressureAndLeaseLoss(t *test
 		require.Len(t, rows, 2)
 		for i, label := range rows[0] {
 			switch label {
-			case "Request ID":
+			case "请求 ID":
 				requestIDs = append(requestIDs, rows[1][i])
-			case "Net amount (refunds negative)":
+			case "实际入账净额（退款为负） (" + filters.Currency + ")":
 				amounts = append(amounts, rows[1][i])
 			}
 		}

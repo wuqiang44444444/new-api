@@ -3,13 +3,12 @@ package service
 import (
 	"context"
 	"fmt"
-	"strconv"
 
 	"github.com/QuantumNous/new-api/model"
 )
 
 func freezeBillingExportReport(ctx context.Context, filters *model.CustomerExportFilters, version string) (context.Context, error) {
-	if len(version) > 1024 {
+	if len(version) > billingExportVersionMaxBytes {
 		return ctx, fmt.Errorf("%w: invalid billing report version", ErrCustomerExportInvalidRequest)
 	}
 	bound, report, err := model.ResolveBillingReport(ctx, filters.StartTimestamp, filters.EndTimestamp-1, version)
@@ -24,7 +23,26 @@ func freezeBillingExportReport(ctx context.Context, filters *model.CustomerExpor
 	return bound, nil
 }
 
-const dailyBillingExportFieldVersion = 26
+const billingExportVersionMaxBytes = 1024
+const dailyBillingExportFieldVersion = 28
+const customerStatementDayExportFieldVersion = 29
+const singleCustomerDayExportFieldVersion = 30
+const priorDailyBillingExportFieldVersion = 26
+
+// Only formats known to contain the same frozen input can adopt the new
+// projection. A staged file must continue using the format that created it.
+func upgradeUnstagedBillingExport(ctx context.Context, job *model.CustomerExportJob, filters *model.CustomerExportFilters) error {
+	legacyDaily := isDailyBillingExport(job.JobType) && filters.BillingDate == "" &&
+		filters.FieldVersion == priorDailyBillingExportFieldVersion && filters.BillingReportVersion != ""
+	legacyUsage := job.JobType == model.CustomerExportJobTypeUsageSummary && len(filters.UsageReportDays) > 0 &&
+		filters.FieldVersion > 0 && filters.FieldVersion < usageAnalyticsExportFieldVersion
+	if (!legacyDaily && !legacyUsage) || job.Artifact != "" {
+		return nil
+	}
+	filters.FieldVersion = customerExportFormatVersion(job.JobType)
+	filters.Language = billingExportLanguage
+	return model.UpgradeCustomerExportFormat(ctx, job, *filters)
+}
 
 func customerExportFormatVersion(jobType string) int {
 	if isDailyBillingExport(jobType) {
@@ -38,22 +56,6 @@ func customerExportFormatVersion(jobType string) int {
 	default:
 		return customerExportFieldVersion
 	}
-}
-
-func billingCoverageCSV(coverage *model.BillingExportCoverage, language string) (header, cells []string) {
-	if coverage == nil {
-		return nil, nil
-	}
-	header = []string{"Published report days", "Expected report days", "Incomplete published days", "Provisional data as of (Asia/Shanghai)"}
-	if language == "zh" {
-		header = []string{"日报已发布天数", "日报应发布天数", "已发布但覆盖不完整的天数", "阶段性数据截止时间（上海时区）"}
-	}
-	asOf := ""
-	if coverage.EstimatedAt > 0 {
-		asOf = formatExportTimestamp(coverage.EstimatedAt)
-	}
-	cells = []string{strconv.Itoa(coverage.PublishedDays), strconv.Itoa(coverage.ExpectedDays), strconv.Itoa(coverage.IncompleteDays), asOf}
-	return header, cells
 }
 
 func isDailyBillingExport(jobType string) bool {

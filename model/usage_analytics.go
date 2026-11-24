@@ -103,6 +103,7 @@ func ResolveUsageAnalyticsPeriod(period string, date string, now int64) (UsageAn
 // UsageAnalyticsMetrics 是一个分组位置在一日或整个范围的用量、金额与质量。
 // 明确的 0 显示 0；无证据计缺失行数；不适用留空。
 type UsageAnalyticsMetrics struct {
+	CacheWrites *BillingCacheWrites `json:"cache_writes,omitempty"`
 	BillingImageTotals
 	BillingTokensApplicable bool             `json:"billing_tokens_applicable,omitempty"`
 	BillingMeterUnknownRows int64            `json:"billing_meter_unknown_rows,omitempty"`
@@ -113,15 +114,16 @@ type UsageAnalyticsMetrics struct {
 	CancelledCalls          int64            `json:"cancelled_calls"`
 	OtherResultCalls        int64            `json:"other_result_calls"`
 
-	InputTokens           int64            `json:"input_tokens"`
-	OutputTokens          int64            `json:"output_tokens"`
-	CacheReadTokens       int64            `json:"cache_read_tokens"`
-	CacheWriteTokens      int64            `json:"cache_write_tokens"`
-	ImageCount            int64            `json:"image_count"`
-	ImageCountKnown       bool             `json:"image_count_known,omitempty"`
-	ImageCountMissingRows int64            `json:"image_count_missing_rows,omitempty"`
-	Seconds               *decimal.Decimal `json:"seconds,omitempty"`
-	SecondsMissingRows    int64            `json:"seconds_missing_rows,omitempty"`
+	InputTokens                   int64            `json:"input_tokens"`
+	OutputTokens                  int64            `json:"output_tokens"`
+	CacheReadTokens               int64            `json:"cache_read_tokens"`
+	CacheWriteTokens              int64            `json:"cache_write_tokens"`
+	CacheWritePricingAdjustedRows int64            `json:"cache_write_pricing_adjusted_rows,omitempty"`
+	ImageCount                    int64            `json:"image_count"`
+	ImageCountKnown               bool             `json:"image_count_known,omitempty"`
+	ImageCountMissingRows         int64            `json:"image_count_missing_rows,omitempty"`
+	Seconds                       *decimal.Decimal `json:"seconds,omitempty"`
+	SecondsMissingRows            int64            `json:"seconds_missing_rows,omitempty"`
 
 	GrossQuota  int64 `json:"gross_quota"`
 	RefundQuota int64 `json:"refund_quota"`
@@ -207,7 +209,9 @@ func (a *usageMetricsAcc) mergeTokens(source UsageAnalyticsMetrics) {
 	a.m.InputTokens += source.InputTokens
 	a.m.OutputTokens += source.OutputTokens
 	a.m.CacheReadTokens += source.CacheReadTokens
+	a.m.CacheWrites = mergeBillingCacheWrites(a.m.CacheWrites, source.CacheWrites, source.CacheWriteTokens)
 	a.m.CacheWriteTokens += source.CacheWriteTokens
+	a.m.CacheWritePricingAdjustedRows += source.CacheWritePricingAdjustedRows
 	a.m.BillingImageTotals.add(source.BillingImageTotals)
 	a.m.BillingTokensApplicable = a.m.BillingTokensApplicable || source.BillingTokensApplicable
 	a.m.BillingMeterUnknownRows += source.BillingMeterUnknownRows

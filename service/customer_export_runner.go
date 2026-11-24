@@ -79,6 +79,12 @@ func init() {
 // SubmitCustomerExportJob 校验并规范化提交范围，原子受理后唤醒调度器。
 // 鉴权、目标客户与角色由调用方（controller）先行校验。
 func SubmitCustomerExportJob(initiatorId int, targetUserId int, request CustomerExportRequest) (*model.CustomerExportJob, error) {
+	if request.JobType == model.CustomerExportJobTypeCustomerStatements || request.BillingDate != "" || request.ExpectedIncomplete != nil || request.SourceJobID != "" {
+		return nil, ErrCustomerExportInvalidRequest
+	}
+	if len(request.ReportVersion) > billingExportVersionMaxBytes {
+		return nil, fmt.Errorf("%w: invalid billing report version", ErrCustomerExportInvalidRequest)
+	}
 	if err := model.AuthorizeCustomerExport(context.Background(), initiatorId, targetUserId); err != nil {
 		return nil, err
 	}
@@ -86,18 +92,45 @@ func SubmitCustomerExportJob(initiatorId int, targetUserId int, request Customer
 	if err != nil {
 		return nil, err
 	}
-	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
+	if request.StatementVersion == "" && common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		return nil, model.ErrCustomerExportBackendUnsupported
 	}
 	filters, err := normalizeCustomerExportFilters(request.JobType, request)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrCustomerExportInvalidRequest, err)
 	}
+	singleDay := request.JobType == model.CustomerExportJobTypeStatementDetails && filters.EndTimestamp-filters.StartTimestamp == int64(24*time.Hour/time.Second)
+	if (request.ConfirmExisting || request.ForceNew) && (!singleDay || (request.ConfirmExisting && request.ForceNew)) {
+		return nil, ErrCustomerExportInvalidRequest
+	}
+	if singleDay {
+		filters.FieldVersion = singleCustomerDayExportFieldVersion
+		filters.StatementPartLimits = &model.StatementExportPartLimits{Rows: statementDailyPartRows, Bytes: statementDailyPartBytes}
+	}
 	revisionCtx, cancel := context.WithTimeout(context.Background(), customerExportBatchTimeout)
 	defer cancel()
-	if request.JobType == model.CustomerExportJobTypeStatementSummary || request.JobType == model.CustomerExportJobTypeStatementDetails {
-		_, err = freezeBillingExportReport(revisionCtx, &filters, request.ReportVersion)
+	if request.StatementVersion != "" {
+		if request.JobType != model.CustomerExportJobTypeStatementDetails || request.ReportVersion != "" ||
+			len(request.StatementVersion) > 64 || filters.ChannelId != nil || filters.Group != "" || filters.Username != "" || filters.UpstreamRequestId != "" {
+			return nil, ErrCustomerExportInvalidRequest
+		}
+		filters.StatementDraftId = request.StatementVersion
+		version, err := authorizedStatementVersionExport(revisionCtx, initiatorId, targetUserId, filters, request.AllowPendingVersion)
 		if err != nil {
+			return nil, err
+		}
+		filters.Currency, filters.CurrencyRate, filters.QuotaPerUnit = version.Currency, version.CurrencyRate, version.QuotaPerUnit
+	} else if request.JobType == model.CustomerExportJobTypeStatementSummary || request.JobType == model.CustomerExportJobTypeStatementDetails {
+		version := request.ReportVersion
+		monthStart, monthEnd := customerExportMonth(filters.StartTimestamp)
+		if version != "" && (filters.StartTimestamp != monthStart || filters.EndTimestamp != monthEnd) {
+			_, report, err := model.ResolveBillingReport(revisionCtx, monthStart, monthEnd-1, version)
+			if err != nil {
+				return nil, err
+			}
+			version = report.VersionForDays(filters.StartTimestamp, filters.EndTimestamp)
+		}
+		if _, err := freezeBillingExportReport(revisionCtx, &filters, version); err != nil {
 			return nil, err
 		}
 	}
@@ -105,9 +138,33 @@ func SubmitCustomerExportJob(initiatorId int, targetUserId int, request Customer
 	if err != nil {
 		return nil, err
 	}
-	job, created, err := model.CreateCustomerExportJob(initiatorId, targetUserId, request.JobType, filters, model.CustomerExportReuse{SourceVersion: sourceVersion, StoreIdentity: store.ExportIdentity()})
+	reuse := model.CustomerExportReuse{SourceVersion: sourceVersion, StoreIdentity: store.ExportIdentity()}
+	azure, usingAzure := store.(*azureBlobArtifactStore)
+	confirmOnAzure := usingAzure && request.ConfirmExisting
+	if confirmOnAzure {
+		existing, err := findAvailableAzureStatementExport(revisionCtx, azure, initiatorId, targetUserId, filters, reuse)
+		if err != nil || existing != nil {
+			return existing, err
+		}
+	}
+	if request.ForceNew {
+		reuse = model.CustomerExportReuse{}
+	}
+	job, created, err := model.CreateCustomerExportJob(initiatorId, targetUserId, request.JobType, filters, reuse)
 	if err != nil {
 		return nil, err
+	}
+	// A matching active job can finish between the availability check and
+	// creation. Completed Azure results still require the caller's choice.
+	if confirmOnAzure && !created && job.Status == model.CustomerExportJobStatusSucceeded {
+		available, err := offerAzureStatementExport(revisionCtx, azure, job)
+		if err != nil || available {
+			return job, err
+		}
+		job, created, err = model.CreateCustomerExportJob(initiatorId, targetUserId, request.JobType, filters)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if created {
 		if _, _, err := EnqueueSystemTask(SystemTaskTypeCustomerExport, nil); err != nil {
@@ -119,7 +176,14 @@ func SubmitCustomerExportJob(initiatorId int, targetUserId int, request Customer
 
 // CustomerExportRequest 是控制台提交的原始范围；规范化后冻结进任务行。
 type CustomerExportRequest struct {
+	ConfirmExisting        bool
+	ForceNew               bool
 	ReportVersion          string
+	StatementVersion       string
+	AllowPendingVersion    bool
+	BillingDate            string
+	ExpectedIncomplete     *bool
+	SourceJobID            string
 	UpstreamEvidenceFilter string
 	UpstreamAllChannels    bool
 	ProviderModelFallback  *bool
@@ -140,9 +204,11 @@ type CustomerExportRequest struct {
 }
 
 // normalizeCustomerExportFilters 冻结提交时的规范化范围。使用记录导出可跨月
-// 但不超过 31 天；账单类固定自然月（Asia/Shanghai），左右边界按左闭右开。
-// customerExportLanguages 是导出产物支持的展示语言；语言作为冻结条件的一
-// 部分（7.1），不同语言的同范围申请是不同任务，产物表头按该语言固化。
+// 但不超过 31 天；账单类固定自然月，管理员全客户导出也支持显式自然日。
+// 账期按 Asia/Shanghai 左闭右开。
+// The estimate follows the console locale. New files use the billing export language.
+const billingExportLanguage = "zh"
+
 var customerExportLanguages = map[string]bool{
 	"en": true, "zh": true, "zh-TW": true, "fr": true, "ru": true, "ja": true, "vi": true,
 }
@@ -194,7 +260,7 @@ func normalizeCustomerExportFilters(jobType string, request CustomerExportReques
 		ModelName:         strings.TrimSpace(request.ModelName),
 		BillingMode:       strings.TrimSpace(request.BillingMode),
 		Timezone:          "Asia/Shanghai",
-		Language:          normalizeCustomerExportLanguage(request.Language),
+		Language:          billingExportLanguage,
 	}
 	if filters.QuotaPerUnit <= 0 || math.IsNaN(filters.QuotaPerUnit) || math.IsInf(filters.QuotaPerUnit, 0) || filters.CurrencyRate <= 0 || math.IsNaN(filters.CurrencyRate) || math.IsInf(filters.CurrencyRate, 0) {
 		return filters, errors.New("invalid export currency settings")
@@ -213,6 +279,15 @@ func normalizeCustomerExportFilters(jobType string, request CustomerExportReques
 		if len(value) > 255 {
 			return filters, errors.New("invalid export text filter")
 		}
+	}
+	if jobType == model.CustomerExportJobTypeCustomerStatements && request.BillingDate != "" {
+		day, err := time.ParseInLocation(time.DateOnly, request.BillingDate, billingExportTimezone())
+		if err != nil || day.Format(time.DateOnly) != request.BillingDate || filters.StartTimestamp != 0 || filters.EndTimestamp != 0 {
+			return filters, errors.New("invalid billing date")
+		}
+		filters.BillingDate = request.BillingDate
+		filters.FieldVersion = customerStatementDayExportFieldVersion
+		filters.StartTimestamp, filters.EndTimestamp = day.Unix(), day.AddDate(0, 0, 1).Unix()
 	}
 	if filters.StartTimestamp <= 0 || filters.EndTimestamp <= filters.StartTimestamp {
 		return filters, errors.New("invalid export time range")
@@ -243,12 +318,19 @@ func normalizeCustomerExportFilters(jobType string, request CustomerExportReques
 		if filters.EndTimestamp-filters.StartTimestamp > int64(31*24*time.Hour/time.Second) {
 			return filters, errors.New("usage log export range cannot exceed 31 days")
 		}
-	case model.CustomerExportJobTypeStatementSummary, model.CustomerExportJobTypeStatementDetails:
-		period := billingExportTimezone()
-		start := time.Unix(filters.StartTimestamp, 0).In(period)
-		nextMonth := time.Date(start.Year(), start.Month()+1, 1, 0, 0, 0, 0, period)
-		if filters.StartTimestamp != time.Date(start.Year(), start.Month(), 1, 0, 0, 0, 0, period).Unix() ||
-			filters.EndTimestamp != nextMonth.Unix() {
+	case model.CustomerExportJobTypeStatementSummary, model.CustomerExportJobTypeStatementDetails, model.CustomerExportJobTypeCustomerStatements:
+		if filters.BillingDate != "" {
+			break
+		}
+		monthStart, monthEnd := customerExportMonth(filters.StartTimestamp)
+		if jobType == model.CustomerExportJobTypeStatementDetails &&
+			(request.JobType == "" || request.JobType == model.CustomerExportJobTypeStatementDetails) {
+			if filters.EndTimestamp > monthEnd ||
+				time.Unix(filters.StartTimestamp, 0).In(billingExportTimezone()).Format("15:04:05") != "00:00:00" ||
+				time.Unix(filters.EndTimestamp, 0).In(billingExportTimezone()).Format("15:04:05") != "00:00:00" {
+				return filters, errors.New("statement details require whole days within one Shanghai calendar month")
+			}
+		} else if filters.StartTimestamp != monthStart || filters.EndTimestamp != monthEnd {
 			return filters, errors.New("billing export must cover one natural month in Asia/Shanghai")
 		}
 
@@ -262,6 +344,13 @@ func normalizeCustomerExportFilters(jobType string, request CustomerExportReques
 		return filters, errors.New("invalid model_name filter")
 	}
 	return filters, nil
+}
+
+func customerExportMonth(timestamp int64) (int64, int64) {
+	zone := billingExportTimezone()
+	date := time.Unix(timestamp, 0).In(zone)
+	start := time.Date(date.Year(), date.Month(), 1, 0, 0, 0, 0, zone)
+	return start.Unix(), start.AddDate(0, 1, 0).Unix()
 }
 
 // runCustomerExportScheduler 是 SystemTask 处理器主循环：先做小预算恢复与
@@ -356,6 +445,10 @@ func customerExportCleanupPass(ctx context.Context) {
 		if artifact.StoreIdentity == "" || artifact.StoreIdentity != store.ExportIdentity() {
 			continue
 		}
+		for _, key := range artifact.ObsoleteKeys {
+			artifact.Files = append(artifact.Files, model.CustomerExportArtifactFile{ObjectKey: key})
+		}
+		artifact.ObsoleteKeys = nil
 		var attempted int
 		var failed []model.CustomerExportArtifactFile
 		for _, file := range artifact.Files[:min(len(artifact.Files), customerExportCleanupFilesPerJob)] {
@@ -399,11 +492,19 @@ func runCustomerExportJob(ctx context.Context, job *model.CustomerExportJob, exe
 	}
 	ctx, stop := monitorCustomerExport(ctx, job, executor)
 	filters, err := job.DecodeFilters()
-	if err == nil && job.JobType == model.CustomerExportJobTypeUsageSummary {
-		filters.FieldVersion = usageAnalyticsExportFieldVersion
+	if err == nil {
+		err = upgradeUnstagedBillingExport(ctx, job, &filters)
 	}
-	if err == nil && (filters.FieldVersion != customerExportFormatVersion(job.JobType) ||
-		(isDailyBillingExport(job.JobType) && filters.BillingReportVersion == "")) {
+	expectedFieldVersion := customerExportFormatVersion(job.JobType)
+	if job.JobType == model.CustomerExportJobTypeStatementDetails && filters.FieldVersion == singleCustomerDayExportFieldVersion &&
+		filters.StatementPartLimits != nil && filters.EndTimestamp-filters.StartTimestamp == int64(24*time.Hour/time.Second) {
+		expectedFieldVersion = singleCustomerDayExportFieldVersion
+	}
+	if job.JobType == model.CustomerExportJobTypeCustomerStatements && filters.BillingDate != "" {
+		expectedFieldVersion = customerStatementDayExportFieldVersion
+	}
+	if err == nil && (filters.FieldVersion != expectedFieldVersion ||
+		(isDailyBillingExport(job.JobType) && filters.BillingReportVersion == "" && filters.StatementDraftId == "")) {
 		err = errCustomerExportFormatChanged
 	}
 	var sourceVersion string
@@ -547,7 +648,7 @@ func executeCustomerExportLogScan(ctx context.Context, job *model.CustomerExport
 	}
 	defer writer.Cleanup()
 	scope := customerExportScopeColumns{
-		Language: filters.Language,
+		Language: "zh",
 		JobID:    job.JobID, ExportType: job.JobType,
 		PeriodStart: filters.StartTimestamp, PeriodEnd: filters.EndTimestamp,
 		QuotaPerUnit: filters.QuotaPerUnit, Currency: filters.Currency, CurrencyRate: filters.CurrencyRate,
@@ -818,16 +919,6 @@ func executeCustomerExportSummary(ctx context.Context, job *model.CustomerExport
 	return artifact, err
 }
 
-func customerExportSummaryHeader(language string) []string {
-	header := make([]string, 0, len(customerExportSummaryColumnOrder))
-	for _, key := range customerExportSummaryColumnOrder {
-		header = append(header, customerExportSummaryHeaderLabel(language, key))
-	}
-	return header
-}
-
-// Only model leaf rows are exported, so customers can sum amount columns
-// directly without counting parent totals or discount combinations again.
 func writeCustomerExportSummaryCsv(workDir string, scope customerExportScopeColumns, language string, statement model.BillingCustomerStatement) ([]model.CustomerExportArtifactFile, []string, int64, error) {
 	if len(statement.Groups) == 0 {
 		return nil, nil, 0, nil
@@ -846,69 +937,54 @@ func writeCustomerExportSummaryCsv(workDir string, scope customerExportScopeColu
 		return nil, nil, 0, err
 	}
 	writer := csv.NewWriter(buffered)
-	coverageHeader, coverageCells := billingCoverageCSV(scope.ReportCoverage, language)
-	if err := writer.Write(append(customerExportSummaryHeader(language), coverageHeader...)); err != nil {
+	coverage := csvReportCoverage(language, scope.ReportCoverage)
+	if err := writer.Write(csvLabels(language, scope.Currency, customerSummaryColumns)); err != nil {
 		return nil, nil, 0, err
 	}
-	lineCount := int64(0)
-	writeRow := func(row map[string]string) {
-		record := make([]string, 0, len(customerExportSummaryColumnOrder))
-		for _, key := range customerExportSummaryColumnOrder {
-			record = append(record, row[key])
-		}
-		if writer.Write(append(record, coverageCells...)) == nil {
-			lineCount++
-		}
-	}
-	baseRow := func() map[string]string {
-		row := make(map[string]string, len(customerExportSummaryColumnOrder))
-		row["generated_at"] = formatExportTimestamp(scope.GeneratedAt)
-		row["currency"] = scope.Currency
-		row["period_start"] = formatExportTimestamp(scope.PeriodStart)
-		row["period_end"] = formatExportTimestamp(scope.PeriodEnd)
-		row["timezone"] = scope.Timezone
-		row["customer_username"] = exportCsvCellGuard(scope.CustomerName)
-		return row
-	}
-	writeAmounts := func(row map[string]string, usage model.BillingReconciliationUsage, original *int64, discount *int64) {
-		row["requests"] = strconv.FormatInt(usage.Requests, 10)
-		row["input_tokens"] = strconv.FormatInt(usage.InputTokens, 10)
-		row["cache_read_tokens"] = strconv.FormatInt(usage.CacheReadTokens, 10)
-		row["cache_write_tokens"] = strconv.FormatInt(usage.CacheWriteTokens, 10)
-		row["output_tokens"] = strconv.FormatInt(usage.OutputTokens, 10)
-		row["billable_calls"] = strconv.FormatInt(usage.BillableCalls, 10)
-		row["refunded_calls"] = strconv.FormatInt(usage.RefundedCalls, 10)
-		row["billable_images"] = positiveBillingMeterCSV(usage.BillableImages)
-		row["billable_image_missing_rows"] = positiveBillingMeterCSV(usage.BillableImageMissingRows)
-		row["original_quota"] = exportQuotaAmount(original)
-		row["discount_quota"] = exportQuotaAmount(discount)
-		row["gross_quota"] = strconv.FormatInt(usage.GrossQuota, 10)
-		row["refund_quota"] = strconv.FormatInt(usage.RefundQuota, 10)
-		row["net_quota"] = strconv.FormatInt(usage.NetQuota, 10)
-		for _, key := range []string{"original", "discount", "gross", "refund", "net"} {
-			row[key+"_amount"] = exportCurrencyAmount(row[key+"_quota"], scope)
-		}
-	}
-	qualityLabel := func(quality *model.BillingReconciliationDataQuality) string {
-		if quality == nil || quality.Status == "complete" {
-			return "complete"
-		}
-		return "partial"
-	}
-
+	var lineCount int64
 	for _, group := range statement.Groups {
-		for _, modelSummary := range group.Models {
-			modelRow := baseRow()
-			modelRow["api_key_id"] = strconv.FormatInt(group.Id, 10)
-			modelRow["api_key_name"] = exportCsvCellGuard(group.Name)
-			modelRow["model"] = exportCsvCellGuard(modelSummary.ModelName)
-			modelRow["billing_mode"] = customerStatementExportValue(language, "billing_mode", modelSummary.BillingMode)
-			writeAmounts(modelRow, modelSummary.Usage, modelSummary.OriginalQuota, modelSummary.DiscountQuota)
-			modelRow["data_quality"] = customerStatementExportValue(language, "quality_status", qualityLabel(modelSummary.DataQuality))
-			if modelSummary.DataQuality != nil && modelSummary.DataQuality.InputTokensUnavailableRequests > 0 {
-				modelRow["input_tokens"] = ""
+		for _, summary := range group.Models {
+			usage := summary.Usage
+			original := exportCurrencyAmount(exportQuotaAmount(summary.OriginalQuota), scope)
+			discount := ""
+			if original != "" {
+				discount = exportCurrencyAmount(exportQuotaAmount(summary.DiscountQuota), scope)
 			}
-			writeRow(modelRow)
+			cacheCells, cacheNote := csvCacheWrites(language, usage.CacheWrites, usage.CacheWriteTokens)
+			values := map[string]string{
+				"api_key_name": exportCsvCellGuard(group.Name), "model": exportCsvCellGuard(summary.ModelName),
+				"billing_mode":    customerStatementExportValue(language, "billing_mode", summary.BillingMode),
+				"net_amount":      exportCurrencyAmount(strconv.FormatInt(usage.NetQuota, 10), scope),
+				"gross_amount":    exportCurrencyAmount(strconv.FormatInt(usage.GrossQuota, 10), scope),
+				"refund_amount":   exportCurrencyAmount(strconv.FormatInt(usage.RefundQuota, 10), scope),
+				"original_amount": original, "discount_amount": discount,
+				"requests": strconv.FormatInt(usage.Requests, 10), "billable_calls": strconv.FormatInt(usage.BillableCalls, 10),
+				"refunded_calls": strconv.FormatInt(usage.RefundedCalls, 10), "input_tokens": strconv.FormatInt(usage.InputTokens, 10),
+				"output_tokens": strconv.FormatInt(usage.OutputTokens, 10), "cache_read_tokens": strconv.FormatInt(usage.CacheReadTokens, 10),
+			}
+			csvCacheWriteValues(values, cacheCells)
+			var inputNote string
+			if summary.DataQuality != nil && summary.DataQuality.InputTokensUnavailableRequests > 0 {
+				values["input_tokens"] = ""
+				inputNote = csvCountNote(language, summary.DataQuality.InputTokensUnavailableRequests, "%d records missing input tokens", "%d 笔缺少输入 Token")
+			}
+			if summary.BillingMode == model.BillingReconciliationModePerImage {
+				values["input_tokens"], values["output_tokens"], values["cache_read_tokens"] = "", "", ""
+				csvCacheWriteValues(values, [4]string{})
+				if usage.BillableImageMissingRows == 0 {
+					values["billable_images"] = strconv.FormatInt(usage.BillableImages, 10)
+				}
+			}
+			if usage.BillableSeconds != nil && usage.MissingBillableSeconds == 0 {
+				values["billable_seconds"] = usage.BillableSeconds.String()
+			}
+			values["notes"] = csvNotes(coverage, csvMissingOriginal(language, original), cacheNote, inputNote,
+				csvCountNote(language, usage.BillableImageMissingRows, "%d records missing billable images", "%d 笔缺少计费张数"),
+				csvCountNote(language, usage.MissingBillableSeconds, "%d records missing billable seconds", "%d 笔缺少计费秒数"))
+			if err := writer.Write(csvProjection(customerSummaryColumns, values)); err != nil {
+				return nil, nil, 0, err
+			}
+			lineCount++
 		}
 	}
 	writer.Flush()

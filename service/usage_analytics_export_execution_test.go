@@ -23,6 +23,12 @@ func TestUsageExportRunnerPublishesCurrentFormatAndRegenerates(t *testing.T) {
 			require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", 42).Update("role", common.RoleAdminUser).Error)
 			target := 43
 			request := UsageAnalyticsExportRequest{Period: "day", Date: "2026-10-12", View: view, Language: "en", UserId: &target}
+			period, err := model.ResolveUsageAnalyticsPeriod("day", request.Date, common.GetTimestamp())
+			require.NoError(t, err)
+			for _, id := range []int{42, 43} {
+				require.NoError(t, model.LOG_DB.Create(&model.Log{UserId: id, ChannelId: 2, Type: model.LogTypeConsume,
+					CreatedAt: period.StartTimestamp + 1, ModelName: "chat", Quota: 100}).Error)
+			}
 			publishUsageExportTestDays(t, request.Date)
 			job, err := SubmitUsageAnalyticsExport(42, request)
 			require.NoError(t, err)
@@ -48,12 +54,17 @@ func TestUsageExportRunnerPublishesCurrentFormatAndRegenerates(t *testing.T) {
 func TestUsageExportRunnerUsesCurrentFormatForQueuedOlderJob(t *testing.T) {
 	truncate(t)
 	store := setupCustomerExportServiceTest(t)
+	period, err := model.ResolveUsageAnalyticsPeriod("day", "2026-10-12", common.GetTimestamp())
+	require.NoError(t, err)
+	require.NoError(t, model.LOG_DB.Create(&model.Log{UserId: 42, Type: model.LogTypeConsume,
+		CreatedAt: period.StartTimestamp + 1, ModelName: "chat", Quota: 100}).Error)
 	publishUsageExportTestDays(t, "2026-10-12")
 	job, err := SubmitUsageAnalyticsExport(42, UsageAnalyticsExportRequest{Period: "day", Date: "2026-10-12", View: "self", Language: "en"})
 	require.NoError(t, err)
 	filters, err := job.DecodeFilters()
 	require.NoError(t, err)
 	filters.FieldVersion = 6
+	filters.Language = "en"
 	raw, err := common.Marshal(filters)
 	require.NoError(t, err)
 	require.NoError(t, model.DB.Model(job).Update("filters", string(raw)).Error)
@@ -64,6 +75,10 @@ func TestUsageExportRunnerUsesCurrentFormatForQueuedOlderJob(t *testing.T) {
 	finished, err := model.GetCustomerExportJob(job.JobID)
 	require.NoError(t, err)
 	require.Equal(t, model.CustomerExportJobStatusSucceeded, finished.Status, finished.ErrorCode)
+	upgraded, err := finished.DecodeFilters()
+	require.NoError(t, err)
+	assert.Equal(t, usageAnalyticsExportFieldVersion, upgraded.FieldVersion)
+	assert.Equal(t, "zh", upgraded.Language)
 	artifact := finished.DecodeArtifact()
 	require.NotNil(t, artifact)
 	require.Len(t, artifact.Files, 1)
@@ -71,7 +86,7 @@ func TestUsageExportRunnerUsesCurrentFormatForQueuedOlderJob(t *testing.T) {
 	rows, err := csv.NewReader(bytes.NewReader(data)).ReadAll()
 	require.NoError(t, err)
 	require.NotEmpty(t, rows)
-	assert.Equal(t, usageAnalyticsExportHeader("en", "self"), rows[0])
+	assert.Equal(t, csvLabels("zh", filters.Currency, usageCSVColumns("self", "")), rows[0])
 }
 
 func TestUsageExportMonthAggregatesPublishedDaysAndRegenerates(t *testing.T) {
@@ -88,7 +103,7 @@ func TestUsageExportMonthAggregatesPublishedDaysAndRegenerates(t *testing.T) {
 	}
 	publishUsageExportTestDays(t, "2026-10-01", "2026-10-31")
 	job, err := SubmitUsageAnalyticsExport(42, UsageAnalyticsExportRequest{
-		Period: "month", Date: "2026-10-12", View: "self", Language: "en",
+		Period: "month", Date: "2026-10-12", View: "self", Language: "en", Grain: "period",
 	})
 	require.NoError(t, err)
 	for attempt := range 2 {
@@ -106,11 +121,11 @@ func TestUsageExportMonthAggregatesPublishedDaysAndRegenerates(t *testing.T) {
 		rows, err := csv.NewReader(bytes.NewReader(bytes.TrimPrefix(store.uploaded[artifact.Files[0].ObjectKey], []byte(customerExportCsvBOM)))).ReadAll()
 		require.NoError(t, err)
 		require.NotEmpty(t, rows)
-		total := rows[len(rows)-1]
-		assert.Equal(t, "grand_total", total[0])
-		assert.Equal(t, "2", total[13])
-		assert.Equal(t, "20", total[18])
-		assert.Equal(t, "200", total[24])
+		require.Len(t, rows, 2)
+		total := usageTestCells(t, rows[1], "self", "period")
+		assert.Equal(t, "2026-10-01 — 2026-10-31", total["date"])
+		assert.Equal(t, "2", total["calls"])
+		assert.Equal(t, "20", total["input"])
 		if attempt == 0 {
 			job, err = ResubmitUsageAnalyticsExport(42, job.JobID, true)
 			require.NoError(t, err)
@@ -155,16 +170,11 @@ func TestUsageExportModelScopeSurvivesExecutionAndRegeneration(t *testing.T) {
 		require.Len(t, artifact.Files, 1)
 		rows, err := csv.NewReader(bytes.NewReader(bytes.TrimPrefix(store.uploaded[artifact.Files[0].ObjectKey], []byte(customerExportCsvBOM)))).ReadAll()
 		require.NoError(t, err)
-		require.Len(t, rows, 4)
-		for _, row := range rows[1 : len(rows)-1] {
-			assert.Equal(t, "1", row[4])
-			assert.Equal(t, "selected", row[6])
-		}
-		total := rows[len(rows)-1]
-		assert.Equal(t, "grand_total", total[0])
-		assert.Equal(t, "1", total[13])
-		assert.Equal(t, "10", total[18])
-		assert.Equal(t, "100", total[24])
+		require.Len(t, rows, 2)
+		row := usageTestCells(t, rows[1], "self", "")
+		assert.Equal(t, "selected", row["model"])
+		assert.Equal(t, "1", row["calls"])
+		assert.Equal(t, "10", row["input"])
 	})
 	job, err := SubmitUsageAnalyticsExport(42, request)
 	require.NoError(t, err)
@@ -184,15 +194,11 @@ func TestUsageExportModelScopeSurvivesExecutionAndRegeneration(t *testing.T) {
 		require.Len(t, artifact.Files, 1)
 		rows, err := csv.NewReader(bytes.NewReader(bytes.TrimPrefix(store.uploaded[artifact.Files[0].ObjectKey], []byte(customerExportCsvBOM)))).ReadAll()
 		require.NoError(t, err)
-		require.Len(t, rows, 6)
-		for _, row := range rows[1 : len(rows)-1] {
-			assert.Equal(t, "selected", row[6])
+		require.Len(t, rows, 3)
+		for _, row := range rows[1:] {
+			assert.Equal(t, "selected", usageTestCells(t, row, "self", "")["model"])
+			assert.Equal(t, "1", usageTestCells(t, row, "self", "")["calls"])
 		}
-		total := rows[len(rows)-1]
-		assert.Equal(t, "grand_total", total[0])
-		assert.Equal(t, "2", total[13])
-		assert.Equal(t, "30", total[18])
-		assert.Equal(t, "300", total[24])
 		if attempt == 0 {
 			job, err = ResubmitUsageAnalyticsExport(42, job.JobID, true)
 			require.NoError(t, err)
@@ -241,6 +247,10 @@ func TestUsageExportStorageFailureIsClassifiedWithoutPublishingPrivateErrors(t *
 	store := setupCustomerExportServiceTest(t)
 	customerExportStoreOverride = unavailableUsageExportStore{store}
 	require.NoError(t, model.DB.AutoMigrate(&model.BatchJob{}))
+	period, err := model.ResolveUsageAnalyticsPeriod("day", "2026-10-12", common.GetTimestamp())
+	require.NoError(t, err)
+	require.NoError(t, model.LOG_DB.Create(&model.Log{UserId: 42, Type: model.LogTypeConsume,
+		CreatedAt: period.StartTimestamp + 1, ModelName: "chat", Quota: 100}).Error)
 	publishUsageExportTestDays(t, "2026-10-12")
 	job, err := SubmitUsageAnalyticsExport(42, UsageAnalyticsExportRequest{Period: "day", Date: "2026-10-12", View: "self"})
 	require.NoError(t, err)

@@ -76,6 +76,7 @@ type usageTaskPieces struct {
 	output                  int64
 	cacheRead               int64
 	cacheWrite              int64
+	cacheWrites             *BillingCacheWrites
 	billableImageCount      *int64
 	billableImageApplicable bool
 	billableImageSourceID   int64
@@ -425,6 +426,7 @@ func usageRowTokens(row usageLogRow, m *UsageAnalyticsMetrics) {
 	m.OutputTokens += row.parsed.outputTokens
 	m.CacheReadTokens += row.parsed.cacheReadTokens
 	m.CacheWriteTokens += row.parsed.cacheWrite.total
+	m.CacheWrites = mergeBillingCacheWrites(m.CacheWrites, row.parsed.cacheWrite.tiers, row.parsed.cacheWrite.total)
 	if row.fact.Type == LogTypeConsume {
 		completed := row.other["completed_image_count"]
 		if count, known := billingBreakdownNonNegativeInt(completed); known && count <= int64(dto.MaxImageN) {
@@ -534,6 +536,7 @@ func (agg *usageAggregation) appendTaskLogPiece(pieces *usageTaskPieces, row usa
 	pieces.output += tokens.OutputTokens
 	pieces.cacheRead += tokens.CacheReadTokens
 	pieces.cacheWrite += tokens.CacheWriteTokens
+	pieces.cacheWrites = mergeBillingCacheWrites(pieces.cacheWrites, tokens.CacheWrites, tokens.CacheWriteTokens)
 	if row.parsed.billableImageApplicable {
 		pieces.billableImageApplicable = true
 		if row.parsed.billableImageCount != nil && (row.id == 0 || row.id >= pieces.billableImageSourceID) {
@@ -1009,6 +1012,7 @@ func (agg *usageAggregation) applyTaskCustomer(task *usageTaskRecord, pieces *us
 		acc.m.OutputTokens += pieces.output
 		acc.m.CacheReadTokens += pieces.cacheRead
 		acc.m.CacheWriteTokens += pieces.cacheWrite
+		acc.m.CacheWrites = mergeBillingCacheWrites(nil, pieces.cacheWrites, pieces.cacheWrite)
 		acc.m.ImageCount += pieces.imageCount
 		acc.m.ImageCountKnown = pieces.imageCountKnown
 		if pieces.imageCountMissing && !pieces.imageCountKnown {
@@ -1069,6 +1073,7 @@ func (agg *usageAggregation) applyTaskUpstream(task *usageTaskRecord, pieces *us
 		acc.m.OutputTokens += pieces.output
 		acc.m.CacheReadTokens += pieces.cacheRead
 		acc.m.CacheWriteTokens += pieces.cacheWrite
+		acc.m.CacheWrites = mergeBillingCacheWrites(nil, pieces.cacheWrites, pieces.cacheWrite)
 		acc.m.ImageCount += pieces.imageCount
 		acc.m.ImageCountKnown = pieces.imageCountKnown
 		if pieces.imageCountMissing && !pieces.imageCountKnown {

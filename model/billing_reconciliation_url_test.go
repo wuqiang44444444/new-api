@@ -238,6 +238,7 @@ func TestProviderBillingURLSummaryMatchesAllChannelUsageAndQualityDimensions(t *
 			total.BillableCalls += leaf.Usage.BillableCalls
 			total.InputTokens += leaf.Usage.InputTokens
 			total.CacheReadTokens += leaf.Usage.CacheReadTokens
+			total.CacheWrites = mergeBillingCacheWrites(total.CacheWrites, leaf.Usage.CacheWrites, leaf.Usage.CacheWriteTokens)
 			total.CacheWriteTokens += leaf.Usage.CacheWriteTokens
 			total.OutputTokens += leaf.Usage.OutputTokens
 			accumulateBillingReconciliationQuality(&quality, leaf.DataQuality)

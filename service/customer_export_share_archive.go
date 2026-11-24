@@ -39,6 +39,7 @@ func SubmitCustomerExportShareArchive(ctx context.Context, source *model.Custome
 	}
 	filters := model.CustomerExportFilters{
 		ArchiveSourceJobID: source.JobID, FieldVersion: customerExportFormatVersion(model.CustomerExportJobTypeStatementArchive),
+		ArchiveDraftId: &original.StatementDraftId,
 		StartTimestamp: original.StartTimestamp, EndTimestamp: original.EndTimestamp, Timezone: original.Timezone, Language: original.Language,
 	}
 	if err := model.AuthorizeCustomerExportJob(ctx, source); err != nil {
@@ -170,6 +171,9 @@ func PresignCustomerExportShareArchive(ctx context.Context, job *model.CustomerE
 	exists, err := azure.ExportObjectExists(ctx, key)
 	if err != nil || !exists {
 		return "", 0, ErrCustomerExportArchiveUnavailable
+	}
+	if err := model.AuthorizeCustomerExportJob(ctx, job); err != nil {
+		return "", 0, err
 	}
 	query, err := (sas.BlobSignatureValues{
 		Protocol: sas.ProtocolHTTPS, StartTime: start, ExpiryTime: expires,

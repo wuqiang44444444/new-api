@@ -65,7 +65,6 @@ import { useDebounce } from '@/hooks/use-debounce'
 import { formatTimestampToDate } from '@/lib/format'
 
 import { getAdminCustomerStatements } from '../api'
-import { createCustomerStatementsExport } from '../export-api'
 import { formatInteger, formatCustomerStatementQuota } from '../lib'
 import type {
   AdminBillingSearch,
@@ -73,10 +72,10 @@ import type {
   CustomerStatementListQuality,
   CustomerStatementListSortBy,
 } from '../types'
-import { BillingExportAction } from './billing-export-action'
 import { BillingPagination } from './billing-pagination'
 import { BillingQualityNotice } from './billing-quality-notice'
 import { BillingReportStatus } from './billing-report-status'
+import { CustomerStatementsExportAction } from './customer-statements-export-action'
 
 type CustomerStatementsListProps = {
   period: { start_timestamp: number; end_timestamp: number }
@@ -226,20 +225,10 @@ export function CustomerStatementsListView(props: CustomerStatementsListProps) {
             >
               {t('Fund movements')}
             </Button>
-            <BillingExportAction
-              startTimestamp={props.period.start_timestamp}
-              statement={t('Customer statements')}
-              scope={[t('All customers')]}
-              description={t(
-                'The CSV includes one statement summary per customer for the selected month, regardless of list filters.'
-              )}
-              available={!!reportVersion && !query.isPlaceholderData}
-              submit={() =>
-                createCustomerStatementsExport({
-                  start_timestamp: props.period.start_timestamp,
-                  end_timestamp: props.period.end_timestamp + 1,
-                  report_version: reportVersion ?? '',
-                })
+            <CustomerStatementsExportAction
+              period={props.period}
+              monthReportVersion={
+                query.isPlaceholderData ? undefined : reportVersion
               }
             />
           </div>

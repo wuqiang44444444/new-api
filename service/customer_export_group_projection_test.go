@@ -8,11 +8,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCustomerExportDetailsPreserveBillingGroupIdentity(t *testing.T) {
+func TestCustomerExportDetailsKeepsEffectiveMultiplierWithoutChannelIdentity(t *testing.T) {
 	ratio := 0.5
 	writer, err := newCustomerExportCsvWriter(t.TempDir(), "export", customerExportCsvShardBytes)
 	require.NoError(t, err)
-	writer.useStatementDetails("en")
+	writer.useStatementDetails("en", "USD")
 	scope := customerExportScopeColumns{Language: "en", QuotaPerUnit: 500000, Currency: "USD", CurrencyRate: 1}
 	for _, row := range []model.CustomerExportRow{
 		{GroupName: "historical-a", GroupRatioSource: "group", GroupRatio: &ratio},
@@ -23,15 +23,10 @@ func TestCustomerExportDetailsPreserveBillingGroupIdentity(t *testing.T) {
 	_, paths, _, _, err := writer.Finish()
 	require.NoError(t, err)
 	records := readEstimateCsv(t, paths[0])
-	header := map[string]int{}
-	for i, name := range records[0] {
-		header[name] = i
-	}
-	require.Contains(t, header, "Billing group")
-	require.Contains(t, header, "Group ratio source")
-	seen := map[string]string{}
+	assert.NotContains(t, records[0], "Billing group")
+	assert.NotContains(t, records[0], "Channel ID")
 	for _, record := range records[1:] {
-		seen[record[header["Billing group"]]] = record[header["Group ratio source"]]
+		cells := reconciliationTestCells(t, customerStatementDetailColumns, record)
+		assert.Equal(t, "0.5", cells["group_ratio"])
 	}
-	assert.Equal(t, map[string]string{"historical-a": "Group", "'=historical-b": "Customer-specific group factor"}, seen)
 }

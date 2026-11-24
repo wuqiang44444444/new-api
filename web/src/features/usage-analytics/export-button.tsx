@@ -8,6 +8,13 @@ import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
 import { Field, FieldLabel } from '@/components/ui/field'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   downloadExportFile,
   requestExportDownload,
 } from '@/features/billing-reconciliation/export-api'
@@ -72,6 +79,9 @@ function UsageExportScope(props: UsageExportButtonProps) {
   const formTitleId = useId()
   const [open, setOpen] = useState(false)
   const [modelName, setModelName] = useState(props.body.model_name ?? '')
+  const [grain, setGrain] = useState<'daily' | 'period'>(
+    props.body.grain ?? 'daily'
+  )
   const [focusedJobId, setFocusedJobId] = useState<string>()
   const personalUsage = props.body.view === 'self'
   const adminCustomerUsage =
@@ -104,7 +114,7 @@ function UsageExportScope(props: UsageExportButtonProps) {
     mutationFn: async () => {
       const body = {
         ...props.body,
-        language: i18n.language.startsWith('zh') ? 'zh' : 'en',
+        ...(grain === 'period' ? { grain } : {}),
         model_name: customerScope && modelName ? modelName : undefined,
       }
       const response = personalUsage
@@ -206,6 +216,30 @@ function UsageExportScope(props: UsageExportButtonProps) {
               {t('Search customer')}: {props.body.search}
             </p>
           )}
+          <Field>
+            <FieldLabel htmlFor={`${formTitleId}-grain`}>
+              {t('Export content')}
+            </FieldLabel>
+            <Select
+              value={grain}
+              onValueChange={(value) => {
+                if (value) setGrain(value)
+              }}
+              items={[
+                { value: 'daily', label: t('Daily breakdown') },
+                { value: 'period', label: t('Period total') },
+              ]}
+              disabled={!props.ready || mutation.isPending}
+            >
+              <SelectTrigger id={`${formTitleId}-grain`} className='w-full'>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='daily'>{t('Daily breakdown')}</SelectItem>
+                <SelectItem value='period'>{t('Period total')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
           {customerScope && (
             <Field>
               <FieldLabel htmlFor='usage-export-model'>

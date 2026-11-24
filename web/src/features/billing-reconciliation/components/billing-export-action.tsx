@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { Download01Icon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -51,16 +51,60 @@ export function BillingExportAction(props: {
   )
 
   return (
+    <BillingExportDrawer
+      open={open}
+      upstreamBilling={props.upstreamBilling}
+      focusedJobId={job.focusedJobId}
+      className={props.className}
+      onOpenChange={(next) => {
+        job.clearFocus()
+        setOpen(next)
+      }}
+    >
+      <BillingExportSection
+        title={t('{{month}} {{statement}}', {
+          month,
+          statement: props.statement,
+        })}
+        actionLabel={job.isPending ? t('Loading...') : t('Export CSV')}
+        disabled={!props.available || job.isPending}
+        notice={
+          props.available
+            ? props.notice
+            : props.unavailableNotice ||
+              t('The current statement is unavailable.')
+        }
+        onSubmit={() => job.mutate()}
+      >
+        <ul className='space-y-1 text-sm wrap-anywhere'>
+          {[...new Set(props.scope.filter(Boolean))].map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+        <p className='text-muted-foreground text-sm'>{props.description}</p>
+      </BillingExportSection>
+    </BillingExportDrawer>
+  )
+}
+
+export function BillingExportDrawer(props: {
+  children: ReactNode
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  focusedJobId?: string
+  upstreamBilling?: boolean
+  className?: string
+}) {
+  const { t } = useTranslation()
+
+  return (
     <>
       <Button
         variant='outline'
         size='sm'
         className={props.className}
         aria-haspopup='dialog'
-        onClick={() => {
-          job.clearFocus()
-          setOpen(true)
-        }}
+        onClick={() => props.onOpenChange(true)}
       >
         <HugeiconsIcon
           icon={Download01Icon}
@@ -70,37 +114,13 @@ export function BillingExportAction(props: {
         {t('Export and download')}
       </Button>
       <ExportJobsDrawer
-        open={open}
+        open={props.open}
         upstreamBilling={props.upstreamBilling}
         billingStatement={!props.upstreamBilling}
-        focusedJobId={job.focusedJobId}
-        onOpenChange={(next) => {
-          setOpen(next)
-          if (!next) job.clearFocus()
-        }}
+        focusedJobId={props.focusedJobId}
+        onOpenChange={props.onOpenChange}
       >
-        <BillingExportSection
-          title={t('{{month}} {{statement}}', {
-            month,
-            statement: props.statement,
-          })}
-          actionLabel={job.isPending ? t('Loading...') : t('Export CSV')}
-          disabled={!props.available || job.isPending}
-          notice={
-            props.available
-              ? props.notice
-              : props.unavailableNotice ||
-                t('The current statement is unavailable.')
-          }
-          onSubmit={() => job.mutate()}
-        >
-          <ul className='space-y-1 text-sm wrap-anywhere'>
-            {[...new Set(props.scope.filter(Boolean))].map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-          <p className='text-muted-foreground text-sm'>{props.description}</p>
-        </BillingExportSection>
+        {props.children}
       </ExportJobsDrawer>
     </>
   )

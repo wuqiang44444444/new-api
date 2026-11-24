@@ -2,6 +2,8 @@ package model
 
 import (
 	"context"
+	"slices"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 )
@@ -66,15 +68,16 @@ func selectUsageReportDays(ctx context.Context, period UsageAnalyticsPeriod, ref
 }
 
 func FreezeUsageReportExport(ctx context.Context, period UsageAnalyticsPeriod, refs []UsageReportDayReference) (PublishedUsageReport, error) {
-	_, current, err := selectUsageReportDays(ctx, period, nil)
+	heads, current, err := selectUsageReportDays(ctx, period, nil)
 	if err != nil {
 		return current, err
 	}
 	if len(refs) != 0 {
-		frozen, err := FreezeUsageReportReferences(ctx, period, refs)
+		selectedHeads, selected, err := selectUsageReportDays(ctx, period, refs)
 		if err != nil {
 			return current, err
 		}
+		frozen := selected.References
 		// If a date was published after the page loaded, refresh the snapshot
 		// before accepting an export that would silently omit it.
 		if len(frozen) != len(current.References) {
@@ -85,10 +88,19 @@ func FreezeUsageReportExport(ctx context.Context, period UsageAnalyticsPeriod, r
 				return current, common.NewMessage("Usage report version is unavailable")
 			}
 		}
+		current.IncompleteDays = append(current.IncompleteDays, selected.IncompleteDays...)
 		current.References = frozen
+		heads = selectedHeads
 	}
 	if len(current.References) == 0 {
 		return current, common.NewMessage("Usage report has not been published")
 	}
+	for _, head := range heads {
+		if head.AsOf < head.Start+billingReportDaySeconds+dailyReportCloseDelay {
+			current.IncompleteDays = append(current.IncompleteDays, time.Unix(head.Start, 0).In(UsageAnalyticsZone()).Format(time.DateOnly))
+		}
+	}
+	slices.Sort(current.IncompleteDays)
+	current.IncompleteDays = slices.Compact(current.IncompleteDays)
 	return current, nil
 }

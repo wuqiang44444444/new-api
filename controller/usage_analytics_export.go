@@ -13,6 +13,7 @@ type usageAnalyticsExportBody struct {
 	SourceJobID string                          `json:"source_job_id"`
 	Period      string                          `json:"period"`
 	Date        string                          `json:"date"`
+	Grain       string                          `json:"grain"`
 	View        string                          `json:"view"`
 	UserId      *int                            `json:"user_id"`
 	TokenId     *int                            `json:"token_id"`
@@ -41,6 +42,7 @@ func CreateUsageSelfExport(c *gin.Context) {
 	}
 	job, err := service.SubmitUsageAnalyticsExport(c.GetInt("id"), service.UsageAnalyticsExportRequest{
 		Period:    body.Period,
+		Grain:     body.Grain,
 		Date:      body.Date,
 		View:      "self",
 		UserId:    body.UserId,
@@ -77,6 +79,7 @@ func CreateUsageAdminExport(c *gin.Context) {
 	}
 	job, err := service.SubmitUsageAnalyticsExport(c.GetInt("id"), service.UsageAnalyticsExportRequest{
 		Period:    body.Period,
+		Grain:     body.Grain,
 		Date:      body.Date,
 		View:      body.View,
 		UserId:    body.UserId,

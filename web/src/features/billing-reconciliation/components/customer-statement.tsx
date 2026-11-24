@@ -43,10 +43,20 @@ import { toast } from 'sonner'
 
 import { ErrorState } from '@/components/error-state'
 import { ReportCard, ReportMetricCard } from '@/components/report-card'
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, FieldLabel } from '@/components/ui/field'
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import {
   Select,
   SelectContent,
@@ -72,10 +82,13 @@ import {
   createAdminExport,
   createSelfExport,
   downloadExportFile,
+  getCustomerStatementDetailExportDays,
+  type CustomerExportSubmitPayload,
 } from '../export-api'
 import { ExportJobsDrawer } from '../export-jobs-drawer'
 import {
   billingModeLabel,
+  formatBillingDate,
   formatBillingMonth,
   formatCustomerStatementQuota as formatCurrentBalance,
   formatInteger,
@@ -160,7 +173,9 @@ function CustomerStatementBody(props: CustomerStatementProps) {
   const [exportDrawerOpen, setExportDrawerOpen] = useState(false)
   const [exportType, setExportType] = useState<
     'statement_summary' | 'statement_details' | 'usage_logs'
-  >('statement_summary')
+  >('statement_details')
+  const [selectedDate, setSelectedDate] = useState<string>()
+  const billingDateId = useId()
   const [previewVersionId, setPreviewVersionId] = useState<string | null>(null)
   const [linesDrawerOpen, setLinesDrawerOpen] = useState(false)
   const [linesFilter, setLinesFilter] = useState<
@@ -174,24 +189,8 @@ function CustomerStatementBody(props: CustomerStatementProps) {
   >(undefined)
   const selectedUserId = props.userId
 
-  // 服务端复用相同数据的已有账单，管理员始终绑定所选客户。
-  const exportPayload = (
-    jobType: 'statement_details' | 'statement_summary' | 'usage_logs'
-  ) => ({
-    job_type: jobType,
-    start_timestamp: props.period.start_timestamp,
-    end_timestamp: props.period.end_timestamp + 1,
-    ...(jobType !== 'usage_logs' && report
-      ? { report_version: report.version }
-      : {}),
-  })
-  const submitExport = () => {
-    const payload = exportPayload(exportType)
-    if (!props.isAdmin) return createSelfExport(payload)
-    if (selectedUserId == null) throw new Error(t('Select customer'))
-    return createAdminExport(selectedUserId, payload)
-  }
-  const statementExport = useBillingExportJob(submitExport)
+  const scopeStart = props.period.start_timestamp
+  const scopeEnd = props.period.end_timestamp
   const statementQueryKey = [
     'billing-customer-reconciliation',
     props.isAdmin,
@@ -241,6 +240,49 @@ function CustomerStatementBody(props: CustomerStatementProps) {
   )
   const groups = statement?.groups ?? []
   const boundVersion = statementQuery.data?.billing_version ?? null
+  const statementVersion = boundVersion?.draft_public_id
+  const reportVersion = statementVersion ? undefined : report?.version
+  const detailVersion = statementVersion ?? reportVersion ?? ''
+  const detailsExport = exportType === 'statement_details'
+  const detailDates = useQuery({
+    queryKey: [
+      'customer-statement-detail-export-days',
+      props.isAdmin,
+      selectedUserId,
+      scopeStart,
+      scopeEnd,
+      statementVersion,
+      reportVersion,
+    ],
+    enabled:
+      exportDrawerOpen &&
+      detailsExport &&
+      !!detailVersion &&
+      (!props.isAdmin || selectedUserId != null),
+    queryFn: ({ signal }) =>
+      getCustomerStatementDetailExportDays(
+        {
+          start_timestamp: scopeStart,
+          end_timestamp: scopeEnd,
+          statement_version: statementVersion,
+          report_version: reportVersion,
+          user_id: props.isAdmin ? selectedUserId : undefined,
+        },
+        signal
+      ),
+    retry: false,
+  })
+  const days = detailDates.data ?? []
+  const selectedDay = selectedDate
+    ? days.find((day) => day.date === selectedDate)
+    : days[0]
+  const statementExport = useBillingExportJob(
+    (request: CustomerExportSubmitPayload) => {
+      if (!props.isAdmin) return createSelfExport(request)
+      if (selectedUserId == null) throw new Error(t('Select customer'))
+      return createAdminExport(selectedUserId, request)
+    }
+  )
   const formatCustomerStatementQuota = (value: number | null | undefined) =>
     formatVersionQuota(value, boundVersion)
   const versionBound = boundVersion != null
@@ -248,10 +290,10 @@ function CustomerStatementBody(props: CustomerStatementProps) {
     props.reportVersion && !previewVersionId && !versionBound
   )
   const versionDownload = useMutation({
-    mutationFn: async (input: { draftPublicId: string; role?: string }) => {
+    mutationFn: async (draftPublicId: string) => {
       const response = props.isAdmin
-        ? await getAdminVersionDownload(input.draftPublicId, input.role)
-        : await getSelfVersionDownload(input.draftPublicId, input.role)
+        ? await getAdminVersionDownload(draftPublicId)
+        : await getSelfVersionDownload(draftPublicId)
       if (!response.success || !response.data) {
         throw new Error(response.message || t('Download is not ready.'))
       }
@@ -261,22 +303,37 @@ function CustomerStatementBody(props: CustomerStatementProps) {
     onError: (error: Error) => toast.error(error.message),
   })
 
-  const downloadBoundVersion = versionBound && exportType !== 'usage_logs'
+  const downloadBoundVersion =
+    versionBound && exportType === 'statement_summary'
   const exportBusy = statementExport.isPending || versionDownload.isPending
   const statementUnavailable = statementQuery.isError || !statement
-  const exportDisabled =
+  const exportContentDisabled =
     statementQuery.isFetching || statementUnavailable || exportBusy
+  const exportDisabled =
+    exportContentDisabled ||
+    (detailsExport &&
+      (!selectedDay || detailDates.isFetching || detailDates.isError))
   const handleStatementExport = () => {
     if (exportDisabled) return
-    if (boundVersion && exportType !== 'usage_logs') {
-      versionDownload.mutate({
-        draftPublicId: boundVersion.draft_public_id,
-        role: exportType === 'statement_details' ? 'detail_csv' : undefined,
-      })
-    } else {
-      statementExport.mutate()
+    if (boundVersion && downloadBoundVersion) {
+      versionDownload.mutate(boundVersion.draft_public_id)
+      return
     }
+    statementExport.mutate({
+      job_type: exportType,
+      start_timestamp:
+        detailsExport && selectedDay ? selectedDay.start_timestamp : scopeStart,
+      end_timestamp:
+        detailsExport && selectedDay ? selectedDay.end_timestamp : scopeEnd + 1,
+      ...(exportType !== 'usage_logs' && reportVersion
+        ? { report_version: reportVersion }
+        : {}),
+      ...(detailsExport && { confirm_existing: true }),
+      ...(detailsExport &&
+        statementVersion && { statement_version: statementVersion }),
+    })
   }
+  const existingExport = statementExport.confirmation
   const exportOptions = [
     { value: 'statement_summary', label: t('Statement summary') },
     { value: 'statement_details', label: t('Statement details') },
@@ -286,9 +343,7 @@ function CustomerStatementBody(props: CustomerStatementProps) {
   ] as const
   const exportHelp = {
     statement_summary: t('Totals grouped by API Key, model, and billing mode.'),
-    statement_details: t(
-      'Per-call billing records: time, request ID, usage, amounts and discount factors. Charges and refunds are separate rows; refunds have negative net amounts.'
-    ),
+    statement_details: undefined,
     usage_logs: t('Export usage records for the selected billing month.'),
   }
   const exportContent = (
@@ -297,7 +352,7 @@ function CustomerStatementBody(props: CustomerStatementProps) {
       <Select
         items={exportOptions}
         value={exportType}
-        disabled={exportDisabled}
+        disabled={exportContentDisabled}
         onValueChange={(value) => {
           if (value) setExportType(value)
         }}
@@ -319,9 +374,11 @@ function CustomerStatementBody(props: CustomerStatementProps) {
           </SelectGroup>
         </SelectContent>
       </Select>
-      <p className='text-muted-foreground text-sm' aria-live='polite'>
-        {exportHelp[exportType]}
-      </p>
+      {exportHelp[exportType] && (
+        <p className='text-muted-foreground text-sm' aria-live='polite'>
+          {exportHelp[exportType]}
+        </p>
+      )}
     </Field>
   )
   let exportLabel = downloadBoundVersion ? t('Download CSV') : t('Export CSV')
@@ -331,7 +388,7 @@ function CustomerStatementBody(props: CustomerStatementProps) {
     exportNotice = t('Loading statement...')
   } else if (statementUnavailable) {
     exportNotice = t('The current statement is unavailable.')
-  } else if (!downloadBoundVersion && exportType !== 'usage_logs') {
+  } else if (!downloadBoundVersion && exportType === 'statement_summary') {
     exportNotice = t(
       'A matching export is reused when its file is still available.'
     )
@@ -367,8 +424,10 @@ function CustomerStatementBody(props: CustomerStatementProps) {
         size={props.isAdmin ? 'sm' : 'default'}
         aria-haspopup='dialog'
         onClick={() => {
-          setExportType('statement_summary')
+          setExportType('statement_details')
+          setSelectedDate(undefined)
           statementExport.clearFocus()
+          statementExport.dismissConfirmation()
           setExportDrawerOpen(true)
         }}
       >
@@ -860,7 +919,10 @@ function CustomerStatementBody(props: CustomerStatementProps) {
         open={exportDrawerOpen}
         onOpenChange={(open) => {
           setExportDrawerOpen(open)
-          if (!open) statementExport.clearFocus()
+          if (!open) {
+            statementExport.clearFocus()
+            statementExport.dismissConfirmation()
+          }
         }}
         billingStatement
         showCustomer={props.isAdmin}
@@ -893,7 +955,134 @@ function CustomerStatementBody(props: CustomerStatementProps) {
             </p>
           )}
           {exportContent}
+          {detailsExport && (
+            <Field>
+              <FieldLabel htmlFor={billingDateId}>
+                {t('Billing date')}
+              </FieldLabel>
+              <NativeSelect
+                id={billingDateId}
+                className='w-full'
+                value={selectedDay?.date ?? ''}
+                disabled={
+                  exportContentDisabled ||
+                  days.length === 0 ||
+                  detailDates.isFetching ||
+                  detailDates.isError
+                }
+                onChange={(event) => setSelectedDate(event.target.value)}
+              >
+                {!selectedDay && (
+                  <NativeSelectOption value='' disabled>
+                    {detailDates.isFetching
+                      ? t('Loading...')
+                      : t('Select a billing date')}
+                  </NativeSelectOption>
+                )}
+                {days.map((day) => (
+                  <NativeSelectOption key={day.date} value={day.date}>
+                    {formatBillingDate(
+                      day.start_timestamp,
+                      toIntlLocale(i18n.language)
+                    )}
+                    {day.incomplete ? ` · ${t('Partial data')}` : ''}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
+              {detailDates.isError && (
+                <div
+                  className='flex flex-wrap items-center gap-2 text-sm'
+                  role='alert'
+                >
+                  {t('Unable to load billing dates.')}
+                  <Button
+                    variant='outline'
+                    size='xs'
+                    onClick={() => void detailDates.refetch()}
+                  >
+                    {t('Retry')}
+                  </Button>
+                </div>
+              )}
+              {!detailDates.isError &&
+                !detailDates.isFetching &&
+                !selectedDay &&
+                !statementUnavailable &&
+                !statementQuery.isFetching && (
+                  <p className='text-muted-foreground text-sm' role='status'>
+                    {days.length
+                      ? t('The selected billing date is unavailable.')
+                      : t('No records to export.')}
+                  </p>
+                )}
+            </Field>
+          )}
         </BillingExportSection>
+        <AlertDialog
+          open={exportDrawerOpen && !!existingExport}
+          onOpenChange={(open) => {
+            if (!open && !statementExport.downloadingExisting) {
+              statementExport.dismissConfirmation()
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {t('An export is already available')}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {t('Download the existing export or generate a new one.')}
+                {existingExport?.job.artifact && (
+                  <span className='mt-1 block'>
+                    {t('{{rows}} exported rows · {{parts}} CSV files', {
+                      rows: formatInteger(
+                        existingExport.job.artifact.line_count
+                      ),
+                      parts: formatInteger(
+                        existingExport.job.artifact.files.length
+                      ),
+                    })}
+                  </span>
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter className='sm:flex-wrap'>
+              <AlertDialogCancel disabled={statementExport.downloadingExisting}>
+                {t('Cancel')}
+              </AlertDialogCancel>
+              <Button
+                variant='outline'
+                disabled={
+                  !existingExport || statementExport.downloadingExisting
+                }
+                onClick={() => {
+                  if (!existingExport) return
+                  statementExport.dismissConfirmation()
+                  statementExport.mutate({
+                    ...existingExport.input,
+                    confirm_existing: undefined,
+                    force_new: true,
+                  })
+                }}
+              >
+                {t('Generate new export')}
+              </Button>
+              <Button
+                disabled={
+                  !existingExport || statementExport.downloadingExisting
+                }
+                onClick={() => {
+                  if (existingExport) {
+                    statementExport.downloadExisting(existingExport.job)
+                  }
+                }}
+              >
+                {t('Download existing export')}
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </ExportJobsDrawer>
       <VersionLinesDrawer
         key={JSON.stringify([boundVersion?.draft_public_id, linesFilter])}

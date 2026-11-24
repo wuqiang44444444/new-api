@@ -1,4 +1,7 @@
-import type { CustomerExportJobView } from '@/features/billing-reconciliation/export-api'
+import {
+  billingExportLanguage,
+  type CustomerExportJobView,
+} from '@/features/billing-reconciliation/export-api'
 import { api } from '@/lib/api'
 
 import type {
@@ -171,6 +174,7 @@ function annotateUnpublishedDays(report: UsageAnalyticsEnvelope<unknown>) {
 }
 
 export interface UsageExportBody extends UsagePeriodParam, UpstreamUsageScope {
+  grain?: 'daily' | 'period'
   report_days?: UsageReportDayReference[]
   view?: 'self' | 'customer' | 'customers' | 'upstream'
   search?: string
@@ -183,7 +187,7 @@ export interface UsageExportBody extends UsagePeriodParam, UpstreamUsageScope {
 export async function createUsageSelfExport(body: UsageExportBody) {
   const response = await api.post<ApiResponse<CustomerExportJobView>>(
     '/api/usage/self/exports',
-    body
+    { ...body, language: billingExportLanguage }
   )
   if (!response.data.success || !response.data.data) {
     throw new Error(
@@ -198,7 +202,7 @@ export async function createUsageSelfExport(body: UsageExportBody) {
 export async function createUsageAdminExport(body: UsageExportBody) {
   const response = await api.post<ApiResponse<CustomerExportJobView>>(
     '/api/usage/admin/exports',
-    body
+    { ...body, language: billingExportLanguage }
   )
   if (!response.data.success || !response.data.data) {
     throw new Error(

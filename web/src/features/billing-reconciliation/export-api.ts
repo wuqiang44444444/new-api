@@ -1,7 +1,6 @@
 import { isAxiosError } from 'axios'
 
 import i18n from '@/i18n/config'
-import { toIntlLocale } from '@/i18n/languages'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -45,7 +44,16 @@ export type ExportJobStatus =
   | 'cancelling'
 
 export type CustomerExportFiltersDto = {
+  billing_date?: string
+  billing_report_coverage?: {
+    incomplete_days: number
+    published_days?: number
+    expected_days?: number
+    estimated_at?: number
+  }
   billing_report_version?: string
+  statement_draft_id?: string
+  usage_export_grain?: 'period'
   usage_view?: string
   usage_url_key?: string
   usage_search?: string
@@ -84,6 +92,7 @@ export type CustomerExportArtifactFileDto = {
 
 export type CustomerExportArtifactDto = {
   files: CustomerExportArtifactFileDto[]
+  request_net_amount?: string
   missing_report_dates?: string[]
   line_count: number
   size_bytes: number
@@ -92,6 +101,7 @@ export type CustomerExportArtifactDto = {
 }
 
 export type CustomerExportJobView = {
+  confirm_existing?: boolean
   job_id: string
   user_id: number
   target_user_id: number
@@ -122,8 +132,11 @@ export type CustomerExportJobView = {
 }
 
 export type CustomerExportSubmitPayload = {
+  confirm_existing?: boolean
+  force_new?: boolean
   all_channels?: boolean
   report_version?: string
+  statement_version?: string
   url_key?: string
   evidence_filter?: string
   job_type: ExportJobType
@@ -141,6 +154,22 @@ export type CustomerExportSubmitPayload = {
   provider_model_fallback?: boolean
   billing_mode?: string
   language?: string
+}
+
+export function hasExportCoverageFile(job: CustomerExportJobView) {
+  if (
+    job.job_type !== 'statement_details' &&
+    job.job_type !== 'upstream_details'
+  ) {
+    return false
+  }
+  const coverage = job.filters.billing_report_coverage
+  return Boolean(
+    coverage &&
+    ((coverage.published_days ?? 0) < (coverage.expected_days ?? 0) ||
+      coverage.incomplete_days ||
+      coverage.estimated_at)
+  )
 }
 
 export type CustomerExportDownloadFile = {
@@ -163,22 +192,88 @@ type ExportEnvelope = ApiResponse<{
   generated_at?: number
 }>
 
-export function currentExportLanguage(): string {
-  const language = toIntlLocale(i18n.language) ?? 'en'
-  const supported = new Set(['en', 'zh', 'zh-TW', 'fr', 'ru', 'ja', 'vi'])
-  if (supported.has(language)) return language
-  const base = language.split(/[-_]/)[0]
-  if (base === 'zh') {
-    const region = language.split(/[-_]/)[1]?.toLowerCase()
-    return region === 'tw' ||
-      region === 'hk' ||
-      region === 'mo' ||
-      region === 'hant'
-      ? 'zh-TW'
-      : 'zh'
-  }
-  return supported.has(base) ? base : 'en'
+export type CustomerStatementExportDay = {
+  date: string
+  status:
+    | 'complete'
+    | 'incomplete'
+    | 'empty'
+    | 'unpublished'
+    | 'in_progress'
+    | 'rebuilding'
+    | 'source_unavailable'
+  report_version?: string
 }
+
+type CustomerStatementsExportScope = (
+  | {
+      start_timestamp: number
+      end_timestamp: number
+      billing_date?: never
+      expected_incomplete?: never
+    }
+  | {
+      billing_date: string
+      expected_incomplete: boolean
+      start_timestamp?: never
+      end_timestamp?: never
+    }
+) & { report_version: string; language?: string }
+
+export async function getCustomerStatementExportDays(
+  period: { start_timestamp: number; end_timestamp: number },
+  signal: AbortSignal
+) {
+  const response = await api.get<
+    ApiResponse<{ days: CustomerStatementExportDay[]; default_date?: string }>
+  >('/api/billing/admin/customer-statement-export-days', {
+    params: period,
+    signal,
+    skipErrorHandler: true,
+    skipBusinessError: true,
+  })
+  if (!response.data.success || !response.data.data) {
+    throw new Error(response.data.message)
+  }
+  return response.data.data
+}
+
+export async function getCustomerStatementDetailExportDays(
+  params: {
+    start_timestamp: number
+    end_timestamp: number
+    report_version?: string
+    statement_version?: string
+    user_id?: number
+  },
+  signal: AbortSignal
+) {
+  const endpoint =
+    params.user_id == null
+      ? '/api/billing/statement/self/detail-export-days'
+      : '/api/billing/admin/customer-detail-export-days'
+  const response = await api.get<
+    ApiResponse<{
+      days: {
+        date: string
+        start_timestamp: number
+        end_timestamp: number
+        incomplete?: boolean
+      }[]
+    }>
+  >(endpoint, {
+    params,
+    signal,
+    skipErrorHandler: true,
+    skipBusinessError: true,
+  })
+  if (!response.data.success || !response.data.data) {
+    throw new Error(response.data.message)
+  }
+  return response.data.data.days
+}
+
+export const billingExportLanguage = 'zh'
 
 function assertOk(data: ExportEnvelope) {
   if (!data.success || !data.data) {
@@ -190,7 +285,7 @@ function assertOk(data: ExportEnvelope) {
 export async function createSelfExport(payload: CustomerExportSubmitPayload) {
   const response = await api.post<ExportEnvelope>('/api/billing/exports', {
     ...payload,
-    language: currentExportLanguage(),
+    language: billingExportLanguage,
   })
   return assertOk(response.data) as unknown as CustomerExportJobView
 }
@@ -201,7 +296,7 @@ export async function createAdminExport(
 ) {
   const response = await api.post<ExportEnvelope>(
     '/api/billing/admin/customer-exports',
-    { ...payload, language: currentExportLanguage() },
+    { ...payload, language: billingExportLanguage },
     {
       params:
         typeof userId === 'number' ? { user_id: userId } : { username: userId },
@@ -210,18 +305,13 @@ export async function createAdminExport(
   return assertOk(response.data) as unknown as CustomerExportJobView
 }
 
-export async function createCustomerStatementsExport(payload: {
-  start_timestamp: number
-  end_timestamp: number
-  report_version: string
-  language?: string
-}) {
+export async function createCustomerStatementsExport(
+  payload: CustomerStatementsExportScope
+) {
   return submitBillingExport('/api/billing/admin/customer-exports', {
     ...payload,
     job_type: 'customer_statements',
-    language: (payload.language ?? currentExportLanguage()).startsWith('zh')
-      ? 'zh'
-      : 'en',
+    language: billingExportLanguage,
   })
 }
 
@@ -229,11 +319,16 @@ export async function createCustomerStatementsExport(payload: {
 // 用户；管理员对历史代客任务继续作用于同一目标客户。
 export async function resubmitExport(job: CustomerExportJobView) {
   if (job.job_type === 'customer_statements') {
+    if (job.filters.billing_date) {
+      return submitBillingExport('/api/billing/admin/customer-exports', {
+        job_type: 'customer_statements',
+        source_job_id: job.job_id,
+      })
+    }
     return createCustomerStatementsExport({
       start_timestamp: job.filters.start_timestamp,
       end_timestamp: job.filters.end_timestamp,
       report_version: job.filters.billing_report_version ?? '',
-      language: job.filters.language,
     })
   }
   if (job.job_type === 'usage_summary') {
@@ -249,7 +344,6 @@ export async function resubmitExport(job: CustomerExportJobView) {
     job_type: job.job_type,
     start_timestamp: job.filters.start_timestamp,
     end_timestamp: job.filters.end_timestamp,
-    language: job.filters.language,
   }
   if (job.filters.log_types?.length) payload.log_types = job.filters.log_types
   if (job.filters.token_id != null) payload.token_id = job.filters.token_id
@@ -259,6 +353,16 @@ export async function resubmitExport(job: CustomerExportJobView) {
   payload.token_name = job.filters.token_name
   payload.group = job.filters.group
   payload.request_id = job.filters.request_id
+  if (
+    job.job_type === 'statement_details' ||
+    job.job_type === 'statement_summary'
+  ) {
+    if (job.filters.statement_draft_id) {
+      payload.statement_version = job.filters.statement_draft_id
+    } else if (job.filters.billing_report_version) {
+      payload.report_version = job.filters.billing_report_version
+    }
+  }
   payload.upstream_request_id = job.filters.upstream_request_id
   payload.username = job.filters.username
   if (job.filters.model_name) payload.model_name = job.filters.model_name
@@ -304,10 +408,18 @@ export async function cancelExport(jobId: string) {
   return assertOk(response.data) as unknown as CustomerExportJobView
 }
 
-export async function requestExportDownload(jobId: string) {
-  const response = await api.get<ExportEnvelope>(
-    `/api/billing/exports/${encodeURIComponent(jobId)}/download`
-  )
+export async function requestExportDownload(
+  jobId: string,
+  verifyExisting = false
+) {
+  const url = `/api/billing/exports/${encodeURIComponent(jobId)}/download`
+  const response = verifyExisting
+    ? await api.get<ExportEnvelope>(url, {
+        params: { verify_existing: true },
+        skipErrorHandler: true,
+        skipBusinessError: true,
+      })
+    : await api.get<ExportEnvelope>(url)
   const data = assertOk(response.data)
   return {
     files: data.files ?? [],
@@ -363,9 +475,7 @@ export async function createUpstreamExport(
 ) {
   return submitBillingExport('/api/billing/admin/upstream-exports', {
     ...payload,
-    language: (payload.language ?? currentExportLanguage()).startsWith('zh')
-      ? 'zh'
-      : 'en',
+    language: billingExportLanguage,
   })
 }
 
@@ -373,7 +483,10 @@ export async function createUpstreamExport(
 // so new submissions and regeneration preserve the server's specific reason.
 async function submitBillingExport(
   path: string,
-  payload?: CustomerExportSubmitPayload | { source_job_id: string }
+  payload?:
+    | CustomerExportSubmitPayload
+    | (CustomerStatementsExportScope & { job_type: 'customer_statements' })
+    | { source_job_id: string; job_type?: 'customer_statements' }
 ) {
   try {
     const response = await api.post<ExportEnvelope>(path, payload, {

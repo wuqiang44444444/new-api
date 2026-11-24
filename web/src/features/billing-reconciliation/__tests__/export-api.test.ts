@@ -99,12 +99,42 @@ it('regenerates the same customer and full scope including explicit key zero', a
   )
 })
 
+it('regenerates an all-customer daily CSV from the original job', async () => {
+  await resubmitExport({
+    job_id: 'daily-job',
+    user_id: 1,
+    target_user_id: 0,
+    job_type: 'customer_statements',
+    status: 'expired',
+    filters: {
+      billing_date: '2026-11-22',
+      billing_report_version: 'pinned-generation',
+      field_version: 26,
+      start_timestamp: 1795276800,
+      end_timestamp: 1795363200,
+      timezone: 'Asia/Shanghai',
+      language: 'zh',
+    },
+    progress: { scanned: 0, matched: 0, written: 0, files: 0 },
+    cancel_requested: false,
+    created_at: 1795363200,
+  })
+  expect(post).toHaveBeenLastCalledWith(
+    '/api/billing/admin/customer-exports',
+    {
+      job_type: 'customer_statements',
+      source_job_id: 'daily-job',
+    },
+    { skipErrorHandler: true, skipBusinessError: true }
+  )
+})
+
 it.each([
   ['zhCN', 'zh'],
-  ['zhTW', 'zh-TW'],
-  ['en', 'en'],
+  ['zhTW', 'zh'],
+  ['en', 'zh'],
 ])(
-  'uses %s consistently in exports and frozen versions',
+  'uses Chinese for exports and frozen versions with the %s interface',
   async (language, expected) => {
     const previous = i18n.language
     await i18n.changeLanguage(language)

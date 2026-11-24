@@ -56,6 +56,9 @@ func accumulateUpstreamCacheQuality(target **BillingReconciliationDataQuality, p
 // Creation holds are estimates, and ordinary customer refunds are not usage.
 // Missing or ambiguous meter evidence remains unknown; no price back-solving.
 func upstreamBillingSeconds(log billingReconciliationLog, parsed parsedBillingReconciliationLog) (*decimal.Decimal, bool, bool) {
+	if parsed.frozenBillableSeconds != nil || parsed.frozenSecondsMissing != nil {
+		return parsed.frozenBillableSeconds, parsed.frozenSecondsMissing != nil && *parsed.frozenSecondsMissing, true
+	}
 	if parsed.billingMode != BillingReconciliationModePerSecond || (log.Type == LogTypeRefund && !isProviderTaskUsageAdjustment(log)) {
 		return nil, false, false
 	}
@@ -89,16 +92,8 @@ func upstreamBillingSeconds(log billingReconciliationLog, parsed parsedBillingRe
 	}
 	var facts map[string]json.RawMessage
 	factsKnown := common.Unmarshal(other["usage_facts"], &facts) == nil
-	var meter string
-	for key, unit := range units {
-		if unit == "second" {
-			if meter != "" {
-				return nil, true, false
-			}
-			meter = key
-		}
-	}
-	if meter == "" {
+	meters := frozenSecondMeters(customerExportFacts{other: other, snapshot: snapshot}, units)
+	if len(meters) != 1 {
 		return nil, true, false
 	}
 	// The frozen unit names the meter even when the measured value itself was
@@ -106,7 +101,7 @@ func upstreamBillingSeconds(log billingReconciliationLog, parsed parsedBillingRe
 	if !factsKnown {
 		return nil, true, true
 	}
-	value, ok := billingReconciliationFloat(facts[meter])
+	value, ok := billingReconciliationFloat(facts[meters[0]])
 	if !ok || value < 0 {
 		return nil, true, true
 	}

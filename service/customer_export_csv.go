@@ -7,7 +7,6 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
-	"github.com/shopspring/decimal"
 	"io"
 	"os"
 	"strconv"
@@ -25,26 +24,12 @@ import (
 // statement details use a localized projection over those same safe values.
 
 const (
-	customerExportFieldVersion          = 25
-	customerStatementExportFieldVersion = 25
+	customerExportFieldVersion          = 28
+	customerStatementExportFieldVersion = 28
 	customerExportCsvBOM                = "\xEF\xBB\xBF"
 	// Plan-suggested starting cap for one CSV shard (100 MiB).
 	customerExportCsvShardBytes = 100 << 20
 )
-
-var customerExportCsvHeader = []string{
-	"field_version", "job_id", "export_type", "generated_at", "period_start", "period_end", "timezone",
-	"customer_id", "customer_username", "request_id", "event_type", "record_time", "token_id", "token_name",
-	"customer_model", "billing_mode", "counts_toward_customer_bill", "input_tokens", "output_tokens",
-	"cache_read_tokens", "cache_write_tokens", "request_count", "pricing_rule",
-	"group_name", "group_ratio", "group_ratio_source", "contract_applicable", "contract_name",
-	"contract_version", "contract_ratio", "final_ratio", "quota", "original_quota",
-	"original_price_exact", "has_auxiliary_charge", "quality_status",
-	"currency", "quota_per_unit", "currency_rate", "net_amount", "original_amount", "discount_amount", "input_tokens_quality",
-	"matched_tier", "billing_line_items_usd", "billing_explanation_status", "price_conversion_basis", "amount_unavailable_reasons",
-	"original_source", "derived_output_image_tokens", "contract_expected_amount", "contract_actual_amount", "contract_settlement_delta",
-	"billable_image_count",
-}
 
 type customerExportScopeColumns struct {
 	Language       string
@@ -66,7 +51,6 @@ type customerExportScopeColumns struct {
 type customerExportCsvWriter struct {
 	header            []string
 	statementLanguage *string
-	reportCoverage    []string
 	dir               string
 	prefix            string
 	maxShardBytes     int64
@@ -89,7 +73,6 @@ func newCustomerExportCsvWriter(dir string, prefix string, maxShardBytes int64) 
 		return nil, err
 	}
 	return &customerExportCsvWriter{
-		header:        customerExportCsvHeader,
 		dir:           dir,
 		prefix:        prefix,
 		maxShardBytes: maxShardBytes,
@@ -178,90 +161,18 @@ func (w *customerExportCsvWriter) closeShard() error {
 	return nil
 }
 
-func (w *customerExportCsvWriter) setBillingCoverage(filters model.CustomerExportFilters) {
-	header, cells := billingCoverageCSV(filters.BillingReportCoverage, filters.Language)
-	w.header = append(w.header, header...)
-	w.reportCoverage = cells
-}
-
-// AppendRow writes one row and rolls to a new shard at a row boundary when the
-// byte cap is reached.
 func (w *customerExportCsvWriter) AppendRow(row model.CustomerExportRow, scope customerExportScopeColumns) error {
-	if err := w.ensureShard(); err != nil {
-		return err
-	}
-	inputTokens, inputQuality := strconv.FormatInt(row.InputTokens, 10), "known"
-	if row.InputTokensUnavailable {
-		inputTokens, inputQuality = "", "unknown"
-	}
-	record := make([]string, 0, len(customerExportCsvHeader))
-	record = append(record, strconv.Itoa(customerExportFieldVersion))
-	record = append(record, scope.JobID, scope.ExportType, formatExportTimestamp(scope.GeneratedAt),
-		formatExportTimestamp(scope.PeriodStart), formatExportTimestamp(scope.PeriodEnd), scope.Timezone,
-		strconv.Itoa(scope.CustomerId), exportCsvCellGuard(scope.CustomerName))
-	record = append(record,
-		exportCsvCellGuard(row.RequestId),
-		row.EventType,
-		formatExportTimestamp(row.RecordTime),
-		strconv.Itoa(row.TokenId),
-		exportCsvCellGuard(row.TokenName),
-		exportCsvCellGuard(row.CustomerModel),
-		row.BillingMode,
-		exportYesNo(row.CountsTowardBill),
-		inputTokens,
-		strconv.FormatInt(row.OutputTokens, 10),
-		strconv.FormatInt(row.CacheReadTokens, 10),
-		strconv.FormatInt(row.CacheWriteTokens, 10),
-		strconv.FormatInt(row.RequestCount, 10),
-		row.PricingRule,
-		exportCsvCellGuard(row.GroupName),
-		exportRatio(row.GroupRatio),
-		row.GroupRatioSource,
-		row.ContractApplicable,
-		exportCsvCellGuard(row.ContractName),
-		strconv.FormatInt(row.ContractVersion, 10),
-		exportRatio(row.ContractRatio),
-		exportRatio(row.FinalRatio),
-		strconv.FormatInt(row.Quota, 10),
-		row.RecordedOriginal,
-		exportYesNo(row.RecordedOriginal != ""),
-		exportYesNo(row.HasAuxiliaryCharge),
-		row.QualityStatus,
-	)
-	net := row.Quota
-	if row.EventType == "refund" {
-		net = -net
-	}
-	discount := ""
-	if original, err := decimal.NewFromString(row.RecordedOriginal); err == nil {
-		discount = original.Sub(decimal.NewFromInt(net)).String()
-	}
-	record = append(record, scope.Currency, strconv.FormatFloat(scope.QuotaPerUnit, 'f', -1, 64), strconv.FormatFloat(scope.CurrencyRate, 'f', -1, 64),
-		exportCurrencyAmount(strconv.FormatInt(net, 10), scope), exportCurrencyAmount(row.RecordedOriginal, scope), exportCurrencyAmount(discount, scope), inputQuality, exportCsvCellGuard(row.MatchedTier), row.BillingLineItems, row.ExplanationStatus, row.PriceConversionBasis, customerExportEstimateReasons(scope.Language, row.EstimateReasons))
-	derived := ""
-	if row.DerivedOutputImageTokens != nil {
-		derived = strconv.Itoa(*row.DerivedOutputImageTokens)
-	}
-	expected, actual, delta := "", "", ""
-	if settlement := row.ContractSettlement; settlement != nil {
-		expected = exportCurrencyAmount(strconv.FormatInt(settlement.ExpectedQuota, 10), scope)
-		actual = exportCurrencyAmount(strconv.FormatInt(settlement.ActualQuota, 10), scope)
-		delta = exportCurrencyAmount(strconv.FormatInt(settlement.DeltaQuota, 10), scope)
-	}
-	billableImages := ""
-	if row.BillableImageCount != nil {
-		billableImages = strconv.FormatInt(*row.BillableImageCount, 10)
-	}
-	record = append(record, row.OriginalSource, derived, expected, actual, delta, billableImages)
 	if w.statementLanguage != nil {
-		record = customerStatementDetailRecord(*w.statementLanguage, record)
+		return w.AppendRecord(customerStatementDetailRecord(*w.statementLanguage, row, scope, false))
 	}
-	return w.AppendRecord(record)
+	if w.header == nil {
+		w.header = csvLabels("zh", scope.Currency, adminUsageRecordColumns)
+	}
+	return w.AppendRecord(customerStatementDetailRecord("zh", row, scope, true))
 }
 
 // AppendRecord applies the shared size, sharding and durability limits to a CSV schema.
 func (w *customerExportCsvWriter) AppendRecord(record []string) error {
-	record = append(record, w.reportCoverage...)
 	if err := w.ensureShard(); err != nil {
 		return err
 	}
@@ -278,7 +189,7 @@ func (w *customerExportCsvWriter) AppendRecord(record []string) error {
 	if rowBytes > 1<<20 || (!w.statementPart && w.totalBytes+w.bytesInShard+rowBytes > customerExportTotalBytes) {
 		return errCustomerExportBudgetExceeded
 	}
-	if w.shardLines > 0 && w.bytesInShard+rowBytes > w.maxShardBytes {
+	if (w.statementPart || w.shardLines > 0) && w.bytesInShard+rowBytes > w.maxShardBytes {
 		if w.statementPart {
 			return errCustomerStatementExportPartFull
 		}

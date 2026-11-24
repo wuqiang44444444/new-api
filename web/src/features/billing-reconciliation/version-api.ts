@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import type { BillingFundGroup } from '@/features/usage-logs/types'
 import { api } from '@/lib/api'
 
-import { currentExportLanguage } from './export-api'
+import { billingExportLanguage } from './export-api'
 import type {
   ApiResponse,
   BillingDataQuality,
@@ -180,7 +180,7 @@ export async function createAdminVersion(
     draft_public_id?: string
     status?: string
   }>('/api/billing/admin/customer-statement-versions', null, {
-    params: { ...params, language: currentExportLanguage() },
+    params: { ...params, language: billingExportLanguage },
   })
   return response.data
 }
@@ -199,7 +199,7 @@ export async function createAdminVersionCorrection(
     draft_public_id?: string
     status?: string
   }>('/api/billing/admin/customer-statement-versions/correction', body, {
-    params: { ...params, language: currentExportLanguage() },
+    params: { ...params, language: billingExportLanguage },
   })
   return response.data
 }

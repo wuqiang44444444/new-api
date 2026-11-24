@@ -29,6 +29,7 @@ func TestStatementClassifiesDurationAndCountWithoutChangingFunds(t *testing.T) {
 		other, err := common.Marshal(map[string]any{
 			"is_task": true, "task_id": "video-task", "task_billing_event": event.name,
 			"expr_b64": base64.StdEncoding.EncodeToString([]byte(expression)), "usage_units": units,
+			"usage_facts": map[string]any{"output_seconds": 4, "input_video_seconds": "2.5", "input_image_count": 1},
 			"admin_info": map[string]any{"statement_original_quota": event.quota,
 				"statement_snapshot": map[string]any{"billing_mode": BillingReconciliationModeUnknown}},
 		})
@@ -63,8 +64,37 @@ func TestStatementClassifiesDurationAndCountWithoutChangingFunds(t *testing.T) {
 	assert.EqualValues(t, 2, detail.Total)
 	assert.EqualValues(t, 160000, detail.Quota)
 
+	scanned, err := NextCustomerExportLogBatch(ctx, CustomerExportBatchParams{
+		UserId: 7, StartTimestamp: 900, EndTimestamp: 1200, StatementScope: true,
+	})
+	require.NoError(t, err)
+	rows, err := BuildCustomerExportRows(ctx, scanned, "video", mode, nil)
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
+	assert.Nil(t, rows[0].BillableSeconds)
+	assert.Empty(t, rows[0].BillableDurations)
+	assert.Nil(t, rows[1].BillableSeconds)
+	require.Len(t, rows[1].BillableDurations, 2)
+	assert.Equal(t, "4", rows[1].BillableDurations["output_seconds"].String())
+	assert.Equal(t, "2.5", rows[1].BillableDurations["input_video_seconds"].String())
+
 	assert.Equal(t, BillingReconciliationModeUnknown, BillingStatementExpressionMode(`u("input_image_count")`, units))
 	assert.Equal(t, BillingReconciliationModeUnknown, BillingStatementExpressionMode(expression, map[string]string{
 		"output_seconds": "second", "input_video_seconds": "second",
 	}))
+}
+
+func TestExportDurationsUseTheFrozenTierAndExcludeSelectionMeters(t *testing.T) {
+	expression := `u("gate_seconds") > 3 ? tier("long", u("long_seconds") * 2 + u("count")) : tier("short", u("short_seconds") + u("count"))`
+	other, err := common.Marshal(map[string]any{
+		"matched_tier": "long", "expr_b64": base64.StdEncoding.EncodeToString([]byte(expression)),
+		"usage_units": map[string]string{"gate_seconds": "second", "long_seconds": "second", "short_seconds": "second", "count": "count"},
+		"usage_facts": map[string]any{"gate_seconds": 4, "long_seconds": 8, "short_seconds": 2, "count": 1},
+	})
+	require.NoError(t, err)
+	fact := billingReconciliationLog{Type: LogTypeConsume, Other: string(other)}
+	values := exportBillingDurations(fact, parsedBillingReconciliationLog{billingMode: BillingReconciliationModeDurationAndCount},
+		loadCustomerExportFacts(fact.Other))
+	require.Len(t, values, 1)
+	assert.Equal(t, "8", values["long_seconds"].String())
 }

@@ -33,7 +33,7 @@ func TestBillingStatementCSVCompleteAcrossBatches(t *testing.T) {
 			for start := 0; start < count; start += 500 {
 				batch := make([]model.BillingStatementVersionLine, 0, 500)
 				for n := start; n < min(count, start+500); n++ {
-					facts := model.CustomerExportRow{RequestId: fmt.Sprintf("req-%d", n), EventType: "consume", Quota: 17, CountsTowardBill: true, GroupName: "group", ContractApplicable: "yes", ContractName: "contract"}
+					facts := model.CustomerExportRow{RequestId: fmt.Sprintf("req-%d", n), EventType: "consume", Quota: 17, CountsTowardBill: true, GroupName: "group", ContractApplicable: "yes", ContractID: 417, ContractVersion: 3}
 					logType := model.LogTypeConsume
 					if n == count-1 {
 						facts.EventType = "refund"
@@ -61,7 +61,9 @@ func TestBillingStatementCSVCompleteAcrossBatches(t *testing.T) {
 				columns[name] = i
 			}
 			require.Contains(t, columns, "Request ID")
-			require.Contains(t, columns, "Net amount (refunds negative)")
+			require.Contains(t, columns, "Contract ID")
+			require.Contains(t, columns, "Contract version")
+			require.Contains(t, columns, "Net booked amount (refunds negative) ("+v.Currency+")")
 			assert.Equal(t, "statement-details.csv", file.fileName)
 			total := decimal.Zero
 			rows := 0
@@ -72,8 +74,9 @@ func TestBillingStatementCSVCompleteAcrossBatches(t *testing.T) {
 				}
 				require.NoError(t, err)
 				require.Equal(t, fmt.Sprintf("req-%d", rows), record[columns["Request ID"]])
-				require.Equal(t, "contract", record[columns["Contract"]])
-				amount, err := decimal.NewFromString(record[columns["Net amount (refunds negative)"]])
+				require.Equal(t, "417", record[columns["Contract ID"]])
+				require.Equal(t, "3", record[columns["Contract version"]])
+				amount, err := decimal.NewFromString(record[columns["Net booked amount (refunds negative) ("+v.Currency+")"]])
 				require.NoError(t, err)
 				total = total.Add(amount)
 				rows++

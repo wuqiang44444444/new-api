@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas"
 	"io"
 	"mime"
 	"net/http"
@@ -13,9 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas"
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 )
 
 // Export artifacts live in a dedicated private namespace. The capability
@@ -28,6 +28,14 @@ var ErrCustomerExportStorageUnavailable = errors.New("customer export object sto
 // Object keys are recorded in the database; cleanup only touches recorded
 // keys and never other Task artifacts.
 const CustomerExportObjectNamespace = "exports/jobs"
+
+func customerExportFileKey(jobID string, file model.CustomerExportArtifactFile, contentAddressed bool) string {
+	prefix := CustomerExportObjectNamespace + "/" + jobID + "/"
+	if contentAddressed {
+		prefix += file.Sha256 + "/"
+	}
+	return prefix + file.FileName
+}
 
 type exportObjectStore interface {
 	// ExportPutFile is a bounded file-backed upload: the body streams from the

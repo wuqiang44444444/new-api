@@ -164,7 +164,7 @@ func BuildBillingReportDay(ctx context.Context, start int64, taskID, runnerID st
 		line.Upstream = BillingStatementJSON(raw)
 		if checkpoint != nil {
 			size := len(line.Customer) + len(line.Upstream) + len(line.URLKey) + len(line.TokenName) + len(line.GroupName) + len(line.Username) +
-				len(line.CustomerModel) + len(line.ProviderModel) + len(line.RequestID) + len(line.UpstreamRequestID) + 2*len(rootTask) + 256
+				len(line.CustomerModel) + len(line.ProviderModel) + len(line.RequestID) + len(line.CustomerRequestID) + len(line.UpstreamRequestID) + 2*len(rootTask) + 256
 			if len(writes) > 0 && writeBytes+size > detailBatchBytes {
 				if err := flushWrites(); err != nil {
 					return err
@@ -236,6 +236,9 @@ func BuildBillingReportDay(ctx context.Context, start int64, taskID, runnerID st
 			}
 			line.FundGroup = billingStatementFundIdentity(log, parsed)
 			export := buildCustomerExportRow(customerBillingLogScanRow(&log), fact, parsed)
+			if export.RequestId != log.RequestId {
+				line.CustomerRequestID = export.RequestId
+			}
 			if explain != nil {
 				explain(&log, &export)
 			}

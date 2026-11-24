@@ -51,10 +51,11 @@ func rebuildMissingHistoricalBillingCustomers(ctx context.Context, db *gorm.DB, 
 			log := billingReconciliationLog{UserId: line.UserID, TokenId: line.TokenID, TokenName: row.TokenName, ChannelId: line.ChannelID,
 				ModelName: row.CustomerModel, Type: line.LogType, CreatedAt: line.CreatedAt, Quota: int(row.Quota)}
 			facts := parsedBillingReconciliationLog{
+				frozenBillableSeconds: row.BillableSeconds, frozenSecondsMissing: row.BillableSecondsMissing,
 				customerModel: row.CustomerModel, billingMode: row.BillingMode, requestCount: row.RequestCount,
 				isRequest: row.RequestCount > 0, isRefund: row.EventType == "refund",
 				inputTokens: row.InputTokens, outputTokens: row.OutputTokens, inputTokensUnavailable: row.InputTokensUnavailable,
-				cacheReadTokens: row.CacheReadTokens, cacheWrite: billingStatementCacheWriteTokens{total: row.CacheWriteTokens},
+				cacheReadTokens: row.CacheReadTokens, cacheWrite: billingStatementCacheWriteTokens{total: row.CacheWriteTokens, tiers: row.CacheWrites},
 				billableImageApplicable: row.BillingMode == BillingReconciliationModePerImage, billableImageCount: row.BillableImageCount,
 				discountRatio: row.GroupRatio, groupName: row.GroupName, groupRatioSource: row.GroupRatioSource,
 				contractDiscountRatio: row.ContractRatio, contractApplicable: row.ContractApplicable == "yes",

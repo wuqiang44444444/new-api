@@ -11,79 +11,111 @@ import (
 
 // The statement uses the same safe facts, money conversion and streaming
 // writer as usage exports, with a customer-facing column projection.
-var customerStatementDetailColumns = []struct{ key, en, zh string }{
+var customerStatementDetailColumns = []reconciliationCSVColumn{
 	{"record_time", "Record time", "入账时间"},
 	{"request_id", "Request ID", "请求 ID"},
-	{"token_name", "API Key", "API 密钥"},
-	{"token_id", "API Key ID", "API 密钥 ID"},
-	{"customer_model", "Model", "模型"},
 	{"event_type", "Billing event", "入账类型"},
-	{"currency", "Currency", "币种"},
-	{"net_amount", "Net amount (refunds negative)", "净额（退款为负）"},
+	{"token_name", "API Key", "令牌"},
+	{"customer_model", "Model", "模型"},
+	{"is_stream", "Stream", "流"},
+	{"net_amount", "Net booked amount (refunds negative)", "实际入账净额（退款为负）"},
 	{"original_amount", "List price", "原价"},
-	{"original_source", "List price source", "原价来源"},
-	{"derived_output_image_tokens", "Derived output image tokens", "推导的输出图片 Token"},
-	{"discount_amount", "Savings", "优惠"},
-	{"contract_expected_amount", "Expected task charge under frozen contract", "任务合同应收"},
-	{"contract_actual_amount", "Actual task charge", "任务实际扣款"},
-	{"contract_settlement_delta", "Task charge difference (actual minus expected)", "任务扣款差额（实扣减应收）"},
+	{"contract_id", "Contract ID", "合同 ID"},
+	{"contract_version", "Contract version", "合同版本"},
+	{"group_ratio", "Effective group factor", "有效组倍率"},
+	{"contract_ratio", "Contract factor", "合同倍率"},
+	{"final_ratio", "Final model factor", "模型最终倍率"},
 	{"billing_mode", "Billing mode", "计费方式"},
-	{"billable_image_count", "Billable images", "计费张数"},
 	{"request_count", "Counted requests", "计入请求数"},
 	{"input_tokens", "Input tokens", "输入 Token"},
 	{"output_tokens", "Output tokens", "输出 Token"},
 	{"cache_read_tokens", "Cache read tokens", "缓存读取 Token"},
-	{"cache_write_tokens", "Cache write tokens", "缓存写入 Token"},
-	{"input_tokens_quality", "Input usage status", "输入用量状态"},
-	{"group_name", "Billing group", "计费组"},
-	{"group_ratio_source", "Group ratio source", "组倍率来源"},
-	{"group_ratio", "Group factor", "分组倍率"},
-	{"contract_applicable", "Contract status", "合同状态"},
-	{"contract_name", "Contract", "合同名称"},
-	{"contract_ratio", "Contract factor", "合同倍率"},
-	{"final_ratio", "Final factor", "最终倍率"},
-	{"matched_tier", "Pricing tier", "计价阶梯"},
-	{"billing_line_items_usd", "Usage and price breakdown (USD, before discounts)", "用量及单价明细（USD，折扣前）"},
-	{"billing_explanation_status", "Price breakdown status", "单价明细状态"},
-	{"quality_status", "Data quality", "数据质量"},
-	{"amount_unavailable_reasons", "Amount unavailable reasons", "金额无法计算原因"},
-	{"period_start", "Period start", "账期开始"},
-	{"period_end", "Period end", "账期结束"},
-	{"timezone", "Timezone", "时区"},
+	csvCacheWriteColumns[0], csvCacheWriteColumns[1], csvCacheWriteColumns[2], csvCacheWriteColumns[3],
+	{"billable_image_count", "Billable images", "计费张数"},
+	{"billable_seconds", "Billable seconds", "计费秒数"},
+	{"notes", "Billing notes", "计费说明"},
 }
 
-func (w *customerExportCsvWriter) useStatementDetails(language string) {
+func (w *customerExportCsvWriter) useStatementDetails(language, currency string) {
 	w.statementLanguage = &language
 	w.prefix = "statement-details"
-	w.header = make([]string, len(customerStatementDetailColumns))
-	for i, column := range customerStatementDetailColumns {
-		w.header[i] = column.en
-		if language == "zh" {
-			w.header[i] = column.zh
-		}
-	}
+	w.header = csvLabels(language, currency, customerStatementDetailColumns)
 }
 
-func customerStatementDetailRecord(language string, source []string) []string {
-	values := make(map[string]string, len(source))
-	for i, key := range customerExportCsvHeader {
-		values[key] = source[i]
+func customerStatementDetailRecord(language string, row model.CustomerExportRow, scope customerExportScopeColumns, admin bool) []string {
+	net := row.Quota
+	if row.EventType == "refund" {
+		net = -net
 	}
-	record := make([]string, len(customerStatementDetailColumns))
-	for i, column := range customerStatementDetailColumns {
-		value := values[column.key]
-		if column.key == "billing_line_items_usd" {
-			value = customerStatementPriceBreakdown(language, value)
-		} else if values["billing_mode"] == model.BillingReconciliationModePerImage &&
-			(column.key == "input_tokens" || column.key == "output_tokens" ||
-				column.key == "cache_read_tokens" || column.key == "cache_write_tokens" || column.key == "input_tokens_quality") {
-			value = ""
-		} else {
-			value = customerStatementExportValue(language, column.key, value)
-		}
-		record[i] = value
+	values := map[string]string{
+		"record_time": formatExportTimestamp(row.RecordTime), "request_id": exportCsvCellGuard(row.RequestId),
+		"token_name": exportCsvCellGuard(row.TokenName), "customer_model": exportCsvCellGuard(row.CustomerModel),
+		"net_amount": exportCurrencyAmount(strconv.FormatInt(net, 10), scope), "original_amount": exportCurrencyAmount(row.RecordedOriginal, scope),
+		"group_ratio": exportRatio(row.GroupRatio), "contract_ratio": exportRatio(row.ContractRatio), "final_ratio": exportRatio(row.FinalRatio),
+		"request_count": strconv.FormatInt(row.RequestCount, 10), "input_tokens": strconv.FormatInt(row.InputTokens, 10),
+		"output_tokens": strconv.FormatInt(row.OutputTokens, 10), "cache_read_tokens": strconv.FormatInt(row.CacheReadTokens, 10),
+		"billable_image_count": csvOptionalCount(row.BillableImageCount),
 	}
-	return record
+	if row.InputTokensUnavailable {
+		values["input_tokens"] = ""
+	}
+	values["is_stream"] = csvStream(language, row.IsStream)
+	values["contract_id"] = csvIdentity(row.ContractID)
+	values["contract_version"] = csvIdentity(row.ContractVersion)
+	if row.ContractApplicable == "no" {
+		values["contract_ratio"] = "1"
+	}
+	if row.BillableSeconds != nil {
+		values["billable_seconds"] = row.BillableSeconds.String()
+	}
+	cacheCells, cacheNote := csvCacheWrites(language, row.CacheWrites, row.CacheWriteTokens)
+	csvCacheWriteValues(values, cacheCells)
+	if row.CacheReadUnknown {
+		values["cache_read_tokens"] = ""
+	}
+	if row.BillingMode == model.BillingReconciliationModePerImage {
+		values["input_tokens"], values["output_tokens"], values["cache_read_tokens"] = "", "", ""
+		csvCacheWriteValues(values, [4]string{})
+		cacheNote = ""
+	}
+	values["event_type"] = customerStatementExportValue(language, "event_type", row.EventType)
+	values["billing_mode"] = customerStatementExportValue(language, "billing_mode", row.BillingMode)
+	var expected, actual, delta string
+	if settlement := row.ContractSettlement; settlement != nil {
+		expected = exportCurrencyAmount(strconv.FormatInt(settlement.ExpectedQuota, 10), scope)
+		actual = exportCurrencyAmount(strconv.FormatInt(settlement.ActualQuota, 10), scope)
+		delta = exportCurrencyAmount(strconv.FormatInt(settlement.DeltaQuota, 10), scope)
+	}
+	reasons := customerExportEstimateReasons(language, row.EstimateReasons)
+	durations := csvDurationNote(language, row.BillableDurations)
+	if admin {
+		values["token_id"] = strconv.Itoa(row.TokenId)
+		values["customer_id"] = strconv.Itoa(scope.CustomerId)
+		values["customer_username"] = exportCsvCellGuard(scope.CustomerName)
+		values["quota"] = strconv.FormatInt(row.Quota, 10)
+		values["original_quota"] = row.RecordedOriginal
+		values["billing_line_items_usd"] = csvNotes(customerStatementPriceBreakdown(language, row.BillingLineItems), durations)
+		values["counts_toward_customer_bill"] = csvStream(language, &row.CountsTowardBill)
+		values["amount_unavailable_reasons"] = csvNotes(reasons, cacheNote)
+		values["contract_expected_amount"], values["contract_actual_amount"], values["contract_delta_amount"] = expected, actual, delta
+		values["field_version"] = strconv.Itoa(customerExportFieldVersion)
+		values["job_id"] = scope.JobID
+		values["currency"] = scope.Currency
+		values["quota_per_unit"] = strconv.FormatFloat(scope.QuotaPerUnit, 'f', -1, 64)
+		values["currency_rate"] = strconv.FormatFloat(scope.CurrencyRate, 'f', -1, 64)
+		return csvProjection(adminUsageRecordColumns, values)
+	}
+	var settlement, imageEvidence string
+	if row.ContractSettlement != nil {
+		settlement = fmt.Sprintf(csvText(language, "Contract charge %s, actual charge %s, difference %s", "任务合同应收 %s，实扣 %s，差额 %s"),
+			expected, actual, delta)
+	}
+	if count := row.DerivedOutputImageTokens; count != nil {
+		imageEvidence = csvText(language, "Derived output image tokens ", "推导的输出图片 Token ") + strconv.Itoa(*count)
+	}
+	values["notes"] = csvNotes(cacheNote, reasons, settlement, durations,
+		customerStatementExportValue(language, "original_source", row.OriginalSource), imageEvidence)
+	return csvProjection(customerStatementDetailColumns, values)
 }
 
 var customerStatementExportValues = map[string]map[string][2]string{

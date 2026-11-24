@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -25,7 +26,7 @@ var ErrBillingStatementVersionSourceInsufficient = model.ErrBillingStatementSour
 
 // SubmitBillingStatementVersionJob 受理一次版本生成：校验拓扑/已结束月份/来源保留，
 // 原子占用活动草稿，快照来源向量，进入后台执行体系。
-func SubmitBillingStatementVersionJob(ctx context.Context, adminId int, userId int, periodStart int64, periodEndExcl int64, language ...string) (*model.BillingStatementVersion, error) {
+func SubmitBillingStatementVersionJob(ctx context.Context, adminId int, userId int, periodStart int64, periodEndExcl int64, _ ...string) (*model.BillingStatementVersion, error) {
 	if !model.BillingStatementVersionTopologyOK() {
 		return nil, model.ErrBillingStatementVersionTopology
 	}
@@ -48,7 +49,7 @@ func SubmitBillingStatementVersionJob(ctx context.Context, adminId int, userId i
 		return nil, fmt.Errorf("%w: customer %d period %d has cleaned source logs", ErrBillingStatementVersionSourceInsufficient, userId, periodStart)
 	}
 	// 原子占用活动草稿。
-	filters, err := billingStatementGenerationFilters(ctx, adminId, userId, periodStart, periodEndExcl, language...)
+	filters, err := billingStatementGenerationFilters(ctx, adminId, userId, periodStart, periodEndExcl)
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +150,7 @@ func runBillingStatementVersionGeneration(ctx context.Context, job *model.Custom
 	if err != nil {
 		return err
 	}
-	if channel.Summary != statement.Summary {
+	if !reflect.DeepEqual(channel.Summary, statement.Summary) {
 		return errors.New("statement dimensions differ")
 	}
 	summaryJSON, err := model.FreezeBillingStatementProjection(statement)

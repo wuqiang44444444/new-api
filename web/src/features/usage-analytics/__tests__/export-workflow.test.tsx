@@ -142,13 +142,18 @@ beforeEach(() => {
   vi.mocked(api.get).mockImplementation(async (url, config) => {
     if (
       url === '/api/usage/admin/customers' &&
-      (config?.params as Record<string, unknown> | undefined)?.group_by === 'model'
+      (config?.params as Record<string, unknown> | undefined)?.group_by ===
+        'model'
     ) {
       return { data: { success: true, data: { items: [], total: 0 } } }
     }
     if (url === '/api/usage/admin/upstream-summary') {
-      if ((config?.params as Record<string, unknown> | undefined)?.rank_metric) {
-        const secondPage = (config?.params as Record<string, unknown> | undefined)?.rank_page === 2
+      if (
+        (config?.params as Record<string, unknown> | undefined)?.rank_metric
+      ) {
+        const secondPage =
+          (config?.params as Record<string, unknown> | undefined)?.rank_page ===
+          2
         return {
           data: {
             success: true,
@@ -171,11 +176,15 @@ beforeEach(() => {
           },
         }
       }
-      const selected = (config?.params as Record<string, unknown> | undefined)?.channel_id === channelUsage.channel_id
+      const selected =
+        (config?.params as Record<string, unknown> | undefined)?.channel_id ===
+        channelUsage.channel_id
       const metrics = selected
         ? channelUsage.total
         : { ...total, total_calls: 995 }
-      const monthly = (config?.params as Record<string, unknown> | undefined)?.period === 'month'
+      const monthly =
+        (config?.params as Record<string, unknown> | undefined)?.period ===
+        'month'
       return {
         data: {
           success: true,
@@ -342,6 +351,23 @@ it('downloads a reusable result returned by the export request and pins its exis
   expect(api.post).toHaveBeenCalledTimes(1)
 })
 
+it('requests a separate period-total usage export', async () => {
+  const user = userEvent.setup()
+  mount(<MyUsage period='week' date='2026-10-12' onSearchChange={vi.fn()} />)
+  await user.click(
+    await screen.findByRole('button', { name: 'Export and download' })
+  )
+  await user.click(screen.getByRole('combobox', { name: 'Export content' }))
+  await user.click(await screen.findByRole('option', { name: 'Period total' }))
+  await user.click(screen.getByRole('button', { name: 'Export CSV' }))
+  await waitFor(() =>
+    expect(api.post).toHaveBeenCalledWith(
+      '/api/usage/self/exports',
+      expect.objectContaining({ grain: 'period' })
+    )
+  )
+})
+
 it('generates the explicitly selected customer model and displays the submitted job', async () => {
   const user = userEvent.setup()
   mount(<MyUsage period='day' date='2026-10-12' onSearchChange={vi.fn()} />)
@@ -360,7 +386,7 @@ it('generates the explicitly selected customer model and displays the submitted 
         model_name: 'selected',
         date: '2026-10-12',
         period: 'day',
-        language: 'en',
+        language: 'zh',
       })
     )
   )
@@ -596,7 +622,8 @@ it.each(['week', 'month'] as const)(
     vi.mocked(api.get).mockImplementation(async (url, config) => {
       if (
         url === '/api/usage/admin/customers' &&
-        (config?.params as Record<string, unknown> | undefined)?.group_by === 'model'
+        (config?.params as Record<string, unknown> | undefined)?.group_by ===
+          'model'
       ) {
         return {
           data: {

@@ -28,7 +28,7 @@ services:
     volumes:
       - dev_data:/data
     environment:
-      - SQL_DSN=postgresql://yuan_gateway:${YUAN_DEV_POSTGRES_PASSWORD:?Set YUAN_DEV_POSTGRES_PASSWORD in .env}@postgres:5432/yuan_gateway_dev?sslmode=disable
+      - SQL_DSN=postgresql://yuan_gateway:${YUAN_DEV_POSTGRES_PASSWORD:?Set YUAN_DEV_POSTGRES_PASSWORD in .env}@postgres:5432/yuan_gateway_dev?sslmode=disable&application_name=yuan-gateway-dev-compose
       - REDIS_CONN_STRING=redis://redis
       - TZ=Asia/Shanghai
       - PROTECTED_FETCH_DNS_SERVER=${PROTECTED_FETCH_DNS_SERVER:-}
@@ -53,7 +53,7 @@ services:
       - dev-network
 
   postgres:
-    image: postgres:15-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     ports:
       - "127.0.0.1:54330:5432"
@@ -62,7 +62,7 @@ services:
       POSTGRES_PASSWORD: ${YUAN_DEV_POSTGRES_PASSWORD:?Set YUAN_DEV_POSTGRES_PASSWORD in .env}
       POSTGRES_DB: yuan_gateway_dev
     volumes:
-      - dev_pg_data:/var/lib/postgresql/data
+      - dev_pg18_data:/var/lib/postgresql
     networks:
       - dev-network
     healthcheck:
@@ -71,9 +71,30 @@ services:
       timeout: 3s
       retries: 5
 
+  postgres-cn:
+    profiles: [cn]
+    image: postgres:18-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:54331:5432"
+    environment:
+      POSTGRES_USER: yuan_gateway
+      POSTGRES_PASSWORD: ${YUAN_DEV_POSTGRES_PASSWORD:?Set YUAN_DEV_POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: yuan_gateway_dev_cn
+    volumes:
+      - dev_pg18_cn_data:/var/lib/postgresql
+    networks:
+      - dev-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U yuan_gateway -d yuan_gateway_dev_cn"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
 volumes:
   dev_data:
-  dev_pg_data:
+  dev_pg18_data:
+  dev_pg18_cn_data:
 
 networks:
   dev-network:

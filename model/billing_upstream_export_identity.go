@@ -8,6 +8,9 @@ func sameActiveCustomerExportFilters(jobType, existing, submitted string) bool {
 	if existing == submitted {
 		return true
 	}
+	if jobType == CustomerExportJobTypeCustomerStatements {
+		return sameActiveCustomerStatementDayFilters(existing, submitted)
+	}
 	if jobType != CustomerExportJobTypeUpstreamDetails && jobType != CustomerExportJobTypeUpstreamSummary {
 		return false
 	}

@@ -54,6 +54,8 @@ var accessTokenExemptRoutes = []string{
 	// Browser session cookie endpoints.
 	"POST /api/user/auth/refresh",
 	"POST /api/user/auth/logout",
+	// Native ZIP download authenticates with the session-bound download ticket.
+	"GET /api/billing/exports/:job_id/archive.zip",
 
 	// Payment callbacks.
 	"POST /api/stripe/webhook",
@@ -128,14 +130,20 @@ func TestAccessTokenRouteRulesCoverEveryDashboardRoute(t *testing.T) {
 		assert.True(t, panel[key], "declared route %s is not a registered panel route", key)
 	}
 	for key, scope := range map[string]string{
-		"GET /api/option/mail/preferences": "option:read",
-		"PUT /api/option/mail/preferences": "option:write",
+		"GET /api/option/mail/preferences":                      "option:read",
+		"PUT /api/option/mail/preferences":                      "option:write",
+		"GET /api/billing/admin/customer-statement-export-days": "billing:read",
+		"GET /api/billing/exports/:job_id/share-link":           "usage:read",
+		"POST /api/billing/exports/:job_id/share-archive":       "usage:read",
 	} {
 		rule, ok := middleware.AccessTokenRouteRule(key)
 		require.True(t, ok, key)
 		assert.Equal(t, "scope", rule.Kind(), key)
 		assert.Equal(t, scope, rule.Scope(), key)
 	}
+	archive, ok := middleware.AccessTokenRouteRule("POST /api/billing/exports/:job_id/archive.zip")
+	require.True(t, ok)
+	assert.Equal(t, "session", archive.Kind())
 
 	permissionRoutes := map[string]authz.Permission{}
 	for _, route := range channelPermissionRoutes {

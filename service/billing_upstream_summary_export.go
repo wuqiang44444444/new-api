@@ -19,90 +19,9 @@ func executeUpstreamSummaryExport(ctx context.Context, job *model.CustomerExport
 		return nil, err
 	}
 	defer writer.Cleanup()
-	writer.header = []string{
-		"Job ID",
-		"Period start (Asia/Shanghai)",
-		"Period end (exclusive, Asia/Shanghai)",
-		"URL grouping",
-		"Upstream name",
-		"Channel ID",
-		"Channel",
-		"Provider model",
-		"Provider model fallback",
-		"Billing mode",
-		"Input tokens",
-		"Cache read tokens",
-		"Cache write tokens",
-		"Output tokens",
-		"Requests",
-		"Billable calls",
-		"Original amount (local official price)",
-		"Calculated amount (after channel discount)",
-		"Channel discount",
-		"Discount version",
-		"Original amount status",
-		"Generated at",
-		"Currency",
-		"Quota per unit",
-		"Currency rate",
-		"Billable seconds",
-		"Original amount unavailable reasons",
-		"Known original subtotal",
-		"Known reference subtotal",
-		"Billing evidence records",
-		"Records with original amount pending",
-		"Records with original amount available",
-		"Seconds unavailable rows",
-		"Customer models",
-		"URL grouping basis",
-		"Includes estimated original amounts",
-	}
-	if filters.Language == "zh" {
-		writer.header = []string{
-			"任务 ID",
-			"账期开始（上海时区）",
-			"账期结束（不含，上海时区）",
-			"URL 归组",
-			"上游名称",
-			"渠道 ID",
-			"渠道",
-			"上游模型",
-			"上游模型未记录",
-			"计费模式",
-			"输入 Token",
-			"缓存读取 Token",
-			"缓存写入 Token",
-			"输出 Token",
-			"请求数",
-			"计费调用数",
-			"原价金额（本地官方价）",
-			"核算金额（按渠道折扣）",
-			"渠道折扣",
-			"折扣版本",
-			"原价核算状态",
-			"生成时间",
-			"币种",
-			"单位 quota",
-			"汇率",
-			"计费秒数",
-			"原价待核算原因",
-			"已知原价小计",
-			"已知核算小计",
-			"账单证据记录数",
-			"原价待核算记录数",
-			"原价已核算记录数",
-			"缺少计费秒数的记录数",
-			"客户模型",
-			"归组依据",
-			"包含估算原价",
-		}
-	}
-	if filters.Upstream.URLKey == "" {
-		writer.header[3] = "Channel scope"
-		writer.header[len(writer.header)-2] = "Grouping basis"
-		if filters.Language == "zh" {
-		}
-	}
+	language := filters.Language
+	writer.header = csvLabels(language, filters.Currency, upstreamSummaryColumns)
+	coverage := csvReportCoverage(language, filters.BillingReportCoverage)
 	scope := customerExportScopeColumns{QuotaPerUnit: filters.QuotaPerUnit, Currency: filters.Currency, CurrencyRate: filters.CurrencyRate, GeneratedAt: common.GetTimestamp()}
 	progress := model.CustomerExportProgress{}
 	gate := customerExportSummaryGate(pressure, job, &progress)
@@ -112,17 +31,7 @@ func executeUpstreamSummaryExport(ctx context.Context, job *model.CustomerExport
 		}
 		return gate(ctx)
 	}, AfterBatch: func(count int) error { progress.Scanned += int64(count); return nil }}
-	baseWidth := len(writer.header)
-	if filters.FieldVersion >= dailyBillingExportFieldVersion {
-		writer.header = append(writer.header, billingImageTotalsCSVHeader(filters.Language)...)
-		label := "Completed images"
-		if filters.Language == "zh" {
-			label = "实际出图张数"
-		}
-		writer.header = append(writer.header, label)
-	}
-	writer.setBillingCoverage(filters)
-	err = model.ScanUpstreamExportSummary(ctx, filters, policy, func(channelID int, row model.ProviderURLChannelModelSummary) error {
+	err = model.ScanUpstreamExportSummary(ctx, filters, policy, func(channelID int, urlKey string, row model.ProviderURLChannelModelSummary) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -139,103 +48,50 @@ func executeUpstreamSummaryExport(ctx context.Context, job *model.CustomerExport
 			}
 			version = strconv.FormatInt(channel.Discount.Version, 10)
 		}
-		amounts := make([]string, 4)
-		for i, quota := range []*int64{row.OriginalAmount, row.ReferenceAmount, row.KnownOriginalAmount, row.KnownReferenceAmount} {
+		var amounts [3]string
+		for i, quota := range []*int64{row.OriginalAmount, row.ReferenceAmount, row.KnownReferenceAmount} {
 			if quota != nil {
 				amounts[i] = exportCurrencyAmount(strconv.FormatInt(*quota, 10), scope)
 			}
 		}
-		read, write := strconv.FormatInt(row.Usage.CacheReadTokens, 10), strconv.FormatInt(row.Usage.CacheWriteTokens, 10)
-		reasons, rows, gaps, complete := "", "", "", ""
+		usage := row.Usage
+		name := filters.Upstream.GroupName
+		if filters.Upstream.URLKey == "" {
+			name = channel.UpstreamName
+		}
+		values := map[string]string{
+			"channel_id": strconv.Itoa(channelID), "channel": exportCsvCellGuard(channel.Name),
+			"name": exportCsvCellGuard(name), "url": exportCsvCellGuard(urlKey),
+			"provider_model": exportCsvCellGuard(row.ProviderModel), "mode": customerStatementExportValue(language, "billing_mode", row.BillingMode),
+			"reference_amount": amounts[1], "original_amount": amounts[0], "discount": coefficient, "version": version,
+			"known_reference_amount": amounts[2], "requests": strconv.FormatInt(usage.Requests, 10),
+			"calls": strconv.FormatInt(usage.BillableCalls, 10), "input": strconv.FormatInt(usage.InputTokens, 10),
+			"output": strconv.FormatInt(usage.OutputTokens, 10), "cache_read": strconv.FormatInt(usage.CacheReadTokens, 10),
+			"images": positiveBillingMeterCSV(usage.BillableImages), "test_images": positiveBillingMeterCSV(usage.TestBillableImages),
+			"completed": positiveBillingMeterCSV(usage.CompletedImages),
+		}
+		var quality string
 		if row.DataQuality != nil {
-			if row.OriginalAmount == nil {
-				reasons = upstreamExportQualityReasons(row.DataQuality, filters.Language, false)
-			}
 			if row.DataQuality.CacheReadUnavailableRequests > 0 {
-				read = ""
+				values["cache_read"] = ""
 			}
-			if row.DataQuality.CacheWriteUnavailableRequests > 0 {
-				write = ""
+			if row.DataQuality.InputTokensUnavailableRequests > 0 {
+				values["input"] = ""
 			}
-			if coverage := row.DataQuality.EvidenceCoverage; coverage != nil {
-				rows = strconv.FormatInt(coverage.Rows, 10)
-				gaps = strconv.FormatInt(coverage.AmountGapRows, 10)
-				complete = strconv.FormatInt(coverage.Rows-coverage.AmountGapRows, 10)
+			if evidence := row.DataQuality.EvidenceCoverage; evidence != nil {
+				values["gaps"] = strconv.FormatInt(evidence.AmountGapRows, 10)
 			}
+			quality = upstreamExportQualityReasons(row.DataQuality, language, false)
 		}
-		seconds := ""
-		if row.Usage.Seconds != nil {
-			seconds = row.Usage.Seconds.String()
+		if usage.Seconds != nil && usage.SecondsUnavailableRows == 0 {
+			values["seconds"] = usage.Seconds.String()
 		}
-		if row.OriginalAmount == nil && len(row.EstimateReasons) > 0 {
-			reasons = strings.TrimSpace(reasons + " " + customerExportEstimateReasons(filters.Language, row.EstimateReasons))
-		}
-		grouping := "Base URL in the published report"
-		if filters.Language == "zh" {
-			grouping = "按已发布日报的基础 URL 归组"
-		}
-		if strings.HasPrefix(filters.Upstream.URLKey, "channel:") {
-			grouping = "Unidentified URL — kept per channel"
-			if filters.Language == "zh" {
-				grouping = "无法识别 URL，按渠道单独保留"
-			}
-		}
-		identity, name := filters.Upstream.URLKey, filters.Upstream.GroupName
-		if identity == "" {
-			identity, name, grouping = strconv.Itoa(channelID), channel.UpstreamName, "Channel ID"
-			if filters.Language == "zh" {
-				grouping = "按渠道 ID"
-			}
-			writer.header[3] = "Channel scope"
-			writer.header[baseWidth-2] = "Grouping basis"
-			if filters.Language == "zh" {
-				writer.header[3] = "渠道范围"
-				writer.header[baseWidth-2] = "归组依据"
-			}
-		}
-		record := []string{
-			job.JobID,
-			formatExportTimestamp(filters.StartTimestamp),
-			formatExportTimestamp(filters.EndTimestamp),
-			exportCsvCellGuard(identity),
-			exportCsvCellGuard(name),
-			strconv.Itoa(channelID),
-			exportCsvCellGuard(channel.Name),
-			exportCsvCellGuard(row.ProviderModel),
-			exportYesNo(row.ProviderModelFallback),
-			customerStatementExportValue(filters.Language, "billing_mode", row.BillingMode),
-			strconv.FormatInt(row.Usage.InputTokens, 10),
-			read,
-			write,
-			strconv.FormatInt(row.Usage.OutputTokens, 10),
-			strconv.FormatInt(row.Usage.Requests, 10),
-			strconv.FormatInt(row.Usage.BillableCalls, 10),
-			amounts[0],
-			amounts[1],
-			coefficient,
-			version,
-			upstreamExportOriginalStatus(row.OriginalAmount, filters.Language),
-			formatExportTimestamp(scope.GeneratedAt),
-			filters.Currency,
-			strconv.FormatFloat(filters.QuotaPerUnit, 'f', -1, 64),
-			strconv.FormatFloat(filters.CurrencyRate, 'f', -1, 64),
-			seconds,
-			reasons,
-			amounts[2],
-			amounts[3],
-			rows,
-			gaps,
-			complete,
-			strconv.FormatInt(row.Usage.SecondsUnavailableRows, 10),
-			exportCsvCellGuard(strings.Join(row.CustomerModels, "; ")),
-			grouping,
-			exportYesNo(row.DataQuality != nil && row.DataQuality.HasEstimatedOriginal),
-		}
-		if filters.FieldVersion >= dailyBillingExportFieldVersion {
-			record = append(record, billingImageTotalsCSVCells(row.Usage.BillingImageTotals)...)
-			record = append(record, positiveBillingMeterCSV(row.Usage.CompletedImages))
-		}
-		if err := writer.AppendRecord(record); err != nil {
+		cacheCells, cacheNote := csvCacheWrites(language, usage.CacheWrites, usage.CacheWriteTokens)
+		csvCacheWriteValues(values, cacheCells)
+		values["notes"] = csvNotes(coverage, quality, cacheNote, customerExportEstimateReasons(language, row.EstimateReasons),
+			csvCountNote(language, usage.SecondsUnavailableRows, "%d records missing billable seconds", "%d 笔缺少计费秒数"),
+			csvCountNote(language, usage.BillableImageMissingRows, "%d records missing billable images", "%d 笔缺少计费张数"))
+		if err := writer.AppendRecord(csvProjection(upstreamSummaryColumns, values)); err != nil {
 			return err
 		}
 		progress.Matched++

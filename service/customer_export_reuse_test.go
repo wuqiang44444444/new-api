@@ -59,23 +59,19 @@ func TestCustomerStatementExportWorkerReuse(t *testing.T) {
 			csvRows, err := csv.NewReader(strings.NewReader(strings.TrimPrefix(string(store.uploaded[artifact.Files[0].ObjectKey]), customerExportCsvBOM))).ReadAll()
 			require.NoError(t, err)
 			require.Len(t, csvRows, 2)
-			values := map[string]string{}
-			for i, label := range csvRows[0] {
-				values[label] = csvRows[1][i]
-			}
 			if jobType == model.CustomerExportJobTypeStatementSummary {
 				assert.Equal(t, "statement-summary.csv", artifact.Files[0].FileName)
-				assert.Equal(t, "test-model", values["Model"])
-				assert.NotContains(t, values, "Request ID")
-				assert.Contains(t, values, "Savings")
-				assert.Empty(t, values["Savings"])
+				values := reconciliationTestCells(t, customerSummaryColumns, csvRows[1])
+				assert.Equal(t, "test-model", values["model"])
+				assert.NotContains(t, values, "request_id")
+				assert.Empty(t, values["discount_amount"])
+				assert.Contains(t, values["notes"], "部分覆盖")
 			} else {
-				assert.Equal(t, "statement-details.csv", artifact.Files[0].FileName)
-				assert.Equal(t, "req-export", values["Request ID"])
-				assert.Empty(t, values["Final factor"])
-				assert.Equal(t, "Not recorded", values["Contract status"])
-				assert.Contains(t, values, "List price")
-				assert.Empty(t, values["List price"])
+				assert.Contains(t, artifact.Files[0].FileName, "-partial.csv")
+				values := reconciliationTestCells(t, customerStatementDetailColumns, csvRows[1])
+				assert.Equal(t, "req-export", values["request_id"])
+				assert.Empty(t, values["final_ratio"])
+				assert.Empty(t, values["original_amount"])
 			}
 
 			reused, err := SubmitCustomerExportJob(42, 42, request)

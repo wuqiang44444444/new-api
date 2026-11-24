@@ -119,16 +119,19 @@ type BillingReconciliationDataQuality struct {
 
 type BillingReconciliationUsage struct {
 	BillingImageTotals
-	Requests         int64 `json:"requests"`
-	BillableCalls    int64 `json:"billable_calls"`
-	RefundedCalls    int64 `json:"refunded_calls"`
-	InputTokens      int64 `json:"input_tokens"`
-	CacheReadTokens  int64 `json:"cache_read_tokens"`
-	CacheWriteTokens int64 `json:"cache_write_tokens"`
-	OutputTokens     int64 `json:"output_tokens"`
-	GrossQuota       int64 `json:"gross_quota"`
-	RefundQuota      int64 `json:"refund_quota"`
-	NetQuota         int64 `json:"net_quota"`
+	CacheWrites            *BillingCacheWrites `json:"cache_writes,omitempty"`
+	BillableSeconds        *decimal.Decimal    `json:"billable_seconds,omitempty"`
+	MissingBillableSeconds int64               `json:"missing_billable_seconds,omitempty"`
+	Requests               int64               `json:"requests"`
+	BillableCalls          int64               `json:"billable_calls"`
+	RefundedCalls          int64               `json:"refunded_calls"`
+	InputTokens            int64               `json:"input_tokens"`
+	CacheReadTokens        int64               `json:"cache_read_tokens"`
+	CacheWriteTokens       int64               `json:"cache_write_tokens"`
+	OutputTokens           int64               `json:"output_tokens"`
+	GrossQuota             int64               `json:"gross_quota"`
+	RefundQuota            int64               `json:"refund_quota"`
+	NetQuota               int64               `json:"net_quota"`
 }
 
 type BillingReconciliationModelSummary struct {
@@ -191,7 +194,9 @@ type BillingCustomerStatement struct {
 }
 
 type billingReconciliationLog struct {
+	sourceID         int64
 	RequestId        string
+	IsStream         *bool
 	GroupName        string
 	Content          string
 	UserId           int
@@ -361,6 +366,8 @@ const (
 )
 
 type parsedBillingReconciliationLog struct {
+	frozenBillableSeconds    *decimal.Decimal
+	frozenSecondsMissing     *bool
 	customerModel            string
 	refundTaskID             string
 	inputTokens              int64
@@ -402,6 +409,8 @@ type parsedBillingReconciliationLog struct {
 	contractName             string
 	refundPreauthLogId       int64
 	refundPreauthMatched     bool
+	refundOriginalRequestID  string
+	refundOriginalIsStream   *bool
 	hasAuxiliaryCharge       bool
 	fundingAdjustmentFailed  bool
 	recordedOriginalQuota    *int64
@@ -443,8 +452,11 @@ func parseBillingReconciliationLog(log billingReconciliationLog) parsedBillingRe
 	_, cacheReadInstrumented := other["cache_read_tokens_reported"]
 	parsed.cacheReadUnavailable = (image || cacheReadInstrumented) && parsed.cacheReadEvidence != upstreamCacheRecorded
 	parsed.cacheWrite = normalizedBillingBreakdownCacheWriteTokens(other)
-	if !parsed.cacheWrite.known && (nativeUsageLogOmitsZeroCacheWrite(log, other) || historicalTestOmitsCacheWrite(log, other)) {
-		parsed.cacheWrite.known = true
+	if !parsed.cacheWrite.known {
+		if nativeUsageLogOmitsZeroCacheWrite(log, other) || historicalTestOmitsCacheWrite(log, other) {
+			parsed.cacheWrite.known = true
+			parsed.cacheWrite.tiers = zeroBillingCacheWrites()
+		}
 	}
 	parsed.cacheWriteEvidence = upstreamCacheMeterEvidence(other, "cache_write_tokens_reported", parsed.cacheWrite.known)
 	parsed.cacheWriteUnavailable = !parsed.cacheWrite.known && parsed.isChannelTest
@@ -665,11 +677,21 @@ func accumulateBillingReconciliationLog(target *BillingReconciliationUsage, log 
 		}
 		target.RefundQuota += quota
 	}
+	if seconds, missing, _ := upstreamBillingSeconds(log, parsed); seconds != nil {
+		value := *seconds
+		if target.BillableSeconds != nil {
+			value = value.Add(*target.BillableSeconds)
+		}
+		target.BillableSeconds = &value
+	} else if missing {
+		target.MissingBillableSeconds++
+	}
 	if parsed.billingMode != BillingReconciliationModePerImage {
 		target.InputTokens += parsed.inputTokens
 		target.OutputTokens += parsed.outputTokens
 		target.CacheReadTokens += parsed.cacheReadTokens
 		target.CacheWriteTokens += parsed.cacheWrite.total
+		target.CacheWrites = mergeBillingCacheWrites(target.CacheWrites, parsed.cacheWrite.tiers, parsed.cacheWrite.total)
 	}
 }
 
@@ -804,12 +826,21 @@ func finalizeBillingReconciliationQuality(target **BillingReconciliationDataQual
 }
 
 func accumulateBillingReconciliationUsage(target *BillingReconciliationUsage, source BillingReconciliationUsage) {
+	if source.BillableSeconds != nil {
+		value := *source.BillableSeconds
+		if target.BillableSeconds != nil {
+			value = value.Add(*target.BillableSeconds)
+		}
+		target.BillableSeconds = &value
+	}
+	target.MissingBillableSeconds += source.MissingBillableSeconds
 	target.BillingImageTotals.add(source.BillingImageTotals)
 	target.Requests += source.Requests
 	target.BillableCalls += source.BillableCalls
 	target.RefundedCalls += source.RefundedCalls
 	target.InputTokens += source.InputTokens
 	target.CacheReadTokens += source.CacheReadTokens
+	target.CacheWrites = mergeBillingCacheWrites(target.CacheWrites, source.CacheWrites, source.CacheWriteTokens)
 	target.CacheWriteTokens += source.CacheWriteTokens
 	target.OutputTokens += source.OutputTokens
 	target.GrossQuota += source.GrossQuota
@@ -853,6 +884,7 @@ type ProviderBillingPlatformSummary struct {
 // It intentionally excludes customer quota and refund fields, which are not
 // evidence of a supplier charge or credit.
 type ProviderBillingUsage struct {
+	CacheWrites *BillingCacheWrites `json:"cache_writes,omitempty"`
 	BillingImageTotals
 	Seconds                *decimal.Decimal `json:"seconds"`
 	CompletedImages        int64            `json:"completed_images,omitempty"`
@@ -905,6 +937,7 @@ func accumulateProviderBillingLog(target *ProviderBillingUsage, log billingRecon
 	target.OutputTokens += parsed.outputTokens
 	target.CacheReadTokens += parsed.cacheReadTokens
 	target.CacheWriteTokens += parsed.cacheWrite.total
+	target.CacheWrites = mergeBillingCacheWrites(target.CacheWrites, parsed.cacheWrite.tiers, parsed.cacheWrite.total)
 	return missing, unitKnown
 }
 
@@ -923,6 +956,7 @@ func accumulateProviderBillingUsage(target *ProviderBillingUsage, source Provide
 	target.BillableCalls += source.BillableCalls
 	target.InputTokens += source.InputTokens
 	target.CacheReadTokens += source.CacheReadTokens
+	target.CacheWrites = mergeBillingCacheWrites(target.CacheWrites, source.CacheWrites, source.CacheWriteTokens)
 	target.CacheWriteTokens += source.CacheWriteTokens
 	target.OutputTokens += source.OutputTokens
 }

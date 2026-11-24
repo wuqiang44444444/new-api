@@ -24,6 +24,7 @@ def fixture(role, serve=False):
         Path(role + ".started").write_text(str(os.getpid()))
         if role == "backend":
             Path("backend.dsn").write_text(os.environ["SQL_DSN"])
+            Path("backend.args").write_text(shlex.join(sys.argv[3:]))
         if mode == "fail":
             sys.exit(2)
         child = subprocess.Popen([sys.executable, __file__, "--serve", role], stdout=subprocess.PIPE, text=True)
@@ -76,6 +77,9 @@ class StartScriptTest(unittest.TestCase):
             '  "up -d --wait --wait-timeout 3 --no-recreate postgres") [ "${POSTGRES_MODE:-ready}" = ready ] ;;\n'
             '  "port postgres 5432") printf "%s\\n" "${POSTGRES_ADDRESS:-127.0.0.1:54330}" ;;\n'
             '  "exec -T postgres sh -c "*) printf "%s" "test@:/% password" ;;\n'
+            '  "up -d --wait --wait-timeout 3 --no-recreate postgres-cn") [ "${POSTGRES_CN_MODE:-ready}" = ready ] ;;\n'
+            '  "port postgres-cn 5432") printf "%s\\n" "127.0.0.1:54331" ;;\n'
+            '  "exec -T postgres-cn sh -c "*) printf "%s" "cn@:/% password" ;;\n'
             '  *) exit 1 ;;\n'
             'esac\n'
         )
@@ -89,10 +93,10 @@ class StartScriptTest(unittest.TestCase):
                         SQL_DSN="postgresql://postgres@127.0.0.1:15432/yuan_v51_live")
         self.env.pop("LOCAL_DEV_HTTPS", None)
 
-    def launch(self, **modes):
+    def launch(self, *args, **modes):
         log = open(self.root / "output", "w+")
         self.addCleanup(log.close)
-        proc = subprocess.Popen(["bash", "start.sh"], cwd=self.root, env=dict(self.env, **modes), stdout=log, stderr=log)
+        proc = subprocess.Popen(["bash", "start.sh", *args], cwd=self.root, env=dict(self.env, **modes), stdout=log, stderr=log)
         self.addCleanup(self.stop, proc)
         return proc
 
@@ -242,14 +246,34 @@ class StartScriptTest(unittest.TestCase):
         self.assert_released()
 
     def test_backend_uses_compose_postgres_instead_of_inherited_dsn(self):
-        proc = self.launch(POSTGRES_ADDRESS="127.0.0.1:54331")
+        proc = self.launch(POSTGRES_ADDRESS="127.0.0.1:55432")
         self.wait_ready(proc)
         self.assertEqual(
             (self.root / "backend.dsn").read_text(),
-            "postgresql://yuan_gateway:test%40%3A%2F%25%20password@127.0.0.1:54331/"
+            "postgresql://yuan_gateway:test%40%3A%2F%25%20password@127.0.0.1:55432/"
             "yuan_gateway_dev?sslmode=disable&application_name=yuan-gateway-dev",
         )
+        self.assertEqual((self.root / "backend.args").read_text(), "run -tags yuan_gateway_local_dev .")
         self.assertNotIn("test@:/% password", (self.root / "output").read_text())
+
+    def test_cn_backend_uses_separate_compose_postgres(self):
+        proc = self.launch("cn", POSTGRES_MODE="unhealthy")
+        self.wait_ready(proc)
+        self.assertEqual(
+            (self.root / "backend.dsn").read_text(),
+            "postgresql://yuan_gateway:cn%40%3A%2F%25%20password@127.0.0.1:54331/"
+            "yuan_gateway_dev_cn?sslmode=disable&application_name=yuan-gateway-dev-cn",
+        )
+        self.assertEqual((self.root / "backend.args").read_text(), "run -tags yuan_gateway_local_dev .")
+        self.assertNotIn("cn@:/% password", (self.root / "output").read_text())
+
+    def test_unhealthy_cn_postgres_preserves_existing_process(self):
+        child = self.occupy_backend_port()
+        proc = self.launch("cn", POSTGRES_CN_MODE="unhealthy")
+        self.assertNotEqual(proc.wait(timeout=15), 0)
+        self.assertIn("postgres-cn 服务未就绪", (self.root / "output").read_text())
+        self.assertFalse((self.root / "backend.started").exists())
+        self.assertIsNone(child.poll())
 
     def test_startup_does_not_truncate_or_follow_previous_backend_log(self):
         old_log = self.root / "logs/backend.log"
