@@ -126,6 +126,10 @@ func rejectRestrictedAPIKeyModelCall(c *gin.Context) bool {
 	if operation != contractModelCall {
 		return false
 	}
+	if confirmPaidArkSessionContractExemption(c) {
+		c.Set(contractModelRestrictedKey, false)
+		return false
+	}
 	const status = http.StatusForbidden
 	const code = constant.ErrorCodeContractRequired
 	message := i18n.T(c, i18n.MsgAPIKeyContractRequired)

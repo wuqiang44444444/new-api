@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -48,7 +49,7 @@ func handleArkSessionWrite(c *gin.Context, pilot *service.ArkPrefixCachePilot, r
 		return
 	}
 	row := model.ArkPrefixCache{
-		ID: model.ArkSessionCacheIDPrefix + common.GetUUID(), UserID: pilot.UserID, TokenID: pilot.TokenID,
+		ID: model.ArkSessionCacheIDPrefix + common.GetUUID(), UserID: c.GetInt("id"), TokenID: c.GetInt("token_id"),
 		Model: request.Model, GroupName: common.GetContextKeyString(c, constant.ContextKeyUsingGroup),
 		Username: c.GetString("username"), TokenName: c.GetString("token_name"), ChannelID: pilot.ChannelID,
 		Endpoint: pilot.Endpoint, State: model.ArkCacheSending, SessionRound: 1,
@@ -63,7 +64,12 @@ func handleArkSessionWrite(c *gin.Context, pilot *service.ArkPrefixCachePilot, r
 		arkCacheStateError(c, err)
 		return
 	}
-	if pilot.Mode != "observe" {
+	if c.GetString(service.ArkCacheReplayOnlyKey) != "" {
+		arkCacheError(c, http.StatusNotFound, "cache_not_found")
+		return
+	}
+	chargeStorage := pilot.ChargesSessionStorage()
+	if pilot.Mode != "observe" && !chargeStorage {
 		arkCacheError(c, http.StatusServiceUnavailable, "cache_session_observation_required")
 		return
 	}
@@ -73,6 +79,9 @@ func handleArkSessionWrite(c *gin.Context, pilot *service.ArkPrefixCachePilot, r
 	}
 	if pilot.LocalSessionStorage {
 		row.MeterVersion = model.ArkSessionLocalMeterVersion
+	}
+	if chargeStorage {
+		row.MeterVersion = pilot.MeterVersion
 	}
 	var priorTokens int
 	if request.PreviousResponse == "" {
@@ -104,12 +113,23 @@ func handleArkSessionWrite(c *gin.Context, pilot *service.ArkPrefixCachePilot, r
 		arkCacheError(c, http.StatusBadRequest, "cache_session_context_limit")
 		return
 	}
-	channel, credential := service.ArkCacheChannel(ctx, row.ChannelID, row.Credential)
+	channel, credential := service.ArkSessionChannel(ctx, pilot, row.ChannelID, row.Credential)
 	if channel == nil || channel.Status != common.ChannelStatusEnabled {
 		arkCacheError(c, http.StatusServiceUnavailable, "cache_unavailable")
 		return
 	}
+	if chargeStorage {
+		if pin, pinned, _ := service.GetChannelConstraints(c).ResolvedPin(); pinned && pin.ChannelId != channel.Id {
+			arkCacheError(c, http.StatusForbidden, "cache_model_forbidden")
+			return
+		}
+	}
 	if !authorizeArkCacheWrite(c, pilot, channel, &row) {
+		return
+	}
+	if chargeStorage && (!slices.Contains(channel.GetGroups(), row.GroupName) ||
+		pilot.NativeChannel && !model.IsChannelEnabledForGroupModel(row.GroupName, row.Model, channel.Id)) {
+		arkCacheError(c, http.StatusForbidden, "cache_model_forbidden")
 		return
 	}
 	row.Credential = service.ArkCacheDigest(credential)
@@ -149,13 +169,20 @@ func handleArkSessionWrite(c *gin.Context, pilot *service.ArkPrefixCachePilot, r
 		return
 	}
 	row.InferenceNextAt = row.SentAt + model.ArkCacheUnknownAfterSeconds
+	if chargeStorage {
+		expression, err := model.GetModelStorageHourlyExpr(ctx, row.Model)
+		if err != nil || row.ReserveArkSessionStorage(expression, arkSessionMaxInputTokens+int(*request.MaxOutput)) != nil {
+			arkCacheError(c, http.StatusServiceUnavailable, "cache_storage_price_unavailable")
+			return
+		}
+	}
 	if pilot.LocalSessionStorage {
 		if err := row.ReserveArkSessionLocalStorage(pilot.Price, arkSessionMaxInputTokens+int(*request.MaxOutput)); err != nil {
 			arkCacheError(c, http.StatusServiceUnavailable, "cache_storage_metering_paused")
 			return
 		}
 	}
-	priorClaim, err := model.ClaimArkPrefixCache(ctx, &row, pilot.MaxActive, pilot.MaxHourlyWrites, pilot.MaxHeld, row.SentAt)
+	priorClaim, err := model.ClaimArkPrefixCache(ctx, &row, pilot.MaxActive, pilot.MaxHourlyWrites, pilot.MaxHeld, common.GetTimestamp)
 	if err != nil {
 		arkCacheStateError(c, err)
 		return

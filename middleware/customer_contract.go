@@ -55,6 +55,9 @@ func customerContractAuthGate(c *gin.Context, token *model.Token) (bool, error) 
 	}
 	if snapshot == nil && operation != nil && model.APIKeyContractRequired() {
 		c.Set(contractModelRestrictedKey, true)
+		if authorizePaidArkSessionWithoutContract(c, token) {
+			return false, nil
+		}
 		return true, nil
 	}
 	return snapshot != nil, nil

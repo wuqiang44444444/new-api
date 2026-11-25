@@ -22,7 +22,7 @@ func normalizedPreviewTokens(sample *BillingExprPreviewSample) (billingexpr.Toke
 	}
 	fields := map[string]*float64{
 		"p": &params.P, "c": &params.C, "len": &params.Len,
-		"cr": &params.CR, "cc": &params.CC, "cc1h": &params.CC1h,
+		"cr": &params.CR, "cc": &params.CC, "cc1h": &params.CC1h, "cc12h": &params.CC12h,
 		"img": &params.Img, "img_cr": &params.ImgCR, "img_o": &params.ImgO,
 		"ai": &params.AI, "ao": &params.AO,
 	}

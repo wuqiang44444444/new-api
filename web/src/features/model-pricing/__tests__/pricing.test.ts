@@ -22,6 +22,7 @@ import { buildPricingChanges, type ModelPricingConfig } from '../api'
 import {
   applyPriceSyncSelections,
   applyPricingDraft,
+  buildPriceChangeRows,
   pricingFromDraft,
   pricingOptions,
   pricingRow,
@@ -68,6 +69,81 @@ it('preserves unedited budgets and removes an explicitly cleared source budget',
 })
 
 describe('shared model pricing', () => {
+  it('saves and clears hourly storage independently of the inference price', () => {
+    const key = 'billing_setting.storage_hourly_expr'
+    const inference = 'tier("base", p * 1 + c * 3)'
+    const storage = 'u("storage_token_hours") * 0.0025 / 1000000'
+    const values = {
+      'billing_setting.billing_mode': 'tiered_expr',
+      'billing_setting.billing_expr': inference,
+      [key]: storage,
+    }
+    const draft = pricingRow('example', values)
+    expect(draft.storageHourlyExpr).toBe(storage)
+    expect(pricingFromDraft(draft)).toEqual(values)
+    expect(pricingFromDraft({ ...draft, storageHourlyExpr: '' })).toEqual({
+      'billing_setting.billing_mode': 'tiered_expr',
+      'billing_setting.billing_expr': inference,
+    })
+  })
+
+  it('writes only the edited hourly price and preserves target prices during copy and sync', () => {
+    const key = 'billing_setting.storage_hourly_expr'
+    const inference = 'tier("base", p * 2)'
+    const hourly = (price: number) =>
+      `tier("storage_hourly", u("storage_token_hours") * ${price} / 1000000)`
+    const before = pricingOptions({
+      BillingMode: '{"source":"tiered_expr"}',
+      BillingExpr: JSON.stringify({ source: inference }),
+      [key]: JSON.stringify({ source: hourly(0.002), target: hourly(0.004) }),
+    })
+    const snapshot: ModelPricingConfig = {
+      options: before,
+      empty_version: 'empty',
+      entries: [
+        {
+          model_name: 'source',
+          version: 'saved',
+          configured: { [key]: hourly(0.002) },
+          effective: {
+            'billing_setting.billing_mode': 'tiered_expr',
+            'billing_setting.billing_expr': inference,
+            [key]: hourly(0.002),
+          },
+        },
+      ],
+    }
+    const draft = {
+      name: 'source',
+      billingMode: 'tiered_expr' as const,
+      billingExpr: inference,
+      storageHourlyExpr: hourly(0.003),
+    }
+    const after = applyPricingDraft(before, draft)
+    expect(buildPriceChangeRows(before, after).map((row) => row.name)).toEqual([
+      'source',
+    ])
+    expect(buildPricingChanges(snapshot, before, after)).toEqual([
+      {
+        model_name: 'source',
+        expected_version: 'saved',
+        pricing: { [key]: hourly(0.003) },
+      },
+    ])
+    const copied = applyPricingDraft(before, draft, ['source', 'target'])
+    expect(JSON.parse(copied[key])).toEqual({
+      source: hourly(0.003),
+      target: hourly(0.004),
+    })
+    expect(
+      applyPriceSyncSelections(copied, { source: { model_price: 0.1 } })[key]
+    ).toEqual(copied[key])
+    const cleared = applyPricingDraft(before, { ...draft, storageHourlyExpr: '' })
+    expect(buildPricingChanges(snapshot, before, cleared)).toEqual([
+      { model_name: 'source', expected_version: 'saved', pricing: {} },
+    ])
+  })
+
   it('preserves explicit zero prices and cache-write configuration', () => {
     expect(
       pricingFromDraft({

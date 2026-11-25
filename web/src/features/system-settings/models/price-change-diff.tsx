@@ -113,7 +113,7 @@ function getExpressionGroups(
 function getPriceGroups(
   snapshot: ModelPricingSnapshot | undefined,
   t: Translate,
-  showClearedBudget = false
+  compareTo?: ModelPricingSnapshot
 ): PriceGroup[] {
   if (!snapshot) return []
   const groups: PriceGroup[] = []
@@ -141,7 +141,10 @@ function getPriceGroups(
   for (const [plugin, expression] of providers) {
     groups.push(...getExpressionGroups(expression, t, plugin))
   }
-  if (snapshot.taskPreConsumeTokens !== undefined || showClearedBudget) {
+  if (
+    snapshot.taskPreConsumeTokens !== undefined ||
+    compareTo?.taskPreConsumeTokens !== undefined
+  ) {
     groups.push({
       key: 'task_billing_setting.preconsume_tokens',
       lines: [
@@ -149,6 +152,17 @@ function getPriceGroups(
           label: t('Async task pre-consume token upper bound'),
           value:
             snapshot.taskPreConsumeTokens?.toLocaleString() ?? t('Not configured'),
+        },
+      ],
+    })
+  }
+  if (snapshot.storageHourlyExpr || compareTo?.storageHourlyExpr) {
+    groups.push({
+      key: 'billing_setting.storage_hourly_expr',
+      lines: [
+        {
+          label: t('Hourly cache storage expression'),
+          value: snapshot.storageHourlyExpr || t('Not configured'),
         },
       ],
     })
@@ -177,7 +191,7 @@ export function PriceChangeSummary(props: { row: ModelRow }) {
   const changes = getPriceGroups(
     props.row.draft,
     t,
-    props.row.saved?.taskPreConsumeTokens !== undefined
+    props.row.saved
   ).flatMap((group) =>
     group.lines.flatMap((line) => {
       const key = priceLineKey(group, line)
@@ -214,11 +228,7 @@ function PriceValues(props: {
   compareTo?: ModelPricingSnapshot
 }) {
   const { t } = useTranslation()
-  const groups = getPriceGroups(
-    props.snapshot,
-    t,
-    props.compareTo?.taskPreConsumeTokens !== undefined
-  )
+  const groups = getPriceGroups(props.snapshot, t, props.compareTo)
   if (groups.length === 0) {
     return <span className='text-muted-foreground'>{t('Unset price')}</span>
   }

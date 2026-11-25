@@ -6,7 +6,6 @@ import (
 	"github.com/QuantumNous/new-api/controller"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -20,10 +19,6 @@ func registerArkPrefixCacheRoutes(router *gin.Engine) {
 }
 
 func setTaskPluginProtocolRouterWithArkPilot(router *gin.Engine) {
-	if service.ArkCachePilot() == nil {
-		setTaskPluginProtocolRouter(router, middleware.TokenAuth(), controller.ArkPrefixCacheResponses)
-		return
-	}
 	setTaskPluginProtocolRouter(router, middleware.ArkPrefixCacheTokenAuth(), controller.ArkPrefixCacheResponses)
 }
 

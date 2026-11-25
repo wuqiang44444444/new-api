@@ -11,9 +11,12 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func TestArkCacheErrorKeepsThePublicCodeInTheRelayEvent(t *testing.T) {
@@ -82,6 +85,36 @@ func TestArkPrefixCacheRejectsForeignManagedReferencesBeforeRouting(t *testing.T
 	assert.Contains(t, recorder.Body.String(), "cache_not_found")
 }
 
+func TestPaidArkSessionLeavesUnmanagedResponsesToNativeRelay(t *testing.T) {
+	engine := gin.New()
+	pilot := &service.ArkPrefixCachePilot{Mode: "charge", Model: "seed-lite", MeterVersion: setting.ArkSessionPlatformStorageMeter}
+	engine.POST("/v1/responses", func(c *gin.Context) {
+		defer common.CleanupBodyStorage(c)
+		c.Set("id", 3)
+		c.Set("token_id", 5)
+		arkPrefixCacheResponses(c, pilot)
+		c.Next()
+	}, func(c *gin.Context) { c.Status(http.StatusAccepted) })
+	for _, test := range []struct {
+		name string
+		body string
+		want int
+	}{
+		{"upstream continuation", `{"model":"seed-lite","previous_response_id":"resp_upstream","caching":{"type":"enabled"},"store":true}`, http.StatusAccepted},
+		{"ordinary model", `{"model":"other","previous_response_id":"resp_upstream","caching":{"type":"enabled"}}`, http.StatusAccepted},
+		{"ordinary seed request", `{"model":"seed-lite","previous_response_id":"resp_upstream"}`, http.StatusAccepted},
+		{"fixed prefix", `{"model":"seed-lite","input":"text","caching":{"type":"enabled","prefix":true}}`, http.StatusAccepted},
+		{"explicit store false and SSE", `{"model":"seed-lite","input":"text","caching":{"type":"enabled"},"store":false,"stream":true}`, http.StatusAccepted},
+		{"stored native request without expiry", `{"model":"seed-lite","input":"text","caching":{"type":"enabled"},"store":true}`, http.StatusAccepted},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(test.body)))
+			assert.Equal(t, test.want, recorder.Code)
+		})
+	}
+}
+
 func TestArkPrefixCacheNeverRelaysManagedIDsWithoutPilot(t *testing.T) {
 	for _, tt := range []struct {
 		id   string
@@ -104,6 +137,42 @@ func TestArkPrefixCacheNeverRelaysManagedIDsWithoutPilot(t *testing.T) {
 		engine.ServeHTTP(recorder, request)
 		assert.Equal(t, tt.want, recorder.Code)
 	}
+}
+
+func TestPaidArkSessionKeepsHistoricalPrefixReplayInManagedHandler(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(t.TempDir()+"/ark-replay.db"), &gorm.Config{})
+	require.NoError(t, err)
+	pool, err := db.DB()
+	require.NoError(t, err)
+	original := model.DB
+	model.DB = db
+	t.Cleanup(func() {
+		model.DB = original
+		require.NoError(t, pool.Close())
+	})
+	require.NoError(t, db.AutoMigrate(&model.ArkPrefixCache{}))
+	const payload = `{"model":"seed-lite","input":"saved","store":true,"expire_at":120,"caching":{"type":"enabled","prefix":true},"thinking":{"type":"disabled"}}`
+	digest := model.ArkPrefixCacheKeyDigest("historical-prefix")
+	prior := model.ArkPrefixCache{ID: model.ArkPrefixCacheIDPrefix + "historical", UserID: 3, TokenID: 5,
+		Model: "seed-lite", KeyDigest: digest, RequestDigest: service.ArkCacheDigest(payload),
+		State: model.ArkCacheActive, CreatedAt: 60, ExpiresAt: 120, ProviderID: "resp_test"}
+	require.NoError(t, db.Create(&prior).Error)
+	pilot := &service.ArkPrefixCachePilot{Mode: "charge", Model: prior.Model, MeterVersion: setting.ArkSessionPlatformStorageMeter, MaxInputBytes: 8192}
+	engine := gin.New()
+	engine.POST("/v1/responses", func(c *gin.Context) {
+		defer common.CleanupBodyStorage(c)
+		c.Set("id", prior.UserID)
+		c.Set("token_id", prior.TokenID)
+		c.Set(service.ArkCacheReplayOnlyKey, digest)
+		arkPrefixCacheResponses(c, pilot)
+	}, func(c *gin.Context) { c.Status(http.StatusAccepted) })
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(payload))
+	req.Header.Set("Idempotency-Key", "historical-prefix")
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	engine.ServeHTTP(res, req)
+	require.Equal(t, http.StatusOK, res.Code, res.Body.String())
+	assert.Contains(t, res.Body.String(), prior.ID)
 }
 
 func TestArkPrefixCacheAcceptsTextMessagesWithoutDiscardingUnknownFields(t *testing.T) {

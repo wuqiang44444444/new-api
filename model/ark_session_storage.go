@@ -6,7 +6,9 @@ import (
 	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -36,10 +38,31 @@ func arkCacheHourExecutionScope(query *gorm.DB) *gorm.DB {
 
 func (row *ArkPrefixCache) ReserveArkSessionLocalStorage(price string, maxTokens int) error {
 	row.PricePerMTokHr = price
+	return row.reserveArkSessionStorage(maxTokens)
+}
+
+func (row *ArkPrefixCache) ReserveArkSessionStorage(expression string, maxTokens int) error {
+	rate, err := resolveStorageHourlyExchangeRate(expression)
+	if err != nil {
+		return err
+	}
+	price, tier, err := billingexpr.StorageHourlyPrice(expression, rate)
+	if err != nil || len(tier) > 191 {
+		return ErrArkCacheMeter
+	}
+	row.StorageExpr, row.StorageTier = expression, tier
+	if rate != nil {
+		row.StorageCNYPerUSD = rate.Rate
+	}
+	row.PricePerMTokHr = strconv.FormatFloat(price, 'g', -1, 64)
+	return row.reserveArkSessionStorage(maxTokens)
+}
+
+func (row *ArkPrefixCache) reserveArkSessionStorage(maxTokens int) error {
 	row.QuotaPerUnit = strconv.FormatFloat(common.QuotaPerUnit, 'g', -1, 64)
 	row.MaxStored = maxTokens
 	// A 30-minute session (including accepted timestamp skew) can touch two hours.
-	held, err := ArkPrefixCacheQuota(price, row.QuotaPerUnit, int64(maxTokens)*2, true)
+	held, err := row.storageQuota(int64(maxTokens)*2, true)
 	if err != nil {
 		return err
 	}
@@ -49,18 +72,36 @@ func (row *ArkPrefixCache) ReserveArkSessionLocalStorage(price string, maxTokens
 	return nil
 }
 
+func arkCacheUsesAutomaticStorage(row ArkPrefixCache) bool {
+	return row.MeterVersion == ArkSessionLocalMeterVersion || row.MeterVersion == setting.ArkSessionPlatformStorageMeter
+}
+
+func (row ArkPrefixCache) storageQuota(tokens int64, reserve bool) (int, error) {
+	if row.MeterVersion != setting.ArkSessionPlatformStorageMeter {
+		return ArkPrefixCacheQuota(row.PricePerMTokHr, row.QuotaPerUnit, tokens, reserve)
+	}
+	if tokens < 0 || tokens > int64(row.MaxStored)*2 || row.StorageExpr == "" {
+		return 0, ErrArkCacheMeter
+	}
+	rate, err := decimal.NewFromString(row.QuotaPerUnit)
+	if err != nil || !rate.IsPositive() {
+		return 0, ErrArkCacheMeter
+	}
+	return billingexpr.StorageHourlyQuota(row.StorageExpr, row.StorageTier, row.StorageCNYPerUSD, rate, tokens, reserve)
+}
+
 func arkSessionStorageTokens(row ArkPrefixCache) int {
 	return row.InputTokens - row.ReadTokens + row.OutputTokens
 }
 
-func arkSessionLocalStorageAfterInference(row ArkPrefixCache) (int, int64, error) {
+func arkSessionStorageAfterInference(row ArkPrefixCache) (int, int64, error) {
 	firstHour := row.CreatedAt / 3600 * 3600
 	hours := (row.ExpiresAt-1-firstHour)/3600 + 1
 	tokens := arkSessionStorageTokens(row)
 	if row.CreatedAt <= 0 || row.ExpiresAt <= row.CreatedAt || hours > 2 || tokens < 0 || tokens > row.MaxStored {
 		return 0, 0, ErrArkCacheMeter
 	}
-	held, err := ArkPrefixCacheQuota(row.PricePerMTokHr, row.QuotaPerUnit, int64(tokens)*hours, true)
+	held, err := row.storageQuota(int64(tokens)*hours, true)
 	if err != nil || held > row.HeldQuota {
 		return 0, 0, ErrArkCacheMeter
 	}
@@ -69,7 +110,7 @@ func arkSessionLocalStorageAfterInference(row ArkPrefixCache) (int, int64, error
 
 // The settlement transaction owns the resource row. It records the derived
 // hour and consumes the corresponding hold together.
-func recordArkSessionLocalHours(tx *gorm.DB, row ArkPrefixCache, now, end int64) error {
+func recordArkSessionStorageHours(tx *gorm.DB, row ArkPrefixCache, now, end int64) error {
 	if row.SessionRound == 0 || row.InferenceSettledAt == 0 || row.MeterBlocked {
 		return nil
 	}
@@ -79,7 +120,7 @@ func recordArkSessionLocalHours(tx *gorm.DB, row ArkPrefixCache, now, end int64)
 			(row.DeleteRequestedAt == 0 || row.DeleteRequestedAt < min(end, hour+3600)) {
 			break
 		}
-		evidence := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%d", ArkSessionLocalMeterVersion, row.ID, hour)))
+		evidence := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%d", row.MeterVersion, row.ID, hour)))
 		record := ArkPrefixCacheHour{CacheID: row.ID, HourStart: hour, Tokens: tokens, Evidence: fmt.Sprintf("%x", evidence)}
 		if err := tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "cache_id"}, {Name: "hour_start"}}, DoNothing: true,

@@ -81,6 +81,7 @@ type ModelFormValues = {
   BillingMode: string
   BillingExpr: string
   PluginBillingExpr: string
+  StorageHourlyExpr: string
 }
 
 type ModelRatioFormProps = {
@@ -453,6 +454,7 @@ export const ModelRatioForm = memo(function ModelRatioForm({
               savedBillingMode={savedValues.BillingMode}
               savedBillingExpr={savedValues.BillingExpr}
               savedPluginBillingExpr={savedValues.PluginBillingExpr}
+              savedStorageHourlyExpr={savedValues.StorageHourlyExpr}
               savedTaskPreConsumeTokens={savedValues.TaskPreConsumeTokens}
               modelPrice={form.watch('ModelPrice')}
               modelRatio={form.watch('ModelRatio')}
@@ -465,6 +467,7 @@ export const ModelRatioForm = memo(function ModelRatioForm({
               billingMode={form.watch('BillingMode')}
               billingExpr={form.watch('BillingExpr')}
               pluginBillingExpr={form.watch('PluginBillingExpr')}
+              storageHourlyExpr={form.watch('StorageHourlyExpr')}
               taskPreConsumeTokens={form.watch('TaskPreConsumeTokens')}
               candidateModelNames={
                 isUnsetVariant ? enabledModelsQuery.data?.data : undefined
@@ -481,6 +484,7 @@ export const ModelRatioForm = memo(function ModelRatioForm({
                   'billing_setting.billing_mode': 'BillingMode',
                   'billing_setting.billing_expr': 'BillingExpr',
                   'billing_setting.plugin_billing_expr': 'PluginBillingExpr',
+                  'billing_setting.storage_hourly_expr': 'StorageHourlyExpr',
                   'task_billing_setting.preconsume_tokens': 'TaskPreConsumeTokens',
                 }
                 const formField =

@@ -1,12 +1,38 @@
 package model
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
+	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestArkSessionStorageRoundsExactHalfQuota(t *testing.T) {
+	for _, tt := range []struct {
+		expression string
+		want       int
+	}{
+		{`tier("storage", u("storage_token_hours") * 0.29 / 1000000)`, 15},
+		{`tier("storage", u("storage_token_hours") / 1000000 * 0.29)`, 15},
+		{`tier("storage", u("storage_token_hours") * 0.28999999999999999 / 1000000)`, 14},
+	} {
+		_, tier, err := billingexpr.StorageHourlyPrice(tt.expression, nil)
+		require.NoError(t, err)
+		row := ArkPrefixCache{MeterVersion: setting.ArkSessionPlatformStorageMeter, StorageExpr: tt.expression,
+			StorageTier: tier, QuotaPerUnit: "500000", MaxStored: 100}
+		quota, err := row.storageQuota(100, false)
+		require.NoError(t, err)
+		assert.Equal(t, tt.want, quota, tt.expression)
+		hold, err := row.storageQuota(100, true)
+		require.NoError(t, err)
+		assert.Equal(t, 15, hold)
+	}
+}
 
 func TestArkSessionLocalStorageReservesAndSettlesClosedHours(t *testing.T) {
 	previousAllowed := arkSessionLocalBillingAllowed
@@ -43,7 +69,7 @@ func TestArkSessionLocalStorageReservesAndSettlesClosedHours(t *testing.T) {
 				InferenceHeldQuota: 100, MeterVersion: ArkSessionLocalMeterVersion,
 			}
 			require.NoError(t, round.ReserveArkSessionLocalStorage("1", 100))
-			_, err := ClaimArkPrefixCache(ctx, &round, 8, 10, 100, round.SentAt)
+			_, err := ClaimArkPrefixCache(ctx, &round, 8, 10, 100, arkCacheTestClock(round.SentAt))
 			require.NoError(t, err)
 			require.NoError(t, DB.First(&user, user.Id).Error)
 			assert.Equal(t, 800, user.Quota)
@@ -107,6 +133,111 @@ func TestArkSessionLocalStorageReservesAndSettlesClosedHours(t *testing.T) {
 			assert.Equal(t, user.Quota, token.RemainQuota)
 			assert.EqualValues(t, 1, user.RequestCount)
 		})
+	}
+}
+
+func TestArkSessionStorageFreezesPublishedExpressionPerWrite(t *testing.T) {
+	arkCacheTestDB(t, false)
+	require.NoError(t, DB.AutoMigrate(&Option{}))
+	old := common.QuotaPerUnit
+	common.QuotaPerUnit = 500000
+	t.Cleanup(func() { common.QuotaPerUnit = old })
+	ctx := t.Context()
+	user := User{Username: "storage-expression", Quota: 1000}
+	require.NoError(t, DB.Create(&user).Error)
+	key := Token{UserId: user.Id, Key: "storage-expression-key", RemainQuota: 1000}
+	require.NoError(t, DB.Create(&key).Error)
+	channel := Channel{Name: "storage-expression"}
+	require.NoError(t, DB.Create(&channel).Error)
+	const hour int64 = 1756656000
+	const name = "seed-lite"
+	published := Option{Key: ModelStorageHourlyExprOption}
+	expressions := []string{
+		`tier("v1", u("storage_token_hours") / 1000000)`,
+		`tier("v2", u("storage_token_hours") * 2 / 1000000)`,
+	}
+	rounds := make([]ArkPrefixCache, 0, len(expressions))
+	for _, expr := range expressions {
+		value, err := common.Marshal(map[string]string{name: expr})
+		require.NoError(t, err)
+		published.Value = string(value)
+		require.NoError(t, DB.Save(&published).Error)
+		active, err := GetModelStorageHourlyExpr(ctx, name)
+		require.NoError(t, err)
+		row := ArkPrefixCache{ID: ArkSessionCacheIDPrefix + common.GetUUID(), KeyDigest: ArkSessionCacheKeyDigest(expr),
+			UserID: user.Id, TokenID: key.Id, ChannelID: channel.Id, Model: name,
+			State: ArkCacheSending, SessionRound: 1, ExpiresAt: hour + 300, SentAt: hour + 10,
+			MeterVersion: setting.ArkSessionPlatformStorageMeter}
+		require.NoError(t, row.ReserveArkSessionStorage(active, 100))
+		_, err = ClaimArkPrefixCache(ctx, &row, 8, 8, 500, arkCacheTestClock(row.SentAt))
+		require.NoError(t, err)
+		row.State, row.CreatedAt, row.ProviderID = ArkCacheInferencePending, hour+10, "resp_example"
+		row.InputTokens, row.ReadTokens, row.OutputTokens = 60, 30, 10
+		row.InferenceLog = `{"billing_source":"wallet"}`
+		require.NoError(t, CompleteArkPrefixCache(ctx, row))
+		require.NoError(t, SettleArkSessionInference(ctx, row.ID, common.GetTimestamp()))
+		rounds = append(rounds, row)
+	}
+	require.NoError(t, DB.Delete(&published).Error)
+	for i, row := range rounds {
+		require.NoError(t, SettleArkPrefixCache(ctx, row.ID, hour+3600))
+		require.NoError(t, SettleArkPrefixCache(ctx, row.ID, hour+3660))
+		var event ArkPrefixCacheHour
+		require.NoError(t, DB.Take(&event, "cache_id = ?", row.ID).Error)
+		assert.Equal(t, 40, event.Tokens)
+		assert.Equal(t, 20*(i+1), event.Quota)
+		require.NoError(t, DeliverArkPrefixCacheLog(ctx, event.ID, hour+3660))
+	}
+	require.NoError(t, DB.First(&user, user.Id).Error)
+	require.NoError(t, DB.First(&key, key.Id).Error)
+	assert.Equal(t, 940, user.Quota)
+	assert.Equal(t, 940, key.RemainQuota)
+	_, summary, err := GetUserBillingStatement(user.Id, hour, hour+3599, key.Id, name)
+	require.NoError(t, err)
+	assert.EqualValues(t, 60, summary.NetQuota)
+	assert.Zero(t, summary.Requests)
+	assert.Zero(t, summary.TotalTokens)
+}
+
+func TestArkSessionStorageFreezesSystemExchangeRate(t *testing.T) {
+	arkCacheTestDB(t, false)
+	prior := operation_setting.USDExchangeRate
+	previousQuotaPerUnit := common.QuotaPerUnit
+	common.QuotaPerUnit = 500000
+	t.Cleanup(func() {
+		common.QuotaPerUnit = previousQuotaPerUnit
+		require.NoError(t, operation_setting.SetUSDExchangeRate(strconv.FormatFloat(prior, 'g', -1, 64)))
+	})
+	const expression = `tier("storage_hourly", u("storage_token_hours") * 0.017 / usd_exchange_rate() / 1000000)`
+	const hour int64 = 1756656000
+	require.NoError(t, operation_setting.SetUSDExchangeRate("5"))
+	require.NoError(t, validateModelStorageHourlyPrice(expression))
+	first := ArkPrefixCache{ID: "first", MeterVersion: setting.ArkSessionPlatformStorageMeter, ExpiresAt: hour + 300}
+	require.NoError(t, first.ReserveArkSessionStorage(expression, 10000))
+	require.NoError(t, DB.Create(&first).Error)
+
+	require.NoError(t, operation_setting.SetUSDExchangeRate("10"))
+	second := ArkPrefixCache{MeterVersion: setting.ArkSessionPlatformStorageMeter, ExpiresAt: first.ExpiresAt}
+	require.NoError(t, second.ReserveArkSessionStorage(expression, 10000))
+	require.NoError(t, DB.Take(&first, "id = ?", first.ID).Error)
+	assert.Equal(t, "0.0034", first.PricePerMTokHr)
+	assert.Equal(t, "0.0017", second.PricePerMTokHr)
+	assert.Equal(t, 2*second.HeldQuota, first.HeldQuota)
+
+	require.Error(t, operation_setting.SetUSDExchangeRate("0"))
+	require.ErrorContains(t, validateModelStorageHourlyPrice(expression), "USDExchangeRate")
+	assert.Error(t, (&ArkPrefixCache{}).ReserveArkSessionStorage(expression, 10000))
+	require.NoError(t, validateModelStorageHourlyPrice(`tier("usd", u("storage_token_hours") * 0.0025 / 1000000)`))
+	for _, sample := range []struct {
+		row  ArkPrefixCache
+		want int
+	}{
+		{first, 17},
+		{second, 9},
+	} {
+		quota, err := sample.row.storageQuota(10000, false)
+		require.NoError(t, err)
+		assert.Equal(t, sample.want, quota)
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 const ArkCacheBaseURL = "https://ark.cn-beijing.volces.com"
 
 const ArkPrefixCacheModelVersion = "doubao-seed-2-1-lite-260915"
+const ArkSessionPlatformStorageMeter = "session-platform-retention-v1"
 
 var arkCacheEndpoint = regexp.MustCompile(`^ep-[a-zA-Z0-9-]{1,96}$`)
 var arkCacheMeterVersion = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$`)
@@ -37,10 +38,13 @@ type ArkPrefixCachePilot struct {
 	FundsGrace          int64  `json:"funds_grace_seconds"`
 	ReuseStorage        string `json:"verified_reuse_storage"`
 	LocalSessionStorage bool   `json:"local_session_storage"`
+	NativeChannel       bool   `json:"-"`
 }
 
+var arkCachePilotOption = sync.OnceValue(func() string { return os.Getenv("ARK_PREFIX_CACHE_PILOT") })
+
 var loadArkPrefixCachePilot = sync.OnceValue(func() *ArkPrefixCachePilot {
-	raw := os.Getenv("ARK_PREFIX_CACHE_PILOT")
+	raw := arkCachePilotOption()
 	if raw == "" {
 		return nil
 	}
@@ -54,14 +58,30 @@ var loadArkPrefixCachePilot = sync.OnceValue(func() *ArkPrefixCachePilot {
 
 func ArkCachePilot() *ArkPrefixCachePilot { return loadArkPrefixCachePilot() }
 
+func ArkDefaultSessionEnabled() bool { return arkCachePilotOption() == "" }
+
+func (c ArkPrefixCachePilot) ChargesSessionStorage() bool {
+	return c.Mode == "charge" && c.MeterVersion == ArkSessionPlatformStorageMeter
+}
+
+func (c ArkPrefixCachePilot) AllowsApplication(userID, tokenID int) bool {
+	return userID > 0 && tokenID > 0 &&
+		(c.UserID == userID && c.TokenID == tokenID || c.ChargesSessionStorage() && c.UserID == 0 && c.TokenID == 0)
+}
+
 func (c ArkPrefixCachePilot) Valid() bool {
-	validTarget := arkCacheEndpoint.MatchString(c.Endpoint) || (c.Mode != "charge" && c.Endpoint == ArkPrefixCacheModelVersion)
-	if c.UserID <= 0 || c.TokenID <= 0 || c.ChannelID <= 0 || c.Model == "" || len(c.Model) > 191 ||
+	chargeSession := c.ChargesSessionStorage()
+	validTarget := arkCacheEndpoint.MatchString(c.Endpoint) || ((c.Mode != "charge" || chargeSession) && c.Endpoint == ArkPrefixCacheModelVersion)
+	validApplication := c.UserID > 0 && c.TokenID > 0 || chargeSession && c.UserID == 0 && c.TokenID == 0
+	if !validApplication || c.ChannelID <= 0 || c.Model == "" || len(c.Model) > 191 ||
 		!validTarget || c.ModelVersion != ArkPrefixCacheModelVersion ||
 		c.MaxInputBytes <= 0 || c.MaxInputBytes > 1<<20 || c.MaxActive <= 0 || c.MaxActive > 1000 ||
 		c.MaxHourlyWrites <= 0 || c.MaxHourlyWrites > 10000 ||
 		c.MaxTTLSeconds <= 0 || c.MaxTTLSeconds > 7*24*3600 {
 		return false
+	}
+	if chargeSession {
+		return !c.LocalSessionStorage && c.MaxHeld > 0 && c.Price == ""
 	}
 	if c.Mode == "observe" || c.Mode == "disabled" {
 		if !c.LocalSessionStorage {

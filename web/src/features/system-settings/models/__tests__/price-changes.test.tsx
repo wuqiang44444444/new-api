@@ -55,6 +55,7 @@ const saved = {
   BillingMode: '{}',
   BillingExpr: '{}',
   PluginBillingExpr: '{}',
+  StorageHourlyExpr: '{}',
   TaskPreConsumeTokens: '{}',
   ExposeRatioEnabled: false,
 }
@@ -147,6 +148,60 @@ const topBar = () => {
 }
 const saveButton = () =>
   topBar().getByRole('button', { name: /Save model prices/ })
+
+it.each(['desktop', 'mobile'] as const)(
+  'loads and saves a storage-only price edit on %s',
+  async (layout) => {
+    if (layout === 'mobile') {
+      const matchMedia = window.matchMedia
+      vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
+        ...matchMedia(query),
+        matches: query.includes('max-width') || matchMedia(query).matches,
+      }))
+    }
+    const user = userEvent.setup()
+    const name = 'doubao-seed-2-1-lite-260915'
+    const inference = 'tier("base", p * 0.1190298507 + c * 0.40298507463 + ai * 1.761047761 + cr * 0.023880059701)'
+    const original =
+      'tier("storage_hourly", u("storage_token_hours") * 0.0025 / 1000000)'
+    const updated =
+      'tier("storage_hourly", u("storage_token_hours") * 0.003 / 1000000)'
+    const { onSave } = await renderForm({
+      saved: {
+        StorageHourlyExpr: JSON.stringify({ [name]: original }),
+        BillingMode: JSON.stringify({ [name]: 'tiered_expr' }),
+        BillingExpr: JSON.stringify({ [name]: inference }),
+      },
+    })
+    await user.click(screen.getByText(name))
+    const input = await screen.findByRole('textbox', {
+      name: 'Hourly cache storage expression',
+    })
+    expect(input).toHaveValue(original)
+    await user.clear(input)
+    await user.paste(updated)
+    const save =
+      layout === 'mobile'
+        ? within(
+            screen.getByRole('dialog', { name: 'Edit model pricing' })
+          ).getByRole('button', { name: 'Save model prices' })
+        : saveButton()
+    await waitFor(() => expect(save).toBeEnabled())
+    await user.click(save)
+    const dialog = await screen.findByRole('alertdialog', {
+      name: 'Confirm price changes',
+    })
+    expect(within(dialog).getAllByText(original).length).toBeGreaterThan(0)
+    expect(within(dialog).getAllByText(updated).length).toBeGreaterThan(0)
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Confirm and save' })
+    )
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce())
+    const submitted = onSave.mock.calls[0][0]
+    expect(JSON.parse(submitted.StorageHourlyExpr)).toEqual({ [name]: updated })
+    expect(JSON.parse(submitted.BillingExpr)).toEqual({ [name]: inference })
+  }
+)
 
 const seedanceSource = 'seedance-2-0-fast-b'
 const seedanceTarget = 'seedance-2-0-b'

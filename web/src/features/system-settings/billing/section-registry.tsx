@@ -39,6 +39,7 @@ const getModelDefaults = (settings: BillingSettings) => ({
   ExposeRatioEnabled: settings.ExposeRatioEnabled,
   BillingMode: settings['billing_setting.billing_mode'],
   PluginBillingExpr: settings["billing_setting.plugin_billing_expr"] || "{}",
+  StorageHourlyExpr: '{}',
  BillingExpr: settings['billing_setting.billing_expr'],
   TaskPreConsumeTokens: settings['task_billing_setting.preconsume_tokens'],
 })

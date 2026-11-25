@@ -129,6 +129,7 @@ const createModelSchema = (t: Translate) =>
     BillingMode: createJsonStringField(t),
     BillingExpr: createJsonStringField(t),
     PluginBillingExpr: createJsonStringField(t),
+    StorageHourlyExpr: createJsonStringField(t),
     TaskPreConsumeTokens: createJsonStringField(t),
   })
 
@@ -200,6 +201,9 @@ export function RatioSettingsCard({
               pricingBaseline.options['billing_setting.billing_expr'],
             PluginBillingExpr:
               pricingBaseline.options['billing_setting.plugin_billing_expr'],
+            StorageHourlyExpr:
+              pricingBaseline.options['billing_setting.storage_hourly_expr'] ??
+              '{}',
             TaskPreConsumeTokens:
               pricingBaseline.options['task_billing_setting.preconsume_tokens'],
           }
@@ -242,6 +246,7 @@ export function RatioSettingsCard({
     BillingMode: normalizeJsonString(modelDefaults.BillingMode),
     BillingExpr: normalizeJsonString(modelDefaults.BillingExpr),
     PluginBillingExpr: normalizeJsonString(modelDefaults.PluginBillingExpr),
+    StorageHourlyExpr: normalizeJsonString(modelDefaults.StorageHourlyExpr),
  TaskPreConsumeTokens: normalizeJsonString(modelDefaults.TaskPreConsumeTokens || "{}"),
   })
   const [savedModelValues, setSavedModelValues] = useState(
@@ -318,6 +323,7 @@ UserUsableGroups: formatJsonForTextarea(groupDefaults.UserUsableGroups),
       BillingMode: normalizeJsonString(modelDefaults.BillingMode),
       BillingExpr: normalizeJsonString(modelDefaults.BillingExpr),
       PluginBillingExpr: normalizeJsonString(modelDefaults.PluginBillingExpr),
+      StorageHourlyExpr: normalizeJsonString(modelDefaults.StorageHourlyExpr),
  TaskPreConsumeTokens: normalizeJsonString(modelDefaults.TaskPreConsumeTokens || "{}"),
     }
     setSavedModelValues(modelNormalizedDefaults.current)
@@ -392,6 +398,7 @@ UserUsableGroups: formatJsonForTextarea(groupDefaults.UserUsableGroups),
         BillingMode: normalizeJsonString(values.BillingMode),
         BillingExpr: normalizeJsonString(values.BillingExpr),
         PluginBillingExpr: normalizeJsonString(values.PluginBillingExpr),
+        StorageHourlyExpr: normalizeJsonString(values.StorageHourlyExpr),
 TaskPreConsumeTokens: normalizeJsonString(values.TaskPreConsumeTokens),
       }
 

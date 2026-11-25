@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -74,4 +75,38 @@ func TestConfiguredArkPilotUsesContractAdmission(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("paid Session exempts only its eligible request", func(t *testing.T) {
+		baseURL := setting.ArkCacheBaseURL
+		channel := model.Channel{Name: "paid-ark", Type: constant.ChannelTypeVolcEngine,
+			Key: "test-ark-credential", Status: common.ChannelStatusEnabled, BaseURL: &baseURL, Group: "default"}
+		require.NoError(t, db.Create(&channel).Error)
+		pilot.Mode, pilot.MeterVersion, pilot.ChannelID = "charge", setting.ArkSessionPlatformStorageMeter, channel.Id
+		pilot.UserID, pilot.TokenID = 0, 0
+		require.NoError(t, db.Model(&token).Updates(map[string]any{"remain_quota": 10, "status": common.TokenStatusEnabled}).Error)
+		require.NoError(t, model.UpdateRequestPolicyOptions(map[string]string{model.RequireAPIKeyContractOption: "true"}))
+		for _, tt := range []struct {
+			name, body string
+			want       int
+		}{
+			{"paid first round", `{"model":"seed-lite","store":true,"expire_at":100,"caching":{"type":"enabled"}}`, 204},
+			{"paid continuation", `{"model":"seed-lite","store":true,"previous_response_id":"resp_ark_session_fixture","caching":{"type":"enabled"}}`, 204},
+			{"native cached continuation", `{"model":"seed-lite","store":true,"previous_response_id":"resp_upstream","caching":{"type":"enabled"}}`, 403},
+			{"other model", `{"model":"other","store":true,"expire_at":100,"caching":{"type":"enabled"}}`, 403},
+			{"ordinary request", `{"model":"seed-lite","store":true}`, 403},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				request := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(tt.body))
+				request.Header.Set("Authorization", "Bearer "+token.Key)
+				request.Header.Set("Content-Type", "application/json")
+				request.Header.Set("Idempotency-Key", replayKey)
+				response := httptest.NewRecorder()
+				engine.ServeHTTP(response, request)
+				require.Equal(t, tt.want, response.Code, response.Body.String())
+				if tt.want == 403 {
+					assert.Contains(t, response.Body.String(), constant.ErrorCodeContractRequired)
+				}
+			})
+		}
+	})
 }

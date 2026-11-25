@@ -12,6 +12,8 @@ import (
 	"gorm.io/gorm"
 )
 
+func arkCacheTestClock(now int64) func() int64 { return func() int64 { return now } }
+
 func arkCacheTestDB(t *testing.T, splitLogs bool) {
 	t.Helper()
 	previousDB, previousLogs := DB, LOG_DB
@@ -53,12 +55,12 @@ func TestArkPrefixCacheHourlyEvidenceIsSettledOnce(t *testing.T) {
 				ChannelID: channel.Id, Model: "seed-lite", ExpiresAt: hour + 600, HeldQuota: 100, SentAt: hour + 10,
 				PricePerMTokHr: "1", QuotaPerUnit: "500000", MaxStored: 200, MeterVersion: "reviewed-1",
 				FundsDeadline: hour + 7200, NextActionAt: hour + 60}
-			prior, err := ClaimArkPrefixCache(ctx, &cache, 4, 10, 100, hour+10)
+			prior, err := ClaimArkPrefixCache(ctx, &cache, 4, 10, 100, arkCacheTestClock(hour+10))
 			require.NoError(t, err)
 			assert.Nil(t, prior)
 			duplicate := cache
 			duplicate.ID += "-duplicate"
-			prior, err = ClaimArkPrefixCache(ctx, &duplicate, 4, 10, 100, hour+20)
+			prior, err = ClaimArkPrefixCache(ctx, &duplicate, 4, 10, 100, arkCacheTestClock(hour+20))
 			require.NoError(t, err)
 			require.NotNil(t, prior)
 			assert.Equal(t, cache.ID, prior.ID)
@@ -131,7 +133,7 @@ func TestArkPrefixCacheUnknownDeadlineReleasesWithoutResolvingBusinessState(t *t
 	cache := ArkPrefixCache{ID: ArkPrefixCacheIDPrefix + "unknown", KeyDigest: strings.Repeat("a", 64),
 		State: ArkCacheSending, UserID: user.Id, TokenID: token.Id, MeterVersion: "reviewed-1",
 		SentAt: 100, ExpiresAt: 4200, HeldQuota: 20, FundsDeadline: 7800}
-	_, err := ClaimArkPrefixCache(ctx, &cache, 5, 10, 20, 100)
+	_, err := ClaimArkPrefixCache(ctx, &cache, 5, 10, 20, arkCacheTestClock(100))
 	require.NoError(t, err)
 	require.True(t, ArkCacheOutstanding(ctx))
 	require.NoError(t, ReconcileStaleArkPrefixSends(ctx, 279))
@@ -191,7 +193,7 @@ func TestArkPrefixCacheEvidenceAboveFrozenCapPausesNewStorageHolds(t *testing.T)
 	newCache := ArkPrefixCache{ID: ArkPrefixCacheIDPrefix + "new", KeyDigest: strings.Repeat("b", 64),
 		State: ArkCacheSending, UserID: user.Id, TokenID: token.Id, ChannelID: 1, MeterVersion: cache.MeterVersion,
 		SentAt: hour + 3602, ExpiresAt: hour + 3700, HeldQuota: 20}
-	_, err := ClaimArkPrefixCache(ctx, &newCache, 5, 10, 20, newCache.SentAt)
+	_, err := ClaimArkPrefixCache(ctx, &newCache, 5, 10, 20, arkCacheTestClock(newCache.SentAt))
 	require.ErrorIs(t, err, ErrArkCacheMeter)
 	require.NoError(t, DB.First(&user, user.Id).Error)
 	assert.Equal(t, 100, user.Quota)
@@ -212,7 +214,7 @@ func TestArkPrefixCacheMeterConflictStopsChargesAndReleasesAtDeadline(t *testing
 		State: ArkCacheSending, UserID: user.Id, TokenID: token.Id, ChannelID: 1, MeterVersion: "reviewed-1",
 		ExpiresAt: hour + 60, FundsDeadline: hour + 7200, HeldQuota: 10, MaxStored: 300,
 		PricePerMTokHr: "1", QuotaPerUnit: "500000", SentAt: hour + 1}
-	_, err := ClaimArkPrefixCache(ctx, &row, 5, 10, 20, row.SentAt)
+	_, err := ClaimArkPrefixCache(ctx, &row, 5, 10, 20, arkCacheTestClock(row.SentAt))
 	require.NoError(t, err)
 	row.State, row.CreatedAt, row.NextHour = ArkCacheActive, hour+1, hour
 	require.NoError(t, CompleteArkPrefixCache(ctx, row))

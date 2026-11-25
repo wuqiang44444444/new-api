@@ -36,6 +36,7 @@ const models = {
   BillingMode: '{}',
   BillingExpr: '{}',
   PluginBillingExpr: '{}',
+  StorageHourlyExpr: '{}',
   TaskPreConsumeTokens: '{}',
 }
 const clients: QueryClient[] = []

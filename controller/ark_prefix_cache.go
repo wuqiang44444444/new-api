@@ -40,35 +40,69 @@ type arkCacheRequest struct {
 // ArkPrefixCacheResponses shares the existing POST registration. The ordinary
 // path performs no cache DB queries, even when the pilot is enabled.
 func ArkPrefixCacheResponses(c *gin.Context) {
-	arkPrefixCacheResponses(c, service.ArkCachePilot())
+	pilot := service.ArkCachePilot()
+	if pilot == nil {
+		if binding, ok := c.Get(service.ArkCacheBindingKey); ok {
+			pilot, _ = binding.(*service.ArkPrefixCachePilot)
+		} else if route, ok := service.ReadArkCacheRequestRoute(c); ok {
+			pilot = service.DefaultArkSessionBinding(c, route, c.GetInt("id"), c.GetInt("token_id"),
+				common.GetContextKeyString(c, constant.ContextKeyUsingGroup))
+		}
+	}
+	arkPrefixCacheResponses(c, pilot)
 }
 
 func arkPrefixCacheResponses(c *gin.Context, pilot *service.ArkPrefixCachePilot) {
+	mustHandle := c.GetBool(service.ArkCacheContractExemptKey) || c.GetString(service.ArkCacheReplayOnlyKey) != ""
 	storage, err := common.GetBodyStorage(c)
 	if err != nil {
+		if mustHandle {
+			c.Abort()
+			arkCacheError(c, http.StatusBadRequest, "invalid_cache_request")
+		}
 		return
 	}
 	if pilot == nil {
-		fields, err := common.ReadBodyJSONFields(storage, "previous_response_id")
-		if err == nil && len(fields) == 1 && model.IsArkManagedCacheID(fields[0].String()) {
+		route, ok := service.ReadArkCacheRequestRoute(c)
+		if mustHandle || ok && model.IsArkManagedCacheID(route.Previous) {
 			c.Abort()
 			arkCacheError(c, http.StatusNotFound, "cache_not_found")
 		}
 		return
 	}
-	fields, err := common.ReadBodyJSONFields(storage, "model", "previous_response_id", "caching.type", "caching.prefix")
-	if err != nil || len(fields) != 4 {
+	route, ok := service.ReadArkCacheRequestRoute(c)
+	if !ok {
+		if mustHandle {
+			c.Abort()
+			arkCacheError(c, http.StatusBadRequest, "invalid_cache_request")
+		}
 		return
 	}
-	ownApp := c.GetInt("id") == pilot.UserID && c.GetInt("token_id") == pilot.TokenID
-	priorID := fields[1].String()
+	ownApp := pilot.AllowsApplication(c.GetInt("id"), c.GetInt("token_id"))
+	priorID := route.Previous
 	managed := model.IsArkManagedCacheID(priorID)
-	selected := ownApp && fields[0].String() == pilot.Model && fields[2].String() == "enabled" && (priorID == "" || fields[3].Bool())
-	if !managed && !selected {
+	selectedModel := ownApp && route.Model == pilot.Model && route.Enabled
+	selected := selectedModel && (priorID == "" || route.Prefix)
+	replayOnly := c.GetString(service.ArkCacheReplayOnlyKey)
+	if pilot.ChargesSessionStorage() {
+		selected = selectedModel && route.PaidSession(pilot) && !managed &&
+			service.PaidArkCacheRoute(c, pilot, common.GetContextKeyString(c, constant.ContextKeyUsingGroup))
+		// A historical Prefix create may be replayed, but this mode cannot
+		// create new Prefix resources.
+		if selectedModel && route.Store && route.Prefix && priorID == "" && replayOnly == "" {
+			if digest := route.ReplayDigest(pilot, strings.TrimSpace(c.GetHeader("Idempotency-Key"))); digest != "" {
+				if prior, err := model.FindArkPrefixCacheClaim(c.Request.Context(), c.GetInt("id"), c.GetInt("token_id"), digest); err == nil && prior.Model == route.Model {
+					replayOnly = digest
+					c.Set(service.ArkCacheReplayOnlyKey, digest)
+				}
+			}
+		}
+	}
+	if !managed && !selected && replayOnly == "" && !mustHandle {
 		return
 	}
 	c.Abort()
-	if !ownApp || fields[0].String() != pilot.Model {
+	if !ownApp || route.Model != pilot.Model || (!managed && !selected && replayOnly == "") {
 		arkCacheError(c, http.StatusNotFound, "cache_not_found")
 		return
 	}
@@ -208,7 +242,7 @@ func handleArkCacheWrite(c *gin.Context, pilot *service.ArkPrefixCachePilot, req
 	ctx := c.Request.Context()
 	now := common.GetTimestamp()
 	row := model.ArkPrefixCache{
-		ID: model.ArkPrefixCacheIDPrefix + common.GetUUID(), UserID: pilot.UserID, TokenID: pilot.TokenID,
+		ID: model.ArkPrefixCacheIDPrefix + common.GetUUID(), UserID: c.GetInt("id"), TokenID: c.GetInt("token_id"),
 		Model: request.Model, GroupName: common.GetContextKeyString(c, constant.ContextKeyUsingGroup),
 		Username: c.GetString("username"), TokenName: c.GetString("token_name"), ChannelID: pilot.ChannelID,
 		Endpoint: pilot.Endpoint, State: model.ArkCacheSending,
@@ -229,6 +263,10 @@ func handleArkCacheWrite(c *gin.Context, pilot *service.ArkPrefixCachePilot, req
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			arkCacheError(c, http.StatusServiceUnavailable, "cache_unavailable")
+			return
+		}
+		if c.GetString(service.ArkCacheReplayOnlyKey) != "" {
+			arkCacheError(c, http.StatusNotFound, "cache_not_found")
 			return
 		}
 		if request.ExpireAt == nil || *request.ExpireAt <= now || *request.ExpireAt > now+pilot.MaxTTLSeconds {
@@ -287,7 +325,7 @@ func handleArkCacheWrite(c *gin.Context, pilot *service.ArkPrefixCachePilot, req
 		arkCacheError(c, http.StatusBadRequest, "invalid_cache_expiry")
 		return
 	}
-	prior, err := model.ClaimArkPrefixCache(ctx, &row, pilot.MaxActive, pilot.MaxHourlyWrites, pilot.MaxHeld, row.SentAt)
+	prior, err := model.ClaimArkPrefixCache(ctx, &row, pilot.MaxActive, pilot.MaxHourlyWrites, pilot.MaxHeld, common.GetTimestamp)
 	if err != nil {
 		arkCacheStateError(c, err)
 		return
@@ -383,6 +421,8 @@ func arkCacheStateError(c *gin.Context, err error) {
 		arkCacheError(c, http.StatusConflict, "cache_operation_pending")
 	case errors.Is(err, model.ErrArkCacheMeter):
 		arkCacheError(c, http.StatusServiceUnavailable, "cache_storage_metering_paused")
+	case errors.Is(err, model.ErrArkCacheExpired):
+		arkCacheError(c, http.StatusBadRequest, "invalid_cache_expiry")
 	default:
 		arkCacheError(c, http.StatusServiceUnavailable, "cache_unavailable")
 	}

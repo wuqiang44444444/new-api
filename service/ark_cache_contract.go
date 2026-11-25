@@ -10,8 +10,13 @@ import (
 )
 
 func arkCacheContractPriceBasis(pilot *ArkPrefixCachePilot) (model.Pricing, bool) {
-	if pilot == nil || pilot.Mode != "observe" || billing_setting.GetBillingMode(pilot.Model) == billing_setting.BillingModeTieredExpr {
+	if pilot == nil || (pilot.Mode != "observe" && !pilot.ChargesSessionStorage()) {
 		return model.Pricing{}, false
+	}
+	if billing_setting.GetBillingMode(pilot.Model) == billing_setting.BillingModeTieredExpr {
+		expression, configured := billing_setting.GetBillingExpr(pilot.Model)
+		return model.Pricing{ModelName: pilot.Model, BasisPriceConfigured: configured,
+			BillingMode: billing_setting.BillingModeTieredExpr, BillingExpr: expression}, configured
 	}
 	if _, perCall := ratio_setting.GetModelPrice(pilot.Model, false); perCall {
 		return model.Pricing{}, false
@@ -34,7 +39,7 @@ func AuthorizeArkCacheContract(c *gin.Context, pilot *ArkPrefixCachePilot, chann
 	if fact == nil {
 		return ErrCustomerContractUnavailable
 	}
-	if fact.UserId == pilot.UserID && common.GetContextKeyInt(c, constant.ContextKeyTokenId) == pilot.TokenID {
+	if pilot.AllowsApplication(fact.UserId, common.GetContextKeyInt(c, constant.ContextKeyTokenId)) {
 		if pin, pinned, _ := GetChannelConstraints(c).ResolvedPin(); pinned && pin.ChannelId != channel.Id {
 			attachContractRejection(c, contractStageSelection, contractReasonChannelNotInScope, publicModel, nil)
 			return ErrCustomerContractScope

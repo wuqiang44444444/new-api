@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"errors"
 	"fmt"
 	"math"
@@ -43,6 +44,7 @@ var (
 	ErrArkCacheFunds    = errors.New("insufficient cache storage quota")
 	ErrArkCacheBusy     = errors.New("cache operation unresolved")
 	ErrArkCacheMeter    = errors.New("cache storage metering paused")
+	ErrArkCacheExpired  = errors.New("cache expiry reached before send permission")
 )
 
 // ArkPrefixCache freezes one upstream response write and its funding scope.
@@ -75,6 +77,9 @@ type ArkPrefixCache struct {
 	OutputTokens       int
 	ReadTokens         int
 	PricePerMTokHr     string `gorm:"type:varchar(64)"`
+	StorageExpr        string `gorm:"type:text"`
+	StorageTier        string `gorm:"type:varchar(191)"`
+	StorageCNYPerUSD   float64
 	QuotaPerUnit       string `gorm:"type:varchar(64)"`
 	MeterVersion       string `gorm:"type:varchar(64)"`
 	MeterBlocked       bool
@@ -112,17 +117,24 @@ func FindArkPrefixCacheClaim(ctx context.Context, userID, tokenID int, key strin
 
 // Hold and send permission are committed together. The Key row also
 // serializes admissions for the same application on all three databases.
-func ClaimArkPrefixCache(ctx context.Context, row *ArkPrefixCache, maxActive, maxHourlyWrites, maxHeld int, now int64) (existing *ArkPrefixCache, err error) {
+func ClaimArkPrefixCache(ctx context.Context, row *ArkPrefixCache, maxActive, maxHourlyWrites, maxHeld int, clock func() int64) (existing *ArkPrefixCache, err error) {
+	now := clock()
 	if row.MeterVersion == ArkSessionLocalMeterVersion && !arkSessionLocalBillingAllowed() {
 		return nil, ErrArkCacheMeter
 	}
 	if row.HeldQuota < 0 || row.InferenceHeldQuota < 0 || row.HeldQuota > math.MaxInt32-row.InferenceHeldQuota ||
-		(row.HeldQuota > 0 && row.InferenceHeldQuota > 0 && (row.SessionRound == 0 || row.MeterVersion != ArkSessionLocalMeterVersion)) {
+		(row.HeldQuota > 0 && row.InferenceHeldQuota > 0 && (row.SessionRound == 0 || !arkCacheUsesAutomaticStorage(*row))) {
 		return nil, ErrArkCacheFunds
 	}
 	var token Token
 	var parent ArkPrefixCache
 	heldQuota := row.HeldQuota + row.InferenceHeldQuota
+	var txOptions *sql.TxOptions
+	if !common.UsingMainDatabase(common.DatabaseTypeSQLite) {
+		// The count after the channel lock must see the preceding admission's
+		// commit, even when an earlier read took place before it (e.g. MySQL).
+		txOptions = &sql.TxOptions{Isolation: sql.LevelReadCommitted}
+	}
 	err = DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if row.ParentID != "" {
 			if err := tx.Model(&ArkPrefixCache{}).Where("id = ? AND user_id = ? AND token_id = ?", row.ParentID, row.UserID, row.TokenID).
@@ -171,13 +183,21 @@ func ClaimArkPrefixCache(ctx context.Context, row *ArkPrefixCache, maxActive, ma
 		if active >= int64(maxActive) {
 			return ErrArkCacheLimit
 		}
-		var writes int64
-		if err := tx.Model(&ArkPrefixCache{}).Scopes(arkCacheExecutionScope).
-			Where("channel_id = ? AND sent_at >= ?", row.ChannelID, now-now%3600).Count(&writes).Error; err != nil {
-			return err
+		checkHourlyLimit := func(at int64) error {
+			hourStart := at - at%3600
+			var writes int64
+			if err := tx.Model(&ArkPrefixCache{}).Scopes(arkCacheExecutionScope).
+				Where("channel_id = ? AND sent_at >= ? AND sent_at < ?", row.ChannelID, hourStart, hourStart+3600).
+				Count(&writes).Error; err != nil {
+				return err
+			}
+			if writes >= int64(maxHourlyWrites) {
+				return ErrArkCacheLimit
+			}
+			return nil
 		}
-		if writes >= int64(maxHourlyWrites) {
-			return ErrArkCacheLimit
+		if err := checkHourlyLimit(now); err != nil {
+			return err
 		}
 		if row.HeldQuota > 0 {
 			var blocked int64
@@ -216,8 +236,30 @@ func ClaimArkPrefixCache(ctx context.Context, row *ArkPrefixCache, maxActive, ma
 				return err
 			}
 		}
+		if txOptions != nil {
+			// Lock the channel after funding rows, matching settlement's lock
+			// order. A lost slot rolls back all tentative holds and parent changes.
+			if err := lockForUpdate(tx).Select("id").Where("id = ?", row.ChannelID).Take(&Channel{}).Error; err != nil {
+				return err
+			}
+		}
+		// SQLite already holds its writer lock. Take the hour from the
+		// send permission, including requests that waited across an hour.
+		permitAt := max(now, clock())
+		if row.ExpiresAt <= permitAt {
+			return ErrArkCacheExpired
+		}
+		if txOptions != nil || permitAt/3600 != now/3600 {
+			if err := checkHourlyLimit(permitAt); err != nil {
+				return err
+			}
+		}
+		if row.InferenceNextAt > 0 {
+			row.InferenceNextAt += permitAt - row.SentAt
+		}
+		row.SentAt = permitAt
 		return tx.Create(row).Error
-	})
+	}, txOptions)
 	if err == nil && existing == nil && heldQuota > 0 {
 		invalidateArkCacheBalances(row.UserID, token.Key)
 	}

@@ -78,6 +78,19 @@ func TestBillingPreviewHTTPRejectsInvalidNormalizedSamples(t *testing.T) {
 	}
 }
 
+func TestBillingPreviewHTTPAcceptsNormalized12HourCacheWrites(t *testing.T) {
+	for _, tokens := range []float64{0, 1000000} {
+		result := billingRatePreviewHTTP(t, `tier("base", p * 2 + cc12h * 4)`, map[string]any{
+			"usage_semantic":   "normalized",
+			"normalized_usage": map[string]any{"p": 1000000, "cc12h": tokens},
+		})
+		require.Empty(t, result.Error)
+		require.NotNil(t, result.Evaluation)
+		assert.Equal(t, tokens, result.Evaluation.Normalized.CC12h)
+		assert.Equal(t, 2+tokens*4/1000000, result.Evaluation.RawCostUSD)
+	}
+}
+
 func TestBillingPreviewHTTPPreservesLengthImageCacheAndFixedRequestUnits(t *testing.T) {
 	result := billingRatePreviewHTTP(t, `len > 100 ? tier("large", img_cr * 2) : tier("small", p)`, map[string]any{
 		"usage_semantic": "normalized", "normalized_usage": map[string]any{"p": 1, "len": 101, "img_cr": 1000000},

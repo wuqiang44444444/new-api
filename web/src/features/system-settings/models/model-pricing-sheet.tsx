@@ -62,6 +62,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Textarea } from '@/components/ui/textarea'
 import {
   previewModelPricing,
   previewModelPricingConversion,
@@ -218,6 +219,7 @@ const ModelPricingEditorPanelContent = forwardRef<
 ) {
   const { t } = useTranslation()
   const promptPriceId = useId()
+  const storageExprId = useId()
   const formElementRef = useRef<HTMLFormElement>(null)
   const imageGrid = useRef<ImagePriceGridHandle>(null)
   const [imageGridDirty, setImageGridDirty] = useState(false)
@@ -240,6 +242,9 @@ const ModelPricingEditorPanelContent = forwardRef<
     ...EMPTY_LANE_ENABLED,
   })
   const [billingExpr, setBillingExpr] = useState(DEFAULT_TOKEN_BILLING_EXPR)
+  const [storageHourlyExpr, setStorageHourlyExpr] = useState(
+    editData?.storageHourlyExpr ?? ''
+  )
  const [taskPreConsumeTokens, setTaskPreConsumeTokens] = useState(editData?.taskPreConsumeTokens ?? 0)
   const [conversionReason, setConversionReason] = useState('')
   const [wasConverted, setWasConverted] = useState(false)
@@ -439,6 +444,7 @@ const ModelPricingEditorPanelContent = forwardRef<
     setPromptPrice(nextLaneState.promptPrice)
     setLanePrices(nextLaneState.prices)
     setLaneEnabled(nextLaneState.enabled)
+    setStorageHourlyExpr(editData?.storageHourlyExpr ?? '')
     setEditorReloadToken((token) => token + 1)
     autoSwitchedForRef.current = null
   }, [editData, form, initialPricingMode, initialBillingExpr])
@@ -462,6 +468,7 @@ const ModelPricingEditorPanelContent = forwardRef<
         form.formState.isDirty ||
         pricingMode !== initialPricingMode ||
         billingExpr !== initialBillingExpr ||
+        storageHourlyExpr !== (editData?.storageHourlyExpr ?? '') ||
         requestRuleExpr !== (editData?.requestRuleExpr ?? '') ||
         !pluginExpressionsEqual(pluginExpressions, editData?.pluginBillingExpr) ||
         taskPreConsumeTokens !== (editData?.taskPreConsumeTokens ?? 0)
@@ -472,6 +479,7 @@ const ModelPricingEditorPanelContent = forwardRef<
     form.formState.isDirty,
     pricingMode,
     billingExpr,
+    storageHourlyExpr,
     requestRuleExpr,
     editData,
     initialPricingMode,
@@ -738,6 +746,7 @@ const ModelPricingEditorPanelContent = forwardRef<
           ? { pluginBillingExpr: pluginExpressions }
           : {}),
         billingMode: pricingMode,
+        storageHourlyExpr,
         price: values.price || '',
         ratio: values.ratio || '',
         cacheRatio: values.cacheRatio || '',
@@ -766,6 +775,7 @@ const ModelPricingEditorPanelContent = forwardRef<
       editData,
       pluginVariants,
       taskPreConsumeTokens,
+      storageHourlyExpr,
     ]
   )
 
@@ -1261,6 +1271,25 @@ const ModelPricingEditorPanelContent = forwardRef<
                     </TabsContent>
                   </Tabs>
                 </TaskPluginPricingEditor>
+                <Field>
+                  <FieldLabel htmlFor={storageExprId}>
+                    {t('Hourly cache storage expression')}
+                  </FieldLabel>
+                  <Textarea
+                    id={storageExprId}
+                    aria-describedby={`${storageExprId}-description`}
+                    className='font-mono'
+                    value={storageHourlyExpr}
+                    placeholder='tier("storage_hourly", u("storage_token_hours") * 0.0025 / 1000000)'
+                    onChange={(event) => setStorageHourlyExpr(event.target.value)}
+                    maxLength={1024}
+                  />
+                  <FieldDescription id={`${storageExprId}-description`}>
+                    {t(
+                      'The expression returns USD. Clearing it stops new paid cache writes.'
+                    )}
+                  </FieldDescription>
+                </Field>
               </FieldGroup>
 
               <aside

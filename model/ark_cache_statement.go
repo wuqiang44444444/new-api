@@ -1,6 +1,9 @@
 package model
 
-import "gorm.io/gorm"
+import (
+	"github.com/QuantumNous/new-api/setting"
+	"gorm.io/gorm"
+)
 
 // The confirmation caller holds the source-user lock. The same lock protects
 // creation of the pending monetary facts, until their source logs are visible.
@@ -8,9 +11,10 @@ func verifyArkCacheStatementSource(tx *gorm.DB, userID int, start, end int64) er
 	var rows []ArkPrefixCache
 	if err := tx.Scopes(arkCacheExecutionScope).Select("id").Where(`user_id = ? AND
 		((created_at >= ? AND created_at < ? AND inference_log_due_at > 0)
-		OR (meter_version = ? AND funds_closed_at = 0 AND expires_at > ? AND
+		OR (meter_version IN ? AND funds_closed_at = 0 AND expires_at > ? AND
 			((next_hour > 0 AND next_hour < ?) OR (state = ? AND created_at > 0 AND created_at < ?))))`,
-		userID, start, end, ArkSessionLocalMeterVersion, start, end, ArkCacheInferencePending, end).Limit(1).Find(&rows).Error; err != nil {
+		userID, start, end, []string{ArkSessionLocalMeterVersion, setting.ArkSessionPlatformStorageMeter}, start, end, ArkCacheInferencePending, end).
+		Limit(1).Find(&rows).Error; err != nil {
 		return err
 	}
 	if len(rows) != 0 {

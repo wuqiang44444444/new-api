@@ -46,16 +46,21 @@ export const PRICING_KEYS = [
   'billing_setting.billing_mode',
   'billing_setting.billing_expr',
   'billing_setting.plugin_billing_expr',
+  'billing_setting.storage_hourly_expr',
   'task_billing_setting.preconsume_tokens',
 ] as const
 export type PricingKey = (typeof PRICING_KEYS)[number]
 export type PricingValues = Partial<
   Record<
-    Exclude<PricingKey, 'billing_setting.plugin_billing_expr'>,
+    Exclude<
+      PricingKey,
+      'billing_setting.plugin_billing_expr' | 'billing_setting.storage_hourly_expr'
+    >,
     number | string
   >
 > & {
   'billing_setting.plugin_billing_expr'?: Record<string, string>
+  'billing_setting.storage_hourly_expr'?: string
 }
 export type PricingOptions = Record<PricingKey, string>
 
@@ -165,6 +170,9 @@ export function pricingOptions(
       if (key === 'billing_setting.plugin_billing_expr') {
         value = values.PluginBillingExpr ?? value
       }
+      if (key === 'billing_setting.storage_hourly_expr') {
+        value = values.StorageHourlyExpr ?? value
+      }
       return [key, typeof value === 'string' ? value : '{}']
     })
   ) as PricingOptions
@@ -183,6 +191,7 @@ export function pricingRows(options: PricingOptions): ModelPricingSnapshot[] {
     billingMode: options['billing_setting.billing_mode'],
     billingExpr: options['billing_setting.billing_expr'],
     pluginBillingExpr: options['billing_setting.plugin_billing_expr'],
+    storageHourlyExpr: options['billing_setting.storage_hourly_expr'],
     taskPreConsumeTokens: options['task_billing_setting.preconsume_tokens'],
   })
 }
@@ -274,6 +283,9 @@ export function pricingFromDraft(data: ModelRatioData): PricingValues {
   if (data.taskPreConsumeTokens && data.taskPreConsumeTokens > 0) {
     values['task_billing_setting.preconsume_tokens'] = data.taskPreConsumeTokens
   }
+  if (data.storageHourlyExpr?.trim()) {
+    values['billing_setting.storage_hourly_expr'] = data.storageHourlyExpr.trim()
+  }
   return values
 }
 
@@ -283,17 +295,20 @@ export function applyPricingDraft(
   names: string[] = [data.name]
 ): PricingOptions {
   const values = pricingFromDraft(data)
-  const clearTaskBudget = data.taskPreConsumeTokens === 0
-  if (names.length === 1 && names[0] === data.name) {
-    return applyPricingValues(options, values, names, clearTaskBudget)
+  const clear = {
+    taskBudget: data.taskPreConsumeTokens === 0,
+    storagePrice: data.storageHourlyExpr !== undefined,
   }
-  // Provider bindings belong to each model. Copy only the shared model price
-  // to other models, while still committing the source provider draft.
+  if (names.length === 1 && names[0] === data.name) {
+    return applyPricingValues(options, values, names, clear)
+  }
+  // Provider overrides and hourly storage prices belong to each model.
   const copied = { ...values }
   delete copied['billing_setting.plugin_billing_expr']
+  delete copied['billing_setting.storage_hourly_expr']
   const next = applyPricingValues(options, copied, names)
   return names.includes(data.name)
-    ? applyPricingValues(next, values, [data.name], clearTaskBudget)
+    ? applyPricingValues(next, values, [data.name], clear)
     : next
 }
 
@@ -301,14 +316,14 @@ function applyPricingValues(
   options: PricingOptions,
   values: PricingValues,
   names: string[],
-  clearTaskBudget = false
+  clear = { taskBudget: false, storagePrice: false }
 ): PricingOptions {
   return Object.fromEntries(
     PRICING_KEYS.map((key) => {
       if (
-        key === 'task_billing_setting.preconsume_tokens' &&
         values[key] === undefined &&
-        !clearTaskBudget
+        ((key === 'task_billing_setting.preconsume_tokens' && !clear.taskBudget) ||
+          (key === 'billing_setting.storage_hourly_expr' && !clear.storagePrice))
       ) {
         return [key, options[key]]
       }
@@ -372,7 +387,12 @@ export function pricingValuesByModel(
         continue
       }
       const model = models.get(name) ?? {}
-      model[key] = value
+      if (key === 'billing_setting.storage_hourly_expr') {
+        if (typeof value !== 'string') throw new Error(t('Invalid pricing value'))
+        model[key] = value
+      } else {
+        model[key] = value
+      }
       models.set(name, model)
     }
   }
@@ -404,7 +424,8 @@ export function applyPriceSyncSelections(
           .join('') as PricingKey
         if (
           PRICING_KEYS.includes(key) &&
-          key !== 'billing_setting.plugin_billing_expr'
+          key !== 'billing_setting.plugin_billing_expr' &&
+          key !== 'billing_setting.storage_hourly_expr'
         ) {
           next[key] = value
         }

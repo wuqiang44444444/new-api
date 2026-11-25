@@ -68,7 +68,7 @@ func TestArkSessionWalletReceiptAndLogSurviveRetry(t *testing.T) {
 				Model: "seed", Credential: ArkSessionCacheKeyDigest("verified-test-scope"), SessionRound: 1, State: ArkCacheSending,
 				SentAt: now, ExpiresAt: now + 360, RequestedUntil: now + 360, InferenceNextAt: now + 180, InferenceHeldQuota: 100,
 			}
-			prior, err := ClaimArkPrefixCache(ctx, &round, 8, 20, 0, now)
+			prior, err := ClaimArkPrefixCache(ctx, &round, 8, 20, 0, arkCacheTestClock(now))
 			require.NoError(t, err)
 			require.Nil(t, prior)
 			require.NoError(t, DB.First(&user, user.Id).Error)
@@ -126,16 +126,16 @@ func TestArkSessionWalletReceiptAndLogSurviveRetry(t *testing.T) {
 				State: ArkCacheSending, SentAt: now, ExpiresAt: now + 360, RequestedUntil: now + 360,
 				InferenceNextAt: now + 180, InferenceHeldQuota: 50,
 			}
-			prior, err = ClaimArkPrefixCache(ctx, &child, 8, 20, 0, now)
+			prior, err = ClaimArkPrefixCache(ctx, &child, 8, 20, 0, arkCacheTestClock(now))
 			require.NoError(t, err)
 			require.Nil(t, prior)
-			prior, err = ClaimArkPrefixCache(ctx, &child, 8, 20, 0, now)
+			prior, err = ClaimArkPrefixCache(ctx, &child, 8, 20, 0, arkCacheTestClock(now))
 			require.NoError(t, err)
 			require.NotNil(t, prior)
 			assert.Equal(t, child.ID, prior.ID)
 			branch := child
 			branch.ID, branch.KeyDigest = ArkSessionCacheIDPrefix+"branch", ArkSessionCacheKeyDigest("another-key")
-			_, err = ClaimArkPrefixCache(ctx, &branch, 8, 20, 0, now)
+			_, err = ClaimArkPrefixCache(ctx, &branch, 8, 20, 0, arkCacheTestClock(now))
 			assert.ErrorIs(t, err, ErrArkCacheBusy)
 			child.State, child.RejectedStatus = ArkCacheRejected, 429
 			require.NoError(t, CompleteArkPrefixCache(ctx, child))
@@ -143,11 +143,11 @@ func TestArkSessionWalletReceiptAndLogSurviveRetry(t *testing.T) {
 			stored, err = FindArkPrefixCache(ctx, user.Id, token.Id, child.ID)
 			require.NoError(t, err)
 			require.Equal(t, ArkCacheRejected, stored.State)
-			original, err := ClaimArkPrefixCache(ctx, &child, 8, 20, 0, now)
+			original, err := ClaimArkPrefixCache(ctx, &child, 8, 20, 0, arkCacheTestClock(now))
 			require.NoError(t, err)
 			require.Equal(t, child.ID, original.ID)
 			require.Equal(t, 429, original.RejectedStatus)
-			replacement, err := ClaimArkPrefixCache(ctx, &branch, 8, 20, 0, now)
+			replacement, err := ClaimArkPrefixCache(ctx, &branch, 8, 20, 0, arkCacheTestClock(now))
 			require.NoError(t, err)
 			require.Nil(t, replacement)
 			require.NoError(t, CompleteArkPrefixCache(ctx, child))
@@ -162,7 +162,7 @@ func TestArkSessionWalletReceiptAndLogSurviveRetry(t *testing.T) {
 			assert.Equal(t, 0, stored.InferenceHeldQuota)
 			another := branch
 			another.ID, another.KeyDigest = ArkSessionCacheIDPrefix+"third-key", ArkSessionCacheKeyDigest("third-key")
-			_, err = ClaimArkPrefixCache(ctx, &another, 8, 20, 0, now+181)
+			_, err = ClaimArkPrefixCache(ctx, &another, 8, 20, 0, arkCacheTestClock(now+181))
 			assert.ErrorIs(t, err, ErrArkCacheBusy)
 			require.NoError(t, DB.First(&user, user.Id).Error)
 			assert.Equal(t, 963, user.Quota)
@@ -170,7 +170,7 @@ func TestArkSessionWalletReceiptAndLogSurviveRetry(t *testing.T) {
 			stalePrefix := ArkPrefixCache{ID: ArkPrefixCacheIDPrefix + "stale", UserID: user.Id, TokenID: token.Id, ChannelID: channel.Id,
 				KeyDigest: ArkPrefixCacheKeyDigest("stale"), State: ArkCacheSending, SentAt: now,
 				ExpiresAt: now + 60, FundsDeadline: now + 360, HeldQuota: 25}
-			_, err = ClaimArkPrefixCache(ctx, &stalePrefix, 8, 20, 25, now)
+			_, err = ClaimArkPrefixCache(ctx, &stalePrefix, 8, 20, 25, arkCacheTestClock(now))
 			require.NoError(t, err)
 			require.NoError(t, ReconcileStaleArkPrefixSends(ctx, now+180))
 			require.NoError(t, SettleArkPrefixCache(ctx, stalePrefix.ID, now+360))

@@ -301,6 +301,7 @@ function PricingFormFixture(props: {
     BillingMode: '{}',
     BillingExpr: '{}',
     PluginBillingExpr: '{}',
+    StorageHourlyExpr: '{}',
     ExposeRatioEnabled: false,
     TaskPreConsumeTokens: '{}',
   }

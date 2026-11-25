@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
@@ -62,7 +63,7 @@ func RecordArkPrefixCacheHour(ctx context.Context, record ArkPrefixCacheHour, no
 		if err := lockForUpdate(tx).Take(&cache, "id = ?", record.CacheID).Error; err != nil {
 			return err
 		}
-		if cache.MeterVersion == ArkSessionLocalMeterVersion {
+		if arkCacheUsesAutomaticStorage(cache) {
 			return ErrArkCacheConflict
 		}
 		var previous ArkPrefixCacheHour
@@ -134,7 +135,7 @@ func SettleArkPrefixCache(ctx context.Context, id string, now int64) error {
 		previousQuota := cache.SettledQuota
 		previousHour := cache.NextHour
 		end := arkCacheEnd(cache)
-		if cache.MeterVersion == ArkSessionLocalMeterVersion {
+		if arkCacheUsesAutomaticStorage(cache) {
 			if cache.State == ArkCacheInferencePending {
 				// Inference recovery can price hours from the durable receipt even after the deadline.
 				return nil
@@ -146,8 +147,8 @@ func SettleArkPrefixCache(ctx context.Context, id string, now int64) error {
 		}
 		if cache.FundsClosedAt == 0 && cache.MeterVersion != "" && cache.NextHour > 0 && cache.NextHour+3600 <= now && cache.NextHour < end &&
 			(cache.State == ArkCacheActive || cache.State == ArkCacheDeleted || ((cache.State == ArkCacheDeleting || cache.State == ArkCacheAbsent) && now >= cache.ExpiresAt)) {
-			if cache.MeterVersion == ArkSessionLocalMeterVersion {
-				if err := recordArkSessionLocalHours(tx, cache, now, end); err != nil {
+			if arkCacheUsesAutomaticStorage(cache) {
+				if err := recordArkSessionStorageHours(tx, cache, now, end); err != nil {
 					return err
 				}
 			}
@@ -165,7 +166,7 @@ func SettleArkPrefixCache(ctx context.Context, id string, now int64) error {
 					break
 				}
 				total := cache.SettledTokens + int64(hour.Tokens)
-				quota, err := ArkPrefixCacheQuota(cache.PricePerMTokHr, cache.QuotaPerUnit, total, false)
+				quota, err := cache.storageQuota(total, false)
 				if err != nil || quota < cache.SettledQuota || quota-cache.SettledQuota > cache.HeldQuota {
 					meteringConflict, cache.MeterBlocked = true, true
 					cache.NextActionAt = max(cache.NextActionAt, cache.FundsDeadline)
@@ -179,7 +180,7 @@ func SettleArkPrefixCache(ctx context.Context, id string, now int64) error {
 				cache.HeldQuota -= delta
 			}
 		}
-		if cache.MeterVersion == ArkSessionLocalMeterVersion && !meteringConflict && cache.NextHour > previousHour && cache.NextHour < end {
+		if arkCacheUsesAutomaticStorage(cache) && !meteringConflict && cache.NextHour > previousHour && cache.NextHour < end {
 			cache.NextActionAt = cache.NextHour + 3600
 		}
 		if cache.FundsClosedAt == 0 && (cache.State == ArkCacheRejected || now >= cache.FundsDeadline ||
@@ -286,12 +287,18 @@ func DeliverArkPrefixCacheLog(ctx context.Context, id, now int64) error {
 			Admin        struct {
 				Quota        int    `json:"statement_original_quota"`
 				MeterVersion string `json:"meter_version"`
+				PriceVersion string `json:"storage_price_version,omitempty"`
+				StorageTier  string `json:"storage_price_tier,omitempty"`
 			} `json:"admin_info"`
 		}
 		facts.Event, facts.Tokens, facts.Unit = ArkCacheBillingMode, hour.Tokens, "token_hour"
 		facts.HourStart, facts.HourEnd, facts.UnitPrice = hour.HourStart, hour.HourStart+3600, cache.PricePerMTokHr
 		facts.ContentParts = []*common.Message{common.NewMessage("Cache storage fee")}
 		facts.Admin.Quota, facts.Admin.MeterVersion = hour.Quota, cache.MeterVersion
+		if cache.StorageExpr != "" {
+			facts.Admin.PriceVersion = billingexpr.ExprHashString(cache.StorageExpr)
+			facts.Admin.StorageTier = cache.StorageTier
+		}
 		encoded, err := common.Marshal(facts)
 		if err != nil {
 			return err

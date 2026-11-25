@@ -36,11 +36,13 @@ export type ModelPricingSnapshotInput = {
   billingMode: string
   billingExpr: string
   pluginBillingExpr?: string
+  storageHourlyExpr?: string
   taskPreConsumeTokens?: string
 }
 
 export type ModelPricingSnapshot = {
   pluginBillingExpr?: Record<string, string>
+  storageHourlyExpr?: string
   name: string
   price?: string
   ratio?: string
@@ -180,6 +182,7 @@ export const buildModelSnapshots = ({
   billingMode,
   billingExpr,
   pluginBillingExpr = '{}',
+  storageHourlyExpr = '{}',
   taskPreConsumeTokens = '{}',
 }: ModelPricingSnapshotInput): ModelPricingSnapshot[] => {
   const priceMap = safeJsonParse<Record<string, number>>(modelPrice, {
@@ -226,6 +229,10 @@ export const buildModelSnapshots = ({
     taskPreConsumeTokens,
     { fallback: {}, context: 'task pre-consume tokens' }
   )
+  const storagePriceMap = safeJsonParse<Record<string, string>>(
+    storageHourlyExpr,
+    { fallback: {}, context: 'hourly storage expressions' }
+  )
 
   const pluginExprMap = safeJsonParse<Record<string, string>>(
     pluginBillingExpr,
@@ -254,6 +261,7 @@ export const buildModelSnapshots = ({
     ...Object.keys(billingModeMap),
     ...Object.keys(billingExprMap),
     ...Object.keys(taskBudgetMap),
+    ...Object.keys(storagePriceMap),
   ])
 
   return [...modelNames].map((name) => {
@@ -268,6 +276,9 @@ export const buildModelSnapshots = ({
     const taskBudget = Object.hasOwn(taskBudgetMap, name)
       ? taskBudgetMap[name]
       : undefined
+    const storagePrice = Object.hasOwn(storagePriceMap, name)
+      ? storagePriceMap[name]
+      : undefined
 
     const modeForModel = billingModeMap[name]
     if (modeForModel === 'tiered_expr') {
@@ -277,6 +288,7 @@ export const buildModelSnapshots = ({
       return {
         name,
         pluginBillingExpr: pluginExpressionsByModel.get(name),
+        storageHourlyExpr: storagePrice,
         billingMode: 'tiered_expr',
         billingExpr: pureExpr,
         requestRuleExpr,
@@ -296,6 +308,7 @@ export const buildModelSnapshots = ({
     return {
       name,
       pluginBillingExpr: pluginExpressionsByModel.get(name),
+      storageHourlyExpr: storagePrice,
       taskPreConsumeTokens: taskBudget,
       price,
       ratio,
@@ -334,6 +347,7 @@ export const getSnapshotSignature = (snapshot?: ModelPricingSnapshot) => {
     billingExpr: snapshot.billingExpr || '',
     requestRuleExpr: snapshot.requestRuleExpr || '',
     taskPreConsumeTokens: snapshot.taskPreConsumeTokens,
+    storageHourlyExpr: snapshot.storageHourlyExpr,
     pluginBillingExpr: Object.entries(snapshot.pluginBillingExpr ?? {}).sort(
       ([a], [b]) => a.localeCompare(b)
     ),

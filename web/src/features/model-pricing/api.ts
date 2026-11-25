@@ -214,7 +214,11 @@ export function buildPricingChanges(
         Object.assign(pricing, { [key]: newValues[key] })
       }
     }
-    if (newValues['billing_setting.billing_mode'] === 'tiered_expr') {
+    if (
+      newValues['billing_setting.billing_mode'] === 'tiered_expr' &&
+      (dirty.includes('billing_setting.billing_mode') ||
+        dirty.includes('billing_setting.billing_expr'))
+    ) {
       pricing['billing_setting.billing_mode'] = 'tiered_expr'
       pricing['billing_setting.billing_expr'] =
         newValues['billing_setting.billing_expr']

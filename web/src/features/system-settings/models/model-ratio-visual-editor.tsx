@@ -95,6 +95,7 @@ type ModelRatioVisualEditorProps = {
   savedBillingMode: string
   savedBillingExpr: string
   savedPluginBillingExpr?: string
+  savedStorageHourlyExpr?: string
   savedTaskPreConsumeTokens?: string
   modelPrice: string
   modelRatio: string
@@ -107,6 +108,7 @@ type ModelRatioVisualEditorProps = {
   billingMode: string
   billingExpr: string
   pluginBillingExpr?: string
+  storageHourlyExpr?: string
   taskPreConsumeTokens?: string
   candidateModelNames?: string[]
   candidateModelsLoading?: boolean
@@ -141,6 +143,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
     savedBillingMode,
     savedBillingExpr,
     savedPluginBillingExpr = '{}',
+    savedStorageHourlyExpr = '{}',
     savedTaskPreConsumeTokens = '{}',
     modelPrice,
     modelRatio,
@@ -153,6 +156,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
     billingMode,
     billingExpr,
     pluginBillingExpr = '{}',
+    storageHourlyExpr = '{}',
     taskPreConsumeTokens = '{}',
     candidateModelNames,
     candidateModelsLoading,
@@ -268,6 +272,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
         BillingMode: savedBillingMode,
         BillingExpr: savedBillingExpr,
         PluginBillingExpr: savedPluginBillingExpr,
+        'billing_setting.storage_hourly_expr': savedStorageHourlyExpr,
         TaskPreConsumeTokens: savedTaskPreConsumeTokens,
       }),
     [
@@ -282,6 +287,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
       savedBillingMode,
       savedBillingExpr,
       savedPluginBillingExpr,
+      savedStorageHourlyExpr,
       savedTaskPreConsumeTokens,
     ]
   )
@@ -299,6 +305,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
         BillingMode: billingMode,
         BillingExpr: billingExpr,
         PluginBillingExpr: pluginBillingExpr,
+        'billing_setting.storage_hourly_expr': storageHourlyExpr,
         TaskPreConsumeTokens: taskPreConsumeTokens,
       }),
     [
@@ -313,6 +320,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
       billingMode,
       billingExpr,
       pluginBillingExpr,
+      storageHourlyExpr,
       taskPreConsumeTokens,
     ]
   )
@@ -434,6 +442,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
         billingMode: editBillingMode,
         billingExpr: editableModel.billingExpr,
         pluginBillingExpr: editableModel.pluginBillingExpr,
+        storageHourlyExpr: editableModel.storageHourlyExpr,
         requestRuleExpr: editableModel.requestRuleExpr,
         taskPreConsumeTokens: editableModel.taskPreConsumeTokens,
       })
@@ -522,6 +531,10 @@ const ModelRatioVisualEditorComponent = forwardRef<
         taskPreConsumeTokens,
         { fallback: {}, silent: true }
       )
+      const storagePriceMap = safeJsonParse<Record<string, string>>(
+        storageHourlyExpr,
+        { fallback: {}, silent: true }
+      )
 
       delete priceMap[name]
       delete ratioMap[name]
@@ -533,6 +546,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
       delete audioCompletionMap[name]
       delete billingModeMap[name]
       delete billingExprMap[name]
+      delete storagePriceMap[name]
       applyTaskPreConsumeTokenChanges(taskBudgetMap, [name])
       onChange(
         'task_billing_setting.preconsume_tokens',
@@ -571,6 +585,10 @@ const ModelRatioVisualEditorComponent = forwardRef<
         'billing_setting.billing_expr',
         JSON.stringify(billingExprMap, null, 2)
       )
+      onChange(
+        'billing_setting.storage_hourly_expr',
+        JSON.stringify(storagePriceMap, null, 2)
+      )
 
       if (editingModelNameRef.current === name) closeEditor()
     },
@@ -587,6 +605,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
       billingMode,
       billingExpr,
       pluginBillingExpr,
+      storageHourlyExpr,
       taskPreConsumeTokens,
       onChange,
     ]
@@ -993,6 +1012,7 @@ export const ModelRatioVisualEditor = memo(
       prevProps.savedBillingMode === nextProps.savedBillingMode &&
       prevProps.savedBillingExpr === nextProps.savedBillingExpr &&
       prevProps.savedPluginBillingExpr === nextProps.savedPluginBillingExpr &&
+      prevProps.savedStorageHourlyExpr === nextProps.savedStorageHourlyExpr &&
       prevProps.savedTaskPreConsumeTokens ===
         nextProps.savedTaskPreConsumeTokens &&
       prevProps.modelPrice === nextProps.modelPrice &&
@@ -1006,6 +1026,7 @@ export const ModelRatioVisualEditor = memo(
       prevProps.billingMode === nextProps.billingMode &&
       prevProps.billingExpr === nextProps.billingExpr &&
       prevProps.pluginBillingExpr === nextProps.pluginBillingExpr &&
+      prevProps.storageHourlyExpr === nextProps.storageHourlyExpr &&
       prevProps.taskPreConsumeTokens === nextProps.taskPreConsumeTokens &&
       prevProps.candidateModelNames === nextProps.candidateModelNames &&
       prevProps.candidateModelsLoading === nextProps.candidateModelsLoading &&

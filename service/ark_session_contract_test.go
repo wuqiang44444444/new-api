@@ -7,6 +7,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	hosttypes "github.com/QuantumNous/new-api/types"
@@ -14,6 +15,19 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestArkSessionInferenceHoldCoversOuterChargeAndInputLength(t *testing.T) {
+	expression := `tier("standard", p * 0.1 + c * 0.2 + len * 5 + ai * 1.76) + 1000000`
+	snapshot := &billingexpr.BillingSnapshot{ExprString: expression, ExprHash: billingexpr.ExprHashString(expression),
+		QuotaPerUnit: 500000, GroupRatio: 1}
+	info := &relaycommon.RelayInfo{TieredBillingSnapshot: snapshot}
+	hold, err := ArkSessionInferenceHold(info, 8192, 512)
+	require.NoError(t, err)
+	result, err := billingexpr.ComputeTieredQuota(snapshot, billingexpr.TokenParams{P: 8192, Len: 8192, C: 512})
+	require.NoError(t, err)
+	assert.Greater(t, result.ActualQuotaAfterGroup, 500000)
+	assert.GreaterOrEqual(t, hold, result.ActualQuotaAfterGroup)
+}
 
 func TestArkCacheContractRequiresConfiguredApplicationChannelAndGroup(t *testing.T) {
 	pilot := &ArkPrefixCachePilot{Mode: "observe", UserID: 3, TokenID: 7, Model: "seed-lite", ChannelID: 267}

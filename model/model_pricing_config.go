@@ -73,6 +73,7 @@ var modelPricingOptionKeys = []string{
 	"AudioCompletionRatio", "AudioRatio", "CacheRatio", "CompletionRatio",
 	"CreateCacheRatio", "ImageRatio", "ModelPrice", "ModelRatio",
 	"billing_setting.billing_expr", "billing_setting.billing_mode", billing_setting.PluginBillingExprOption, billing_setting.TaskPreConsumeTokensOption,
+	ModelStorageHourlyExprOption,
 }
 
 var modelPricingMutationMu sync.Mutex
@@ -628,6 +629,12 @@ func validateModelPricing(db *gorm.DB, name string, values, previous PricingValu
 			}
 			if err = billing_setting.ValidateTaskPreConsumeTokensJSON(string(encoded)); err != nil {
 				return err
+			}
+			continue
+		}
+		if key == ModelStorageHourlyExprOption {
+			if err := validateModelStorageHourlyPrice(value); err != nil {
+				return fmt.Errorf("model %s: %w", name, err)
 			}
 			continue
 		}

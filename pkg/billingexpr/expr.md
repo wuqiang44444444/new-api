@@ -281,6 +281,22 @@ The usage-log UI treats `request_rules` as the authoritative rule list and rende
 
 ---
 
+## Hourly Cache Storage Expressions
+
+Each model can also configure `billing_setting.storage_hourly_expr`. A registered
+cache meter supplies `u("storage_token_hours")` for automatic hourly settlement. The
+expression returns USD and accepts one positive linear rate with an optional
+`tier()` label, for example
+`tier("storage_hourly", u("storage_token_hours") * 0.0025 / 1000000)`.
+The admission and settlement paths use the same expression. The cache record
+freezes its expression, price and quota conversion before the write is sent.
+For a CNY tariff, use
+`tier("storage_hourly", u("storage_token_hours") * 0.017 / usd_exchange_rate() / 1000000)`.
+The host supplies the current system rate at validation and snapshots the rate
+for each new write. Settlement uses the rate from that write even if the system
+rate changes. USD-only tariffs do not require an exchange rate.
+The inference expression uses its independent per-request input facts.
+
 ## Task Usage Expressions
 
 Task plugins can expose validated, provider-specific billing facts through

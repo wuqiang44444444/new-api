@@ -34,8 +34,8 @@ func SettleArkSessionInference(ctx context.Context, id string, now int64) error 
 			refund -= row.InferenceQuota
 			fields["state"] = ArkCacheActive
 			fields["inference_settled_at"] = now
-			if row.MeterVersion == ArkSessionLocalMeterVersion && row.FundsClosedAt == 0 {
-				held, firstHour, err := arkSessionLocalStorageAfterInference(row)
+			if arkCacheUsesAutomaticStorage(row) && row.FundsClosedAt == 0 {
+				held, firstHour, err := arkSessionStorageAfterInference(row)
 				if err != nil {
 					return err
 				}
