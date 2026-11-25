@@ -2,6 +2,7 @@
 # 中文（简体）翻译文件
 
 # Errors returned to AI clients
+auth.api_key_contract_required: "此 API 密钥必须绑定启用的客户合同才能访问模型。"
 common.database_error: "数据库出错，请联系管理员"
 auth.user_banned: "用户已被封禁"
 token.get_info_failed: "获取令牌信息失败，请稍后重试"

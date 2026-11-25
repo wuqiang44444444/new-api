@@ -10,7 +10,7 @@ import (
 func SetVideoRouter(router *gin.Engine) {
 	videoSharedRouter := router.Group("/v1")
 	videoSharedRouter.Use(middleware.RouteTag("relay"))
-	videoSharedRouter.Use(middleware.TokenAuth())
+	videoSharedRouter.Use(middleware.ModelTokenAuth())
 	videoSharedRouter.Use(middleware.SystemPerformanceCheck())
 	videoSharedRouter.POST(
 		"/video/generations",
@@ -24,8 +24,7 @@ func SetVideoRouter(router *gin.Engine) {
 	)
 
 	videoV1Router := router.Group("/v1")
-	videoV1Router.Use(middleware.RouteTag("relay"))
-	videoV1Router.Use(middleware.TokenAuth(), middleware.Distribute())
+	videoV1Router.Use(middleware.RouteTag("relay"), middleware.RelayV1TokenAuth(), middleware.Distribute())
 	{
 		videoV1Router.GET("/video/generations/:task_id", controller.RelayTaskFetch)
 		videoV1Router.POST("/videos/:video_id/remix", controller.RelayTask)
@@ -33,8 +32,8 @@ func SetVideoRouter(router *gin.Engine) {
 	modelArkVideoCreateRouter := router.Group("/api/v3")
 	modelArkVideoCreateRouter.Use(middleware.RouteTag("relay"))
 	modelArkVideoCreateRouter.Use(
-		middleware.TokenAuth(),
 		middleware.TaskClientProtocol("modelark_v3"),
+		middleware.ModelTokenAuth(),
 		middleware.TaskCreateResponseContract(),
 		middleware.ModelArkVideoCreateConvert(),
 		middleware.ResolveStandardVideoChannel(),
@@ -47,7 +46,7 @@ func SetVideoRouter(router *gin.Engine) {
 	modelArkVideoReadRouter.Use(middleware.RouteTag("relay"))
 	modelArkVideoReadRouter.Use(middleware.TaskClientProtocol("modelark_v3"))
 	{
-		modelArkVideoReadRouter.GET("/contents/generations/models", middleware.TokenAuth(), controller.ListStandardVideoModels)
+		modelArkVideoReadRouter.GET("/contents/generations/models", middleware.ModelDiscoveryTokenAuth(), controller.ListStandardVideoModels)
 		modelArkVideoReadRouter.GET("/contents/generations/tasks", middleware.VideoTaskReadTokenAuth(), controller.ModelArkVideoList)
 		modelArkVideoReadRouter.GET("/contents/generations/tasks/:task_id", middleware.VideoTaskReadTokenAuth(), controller.ModelArkVideoGet)
 		modelArkVideoReadRouter.DELETE("/contents/generations/tasks/:task_id", middleware.TokenAuth(), controller.ModelArkVideoDelete)
@@ -56,8 +55,8 @@ func SetVideoRouter(router *gin.Engine) {
 	klingV1CreateRouter := router.Group("/kling/v1")
 	klingV1CreateRouter.Use(middleware.RouteTag("relay"))
 	klingV1CreateRouter.Use(
-		middleware.TokenAuth(),
 		middleware.TaskClientProtocol("kling_v1"),
+		middleware.ModelTokenAuth(),
 		middleware.TaskCreateResponseContract(),
 		middleware.TaskCreateIdempotency(),
 		middleware.KlingRequestConvert(),
@@ -80,8 +79,8 @@ func SetVideoRouter(router *gin.Engine) {
 	jimengOfficialGroup := router.Group("jimeng")
 	jimengOfficialGroup.Use(middleware.RouteTag("relay"))
 	jimengOfficialGroup.Use(
-		middleware.TokenAuth(),
 		middleware.TaskClientProtocol("jimeng_official"),
+		middleware.JimengModelTokenAuth(),
 		middleware.TaskCreateResponseContract(),
 		middleware.TaskCreateIdempotency(),
 		middleware.JimengRequestConvert(),

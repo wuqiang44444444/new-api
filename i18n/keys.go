@@ -18,6 +18,7 @@ const (
 	MsgAuthTokenGroupForbidden    = "auth.token_group_forbidden"
 	MsgAuthTokenGroupDeprecated   = "auth.token_group_deprecated"
 	MsgAuthChannelSelectForbidden = "auth.channel_select_forbidden"
+	MsgAPIKeyContractRequired     = "auth.api_key_contract_required"
 
 	MsgRateLimitReached      = "rate_limit.reached"
 	MsgRateLimitTotalReached = "rate_limit.total_reached"

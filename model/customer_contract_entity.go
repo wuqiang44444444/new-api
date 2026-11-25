@@ -77,11 +77,12 @@ type CustomerContractEntityAudit struct {
 // ContractEntityRule is the read model for one contract rule. Availability is
 // derived from current channel/model facts and is never persisted.
 type ContractEntityRule struct {
-	PublicModel string `json:"public_model"`
-	ChannelId   int    `json:"channel_id"`
-	RouteGroup  string `json:"route_group"`
-	RatioUnits  int64  `json:"ratio_units"`
-	Available   bool   `json:"available"`
+	PublicModel  string `json:"public_model"`
+	ChannelId    int    `json:"channel_id"`
+	RouteGroup   string `json:"route_group"`
+	RatioUnits   int64  `json:"ratio_units"`
+	Available    bool   `json:"available"`
+	ArkCacheOnly bool   `json:"-" gorm:"-"`
 	// UnavailableCategory carries the controlled rejection category produced by
 	// the same availability validation for request-side diagnostics. It is a
 	// read-only annotation: never persisted and never serialized.

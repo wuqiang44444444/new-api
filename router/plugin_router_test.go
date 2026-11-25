@@ -890,6 +890,7 @@ func TestProductionPluginNativeQueryTraversesInnerRouter(t *testing.T) {
 		TaskID:    "task_native_router",
 		Platform:  constant.TaskPlatform("kling"),
 		UserId:    91,
+		AppID:     17,
 		Status:    model.TaskStatusSuccess,
 		Progress:  "100%",
 		ChannelId: 17,
@@ -910,6 +911,7 @@ func TestProductionPluginNativeQueryTraversesInnerRouter(t *testing.T) {
 			production[0],
 			func(c *gin.Context) {
 				common.SetContextKey(c, constant.ContextKeyUserId, 91)
+				c.Set("token_id", 17)
 				common.SetContextKey(c, constant.ContextKeyUserGroup, "default")
 				common.SetContextKey(c, constant.ContextKeyTokenGroup, "default")
 				c.Next()

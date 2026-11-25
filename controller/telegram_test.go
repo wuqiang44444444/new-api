@@ -368,7 +368,7 @@ func TestTelegramOAuthConfigurationAndLegacyEndpoints(t *testing.T) {
 	for range 2 {
 		*system_setting.GetTelegramSettings() = system_setting.TelegramSettings{}
 		common.TelegramOAuthEnabled = false
-		model.InitOptionMap()
+		require.NoError(t, model.InitOptionMap())
 		assert.True(t, common.TelegramOAuthEnabled)
 		assert.True(t, system_setting.GetTelegramSettings().IsConfigured())
 		assert.Equal(t, "telegram-client-secret", system_setting.GetTelegramSettings().ClientSecret)

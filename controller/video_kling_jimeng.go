@@ -10,10 +10,12 @@ import (
 )
 
 func KlingVideoGet(c *gin.Context) {
-	task, exists, err := videoTaskForProtocol(
+	task, exists, err := model.GetVideoTaskForProtocol(
 		c.GetInt("id"),
+		c.GetInt("token_id"),
 		c.Param("task_id"),
 		model.TaskClientProtocolKlingV1,
+		false,
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, dto.KlingVideoErrorResponse{
@@ -52,11 +54,7 @@ func JimengVideo(c *gin.Context) {
 		RelayTask(c)
 		return
 	}
-	task, exists, err := videoTaskForProtocol(
-		c.GetInt("id"),
-		c.GetString("task_id"),
-		model.TaskClientProtocolJimeng,
-	)
+	task, exists, err := model.GetVideoTaskForProtocol(c.GetInt("id"), c.GetInt("token_id"), c.GetString("task_id"), model.TaskClientProtocolJimeng, false)
 	if err != nil {
 		code := dto.JimengVideoErrorCode(http.StatusInternalServerError)
 		c.JSON(http.StatusInternalServerError, dto.JimengVideoErrorResponse{
@@ -91,10 +89,6 @@ func JimengVideo(c *gin.Context) {
 		"status":     10000,
 		"data":       data,
 	})
-}
-
-func videoTaskForProtocol(userID int, taskID, protocol string) (*model.Task, bool, error) {
-	return model.GetTaskForProtocol(userID, taskID, protocol, false)
 }
 
 func klingTaskStatus(status model.TaskStatus) string {

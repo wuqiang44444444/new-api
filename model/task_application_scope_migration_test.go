@@ -23,6 +23,7 @@ func TestMigrateTaskApplicationScopeUsesFrozenAppOrToken(t *testing.T) {
 		{TaskID: "task-unscoped", UserId: 1, ClientProtocol: TaskClientProtocolModelArkV3},
 	}
 	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&tasks).Error)
+	require.NoError(t, db.Model(&tasks[1]).Update("app_id", nil).Error)
 	require.NoError(t, migrateTaskApplicationScope())
 
 	var persisted []Task

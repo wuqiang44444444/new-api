@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -184,5 +185,21 @@ func setupRelayRouterTestDB(t *testing.T) {
 		} else {
 			require.NoError(t, os.Unsetenv("SQL_DSN"))
 		}
+	})
+	// Legacy relay fixtures exercise the native group path with unbound keys.
+	common.OptionMapRWMutex.Lock()
+	if common.OptionMap == nil {
+		common.OptionMap = make(map[string]string)
+		t.Cleanup(func() {
+			common.OptionMapRWMutex.Lock()
+			common.OptionMap = nil
+			common.OptionMapRWMutex.Unlock()
+		})
+	}
+	common.OptionMapRWMutex.Unlock()
+	previousContractPolicy := strconv.FormatBool(model.APIKeyContractRequired())
+	require.NoError(t, model.UpdateRequestPolicyOptions(map[string]string{model.RequireAPIKeyContractOption: "false"}))
+	t.Cleanup(func() {
+		require.NoError(t, model.UpdateRequestPolicyOptions(map[string]string{model.RequireAPIKeyContractOption: previousContractPolicy}))
 	})
 }

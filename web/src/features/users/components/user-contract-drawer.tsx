@@ -822,7 +822,7 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
                             'Bound keys use the selected contract models and channels. Native channel priority, weight and group pricing still apply.'
                           )
                         : t(
-                            'This contract is disabled. Bound keys use their own group routing and pricing.'
+                            'This contract is disabled. Bound keys can use their group rules only when the contract requirement is off.'
                           )}
                     </AlertDescription>
                   </Alert>
@@ -1071,7 +1071,7 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
         onOpenChange={setDisableConfirmOpen}
         title={t('Disable contract mode?')}
         desc={t(
-          'Disabling this contract immediately restores bound keys to their own group routing and pricing. This may allow channels outside the contract.'
+          'When this contract is disabled, bound keys lose model access if the contract requirement is on. Otherwise, they use their group routing and pricing.'
         )}
         destructive
         confirmText={t('Disable and save')}

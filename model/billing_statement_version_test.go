@@ -48,7 +48,7 @@ func setupBillingStatementVersionTestDB(t *testing.T) *gorm.DB {
 	DB, LOG_DB = db, db
 	require.NoError(t, migrateBillingStatementVersionDB())
 	require.NoError(t, InitBillingStatementSourceTracking())
-	require.NoError(t, db.AutoMigrate(&Option{}, &Log{}))
+	require.NoError(t, db.AutoMigrate(&Option{}, &Log{}, &ArkPrefixCache{}, &ArkPrefixCacheHour{}))
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
 	t.Cleanup(func() {

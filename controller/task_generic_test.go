@@ -47,7 +47,7 @@ func setupGenericTaskTest(t *testing.T) *model.Task {
 		Id: 1, Name: "artifact", Key: "key", BaseURL: &baseURL, Status: common.ChannelStatusEnabled,
 	}).Error)
 	task := &model.Task{
-		TaskID: "task_generic", Platform: "document", UserId: 7, ChannelId: 1,
+		TaskID: "task_generic", Platform: "document", UserId: 7, AppID: 12, ChannelId: 1,
 		Status: model.TaskStatusSuccess, Progress: "100%", SubmitTime: 10, FinishTime: 20,
 	}
 	require.NoError(t, database.Create(task).Error)
@@ -78,6 +78,7 @@ func TestGetTaskDoesNotProjectArtifacts(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Set("id", 7)
+	c.Set("token_id", task.AppID)
 	c.Params = gin.Params{{Key: "key", Value: task.TaskID}}
 	c.Request = httptest.NewRequest(http.MethodGet, "/v1/tasks/"+task.TaskID, nil)
 
@@ -96,6 +97,7 @@ func TestGetTaskArtifactsReturnsEmptyForLegacyTask(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Set("id", task.UserId)
+	c.Set("token_id", task.AppID)
 	c.Params = gin.Params{{Key: "key", Value: task.TaskID}}
 	c.Request = httptest.NewRequest(http.MethodGet, "/v1/tasks/"+task.TaskID+"/artifacts", nil)
 

@@ -30,7 +30,7 @@ const (
 // ValidBillingReconciliationMode validates the persisted mode used by reports and their detail filters.
 func ValidBillingReconciliationMode(mode string) bool {
 	switch mode {
-	case BillingReconciliationModeToken, BillingReconciliationModePerCall, BillingReconciliationModePerImage, BillingReconciliationModePerSecond, BillingReconciliationModeDurationAndCount, BillingReconciliationModeUnknown:
+	case BillingReconciliationModeToken, BillingReconciliationModePerCall, BillingReconciliationModePerImage, BillingReconciliationModePerSecond, BillingReconciliationModeDurationAndCount, BillingReconciliationModeUnknown, ArkCacheBillingMode:
 		return true
 	default:
 		return false
@@ -443,6 +443,20 @@ func parseBillingReconciliationLog(log billingReconciliationLog) parsedBillingRe
 	if err := common.UnmarshalJsonStr(log.Other, &other); err != nil {
 		parsed.unavailable = true
 		return parsed
+	}
+	if log.Type == LogTypeConsume && billingBreakdownString(other["billing_event"]) == ArkCacheBillingMode {
+		hour, hourKnown := billingBreakdownNonNegativeInt(other["hour_start"])
+		end, endKnown := billingBreakdownNonNegativeInt(other["hour_end"])
+		if (strings.HasPrefix(log.RequestId, "ark-storage:") || log.RequestId == "") && hourKnown && endKnown &&
+			hour == log.CreatedAt && hour%3600 == 0 && end-hour == 3600 && billingBreakdownString(other["storage_unit"]) == "token_hour" {
+			parsed.isRequest = false
+			parsed.billingMode = ArkCacheBillingMode
+			parsed.cacheWrite.known = true
+			parsed.contractApplicableKnown = true
+			quota := int64(log.Quota)
+			parsed.recordedOriginalQuota = &quota
+			return parsed
+		}
 	}
 	cacheReadTokens, cacheReadKnown := billingBreakdownNonNegativeInt(other["cache_tokens"])
 	parsed.cacheReadTokens = cacheReadTokens

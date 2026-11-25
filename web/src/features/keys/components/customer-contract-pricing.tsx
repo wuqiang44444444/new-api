@@ -91,7 +91,7 @@ export function CustomerContractPricing() {
                       <AlertTitle>{t('Contract mode is inactive')}</AlertTitle>
                       <AlertDescription>
                         {t(
-                          'This contract is disabled. Bound keys use their own group routing and pricing.'
+                          'This contract is disabled. Bound keys can use their group rules only when the contract requirement is off.'
                         )}
                       </AlertDescription>
                     </Alert>

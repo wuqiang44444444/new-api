@@ -94,6 +94,7 @@ export function billingModeLabel(mode: BillingMode) {
   if (mode === 'per_call') return 'Per-call billing'
   if (mode === 'per_image') return 'Per image'
   if (mode === 'per_second') return 'Duration billing'
+  if (mode === 'cache_storage') return 'Cache storage fee'
   if (mode === 'duration_and_count') return 'Duration and quantity billing'
   return 'Unknown billing mode'
 }

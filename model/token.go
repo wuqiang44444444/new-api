@@ -29,7 +29,7 @@ type Token struct {
 	Group              string         `json:"group" gorm:"default:''"`
 	CrossGroupRetry    bool           `json:"cross_group_retry"` // 跨分组重试，仅auto分组有效
 	AutoGroups         string         `json:"-" gorm:"type:text"`
-	ContractId         int            `json:"contract_id"` // 绑定的客户合同实体 ID；0 表示未绑定，走原生逻辑
+	ContractId         int            `json:"contract_id"` // 绑定的客户合同实体 ID，0 表示未绑定
 	DeletedAt          gorm.DeletedAt `gorm:"index"`
 	// 允许用此令牌查询所属用户的额度；新建令牌默认开启，已有令牌升级后保持关闭
 	AllowUserQuotaQuery bool   `json:"allow_user_quota_query"`

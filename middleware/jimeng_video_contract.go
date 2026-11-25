@@ -1,8 +1,6 @@
 package middleware
 
 import (
-	"bytes"
-	"io"
 	"net/http"
 	"strings"
 
@@ -80,10 +78,10 @@ func JimengRequestConvert() func(c *gin.Context) {
 			return
 		}
 
-		// Update request body
-		c.Request.Body = io.NopCloser(bytes.NewBuffer(jsonData))
-		c.Request.ContentLength = int64(len(jsonData))
-		c.Set(common.KeyRequestBody, jsonData)
+		if err := replaceVideoContractBody(c, jsonData); err != nil {
+			abortJimengVideo(c, http.StatusInternalServerError, "Failed to prepare request")
+			return
+		}
 
 		if len(official.ImageURLs) == 0 && len(official.BinaryDataBase64) == 0 {
 			c.Set("action", constant.TaskActionTextToVideo)

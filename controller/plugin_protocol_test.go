@@ -1069,17 +1069,22 @@ func TestRetrieveTaskPluginResponsePendingSkipsRenderFinal(t *testing.T) {
 		}};
 	`, logsAppender(&logs))
 	c, recorder := newPluginProtocolRetrieveContext("resp_retrieve_pending")
-	deps := pluginProtocolRetrieveDeps(pinned, &model.Task{
+	setupGenericTaskTest(t)
+	task := &model.Task{
 		TaskID:   "task_retrieve_pending",
 		Platform: constant.TaskPlatform(pinned.Plugin.Meta.Key),
 		UserId:   71,
+		AppID:    81,
 		Status:   model.TaskStatusInProgress,
 		PrivateData: model.TaskPrivateData{
 			ResponsesBackground: true,
 		},
 		Properties: model.Properties{OriginModelName: "video-model"},
 		CreatedAt:  1_710_000_000,
-	}, true, nil)
+	}
+	require.NoError(t, model.DB.Create(task).Error)
+	deps := pluginProtocolRetrieveDeps(pinned, task, true, nil)
+	deps.getTaskForApp = model.GetByTaskIDForApp
 
 	retrieveTaskPluginResponse(c, deps)
 
@@ -1096,6 +1101,11 @@ func TestRetrieveTaskPluginResponsePendingSkipsRenderFinal(t *testing.T) {
 	metadata, ok := response["metadata"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "/v1/responses/resp_retrieve_pending", metadata["retrieval_path"])
+
+	otherApp, denied := newPluginProtocolRetrieveContext("resp_retrieve_pending")
+	common.SetContextKey(otherApp, constant.ContextKeyTokenId, 82)
+	retrieveTaskPluginResponse(otherApp, deps)
+	assert.Equal(t, http.StatusNotFound, denied.Code)
 }
 
 func TestRetrieveTaskPluginResponseEchoesOriginModelName(t *testing.T) {
@@ -1586,11 +1596,11 @@ func newPluginProtocolRetrieveContext(responseID string) (*gin.Context, *httptes
 
 func pluginProtocolRetrieveDeps(pinned pluginruntime.PinnedEndpoint, task *model.Task, exists bool, err error) pluginProtocolBridgeDeps {
 	deps := pluginProtocolTestDeps()
-	deps.getByTaskId = func(userId int, taskId string) (*model.Task, bool, error) {
+	deps.getTaskForApp = func(userId, appID int, taskId string) (*model.Task, bool, error) {
 		if !exists {
 			return nil, false, err
 		}
-		if task != nil && (userId != task.UserId || taskId != task.TaskID) {
+		if task != nil && (userId != task.UserId || appID != 81 || taskId != task.TaskID) {
 			return nil, false, err
 		}
 		return task, task != nil, err

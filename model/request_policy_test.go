@@ -53,7 +53,7 @@ func TestRequestPolicyDatabaseMatrix(t *testing.T) {
 			common.SetMainDatabaseType(common.DatabaseType(dialect))
 			initCol()
 			t.Cleanup(func() {
-				require.NoError(t, db.Migrator().DropTable(&Option{}))
+				require.NoError(t, db.Migrator().DropTable(&Option{}, &SystemTask{}))
 				for k, v := range previousSnapshot.Options {
 					require.NoError(t, updateOptionMap(k, v))
 				}
@@ -66,7 +66,26 @@ func TestRequestPolicyDatabaseMatrix(t *testing.T) {
 				initCol()
 				require.NoError(t, sqlDB.Close())
 			})
-			require.NoError(t, db.AutoMigrate(&Option{}))
+			require.NoError(t, db.AutoMigrate(&Option{}, &SystemTask{}))
+			defaults, err := BuildRequestPolicy(nil)
+			require.NoError(t, err)
+			assert.Equal(t, "true", defaults.Options[RequireAPIKeyContractOption])
+			require.NoError(t, UpdateRequestPolicyOptions(map[string]string{RequireAPIKeyContractOption: "false"}))
+			var contractOption Option
+			require.NoError(t, db.First(&contractOption, map[string]any{"key": RequireAPIKeyContractOption}).Error)
+			assert.Equal(t, "false", contractOption.Value)
+			revisions, err := GetLatestSyncRevisions()
+			require.NoError(t, err)
+			assert.Positive(t, revisions[SyncTopicOptions])
+			common.OptionMapRWMutex.Lock()
+			common.OptionMap = make(map[string]string)
+			common.OptionMapRWMutex.Unlock()
+			requestPolicySnapshot.Store(nil)
+			assert.True(t, APIKeyContractRequired(), "a fresh runtime starts with the default")
+			require.NoError(t, LoadOptionsFromDatabase())
+			assert.False(t, APIKeyContractRequired())
+			assert.Error(t, UpdateRequestPolicyOptions(map[string]string{RequireAPIKeyContractOption: "invalid"}))
+			assert.False(t, APIKeyContractRequired())
 			var version string
 			query := "SELECT version()"
 			if dialect == "sqlite" {
@@ -111,14 +130,37 @@ func TestRequestPolicyDatabaseMatrix(t *testing.T) {
 					tx.AddError(errors.New("save rejected"))
 				}
 			}))
-			assert.Error(t, UpdateRequestPolicyOptions(map[string]string{"RetryTimes": "8", "channel_affinity_setting.session_mode": "off"}))
+			revisions, err = GetLatestSyncRevisions()
+			require.NoError(t, err)
+			assert.Error(t, UpdateRequestPolicyOptions(map[string]string{"RetryTimes": "8", "channel_affinity_setting.session_mode": "off", RequireAPIKeyContractOption: "true"}))
 			assert.Same(t, snapshot, CurrentRequestPolicy())
+			latest, err := GetLatestSyncRevisions()
+			require.NoError(t, err)
+			assert.Equal(t, revisions[SyncTopicOptions], latest[SyncTopicOptions])
 			require.NoError(t, db.Callback().Update().Remove("policy_fail"))
 			option = Option{}
 			require.NoError(t, db.Where(map[string]any{"key": "RetryTimes"}).First(&option).Error)
 			assert.Equal(t, "2", option.Value)
-			LoadOptionsFromDatabase()
+			require.NoError(t, db.First(&contractOption, map[string]any{"key": RequireAPIKeyContractOption}).Error)
+			assert.Equal(t, "false", contractOption.Value)
+			require.NoError(t, LoadOptionsFromDatabase())
 			assert.Equal(t, "strict", CurrentRequestPolicy().Affinity.SessionMode, "a failed save keeps the persisted global mode")
+			assert.False(t, APIKeyContractRequired(), "a failed save keeps the persisted contract policy")
+
+			lastGood := CurrentRequestPolicy()
+			require.NoError(t, db.Model(&Option{}).Where(map[string]any{"key": "channel_affinity_setting.rules"}).Update("value", `[{"name":"broken","model_regex":["["]}]`).Error)
+			require.NoError(t, db.Model(&Option{}).Where(map[string]any{"key": "RetryTimes"}).Update("value", "8").Error)
+			require.ErrorContains(t, LoadOptionsFromDatabase(), "invalid persisted request policy")
+			assert.Same(t, lastGood, CurrentRequestPolicy(), "an unsuccessful reload retains the active policy")
+			assert.Equal(t, 2, common.RetryTimes, "invalid snapshots must not partially publish routing options")
+
+			requestPolicySnapshot.Store(nil)
+			require.ErrorContains(t, LoadOptionsFromDatabase(), "invalid persisted request policy")
+			assert.Nil(t, requestPolicySnapshot.Load(), "cold start has no validated persisted policy")
+			require.NoError(t, db.Model(&Option{}).Where(map[string]any{"key": "channel_affinity_setting.rules"}).Update("value", rules).Error)
+			require.NoError(t, LoadOptionsFromDatabase())
+			assert.False(t, APIKeyContractRequired(), "a successful recovery uses the persisted opt-out")
+			assert.Equal(t, 8, CurrentRequestPolicy().RetryTimes)
 		})
 	}
 }

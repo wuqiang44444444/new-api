@@ -217,6 +217,8 @@ export const STATIC_I18N_KEYS = [
   'Additional charge',
   'Duration and quantity billing',
   'Duration billing',
+  'Cache storage fee',
+  'token-hour',
   'Status pending verification',
   'Account deletion',
   // Model management and metadata synchronization
@@ -989,6 +991,8 @@ export const STATIC_I18N_KEYS = [
   'Platform Hosted Image Library',
   'Hosted images require FunCloud ModelArk V3 or Synlink Video V1',
   'Image Relay',
+  'Image Editing',
+  'Image Generation',
   'Moxing Images V1',
   'No Asset Protocol',
   'Seedance Dedicated Channel',

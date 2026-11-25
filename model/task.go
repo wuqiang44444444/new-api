@@ -553,20 +553,6 @@ func GetByTaskId(userId int, taskId string) (*Task, bool, error) {
 	return task, exist, err
 }
 
-func GetByTaskIdsForPlatforms(userID int, platforms []constant.TaskPlatform, taskIDs []string) ([]*Task, error) {
-	if len(platforms) == 0 || len(taskIDs) == 0 {
-		return nil, nil
-	}
-	var tasks []*Task
-	err := DB.
-		Where("user_id = ? AND platform IN ? AND task_id IN ?", userID, platforms, taskIDs).
-		Find(&tasks).Error
-	if err != nil {
-		return nil, err
-	}
-	return tasks, nil
-}
-
 // GetTaskForProtocolObservation reloads one public task through the ownership
 // boundary used by long-lived plugin protocol observers. A missing task,
 // foreign user, and wrong plugin platform are deliberately indistinguishable.

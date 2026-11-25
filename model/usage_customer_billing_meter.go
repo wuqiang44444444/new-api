@@ -29,7 +29,7 @@ func customerUsageLogMeter(row usageLogRow) (mode string, imageCount int64, imag
 	// An expression with typed task meters can also emit the engine's token
 	// default. Give the frozen settlement meter precedence in that case.
 	switch row.parsed.billingMode {
-	case BillingReconciliationModePerCall, BillingReconciliationModePerSecond, BillingReconciliationModeDurationAndCount:
+	case BillingReconciliationModePerCall, BillingReconciliationModePerSecond, BillingReconciliationModeDurationAndCount, ArkCacheBillingMode:
 		return row.parsed.billingMode, 0, false
 	}
 	if unit == string(billingexpr.BillingUnitToken) {

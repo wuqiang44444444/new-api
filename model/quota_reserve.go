@@ -114,27 +114,6 @@ func persistUserQuotaDelta(id int, delta int) error {
 	return nil
 }
 
-func persistTokenQuotaDelta(id int, delta int) error {
-	if common.BatchUpdateEnabled {
-		addNewRecord(BatchUpdateTypeTokenQuota, id, delta)
-		return nil
-	}
-	result := DB.Model(&Token{}).Where("id = ?", id).Updates(
-		map[string]any{
-			"remain_quota":  gorm.Expr("remain_quota + ?", delta),
-			"used_quota":    gorm.Expr("used_quota - ?", delta),
-			"accessed_time": common.GetTimestamp(),
-		},
-	)
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected != 1 {
-		return gorm.ErrRecordNotFound
-	}
-	return nil
-}
-
 func reserveUserQuotaDB(id int, quota int) (bool, error) {
 	result := DB.Model(&User{}).
 		Where("id = ? AND quota >= ?", id, quota).
@@ -155,7 +134,7 @@ func reserveTokenQuotaDB(id int, quota int) (bool, error) {
 
 // TryReserveUserQuota atomically checks and deducts a user's wallet quota.
 // 缓存命中时原子检查缓存额度，并在确认预扣前持久化差额；
-// Redis 异常或水合失败时降级为数据库条件更新，保证服务可用。
+// 无论 Redis 是否命中，数据库条件更新都负责最终余额校验。
 func TryReserveUserQuota(id int, quota int) (bool, error) {
 	if quota < 0 {
 		return false, errors.New("quota cannot be negative")
@@ -182,14 +161,19 @@ func TryReserveUserQuota(id int, quota int) (bool, error) {
 	if result == cacheQuotaInsufficient {
 		return false, nil
 	}
-	if err = persistUserQuotaDelta(id, -quota); err != nil {
-		compensated, compensateErr := cacheApplyUserQuotaDelta(id, int64(quota))
-		if compensateErr != nil || compensated != cacheQuotaOK {
-			common.SysError(common.LogText("failed to compensate reserved user quota: result=%d error=%v", compensated, compensateErr))
+	// A durable hold can debit the database between the Redis check and
+	// this write. The database predicate arbitrates both requests.
+	ok, err := reserveUserQuotaDB(id, quota)
+	if !ok {
+		if cacheErr := invalidateUserCache(id); cacheErr != nil {
+			common.SysError("failed to invalidate wallet cache after reservation conflict")
 		}
-		return false, err
+		if err == nil {
+			var user User
+			err = DB.Select("id").Take(&user, id).Error
+		}
 	}
-	return true, nil
+	return ok, err
 }
 
 // TryReserveTokenQuota atomically checks and deducts a token quota. Unlimited
@@ -223,12 +207,23 @@ func TryReserveTokenQuota(id int, key string, quota int, unlimited bool) (bool, 
 	if result == cacheQuotaInsufficient {
 		return false, nil
 	}
-	if err = persistTokenQuotaDelta(id, -quota); err != nil {
-		compensated, compensateErr := cacheApplyTokenQuotaDelta(id, key, int64(quota))
-		if compensateErr != nil || compensated != cacheQuotaOK {
-			common.SysError(common.LogText("failed to compensate reserved token quota: result=%d error=%v", compensated, compensateErr))
-		}
-		return false, err
+	if common.BatchUpdateEnabled {
+		// Ark Session requires committed balances on every writer. Keep
+		// ordinary batched key accounting for deployments outside that pilot.
+		addNewRecord(BatchUpdateTypeTokenQuota, id, -quota)
+		return true, nil
 	}
-	return true, nil
+	// Commit limited-key admission under the same balance predicate as
+	// the database fallback and durable reservations.
+	ok, err := reserveTokenQuotaDB(id, quota)
+	if !ok {
+		if cacheErr := invalidateTokenCacheForMutation(key); cacheErr != nil {
+			common.SysError("failed to invalidate token cache after reservation conflict")
+		}
+		if err == nil {
+			var token Token
+			err = DB.Select("id").Take(&token, id).Error
+		}
+	}
+	return ok, err
 }

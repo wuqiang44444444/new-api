@@ -34,6 +34,19 @@ operations: []
 启用合同绑定的 Key 仅显示合同当前有效范围与 Key 模型限制共同允许的模型。不同 Key 的目录可能
 不同；不要用控制台或其他 Key 的模型清单替代当前 Key 的结果。合同读取异常不能解释为空目录。
 
+系统默认要求 API Key 绑定启用的客户合同。未绑定或合同停用时，模型列表返回 HTTP `200` 和对应协议的空数组，
+模型详情返回 `404 model_not_found`，新模型调用返回 `403`。管理员关闭要求后，此类 Key 按原生分组权限访问。
+
+| 调用协议 | 缺少启用合同的拒绝响应 |
+| --- | --- |
+| OpenAI 兼容、本站 Gemini 代理 | `error.code=contract_required` |
+| Claude | `type=error`，`error.type=permission_error` |
+| ModelArk、素材、Batch | 各自错误结构中的 `error.code=contract_required` |
+| DashScope 原生、豆包原生 | 分别使用顶层 `code=contract_required` 和 `error.code=contract_required` |
+| Kling、即梦 | 各自错误结构中的数字 `code`，分别为 `1103` 和 `50400` |
+| Midjourney | Midjourney 错误结构中的数字 `code=4` 和 `description` |
+| Responses WebSocket | 握手前返回 HTTP `403`。已建立连接上的新请求通过错误事件返回 `contract_required` |
+
 单模型查询在合同范围外返回 `404 model_not_found`；非合同路径可能保留 HTTP `200` 的错误信封，
 所以还需检查正文 `error`。合同模型目录读取失败为 `500` 的 `success=false` / `message` 正文；
 合同授权加载暂不可用可能返回 `503`。这些加载错误应有限重试查询，不应改用其他模型猜测权限。

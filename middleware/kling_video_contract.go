@@ -1,8 +1,6 @@
 package middleware
 
 import (
-	"bytes"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -88,14 +86,15 @@ func KlingRequestConvert() func(c *gin.Context) {
 			return
 		}
 
-		c.Request.Body = io.NopCloser(bytes.NewBuffer(jsonData))
-		c.Request.ContentLength = int64(len(jsonData))
+		if err := replaceVideoContractBody(c, jsonData); err != nil {
+			abortKlingVideo(c, http.StatusInternalServerError, "failed to prepare request")
+			return
+		}
 		originalPath := c.Request.URL.Path
 		c.Request.URL.Path = "/v1/video/generations"
 		if videoStringValue(official.Image) == "" {
 			c.Set("action", constant.TaskActionTextToVideo)
 		}
-		c.Set(common.KeyRequestBody, jsonData)
 		c.Next()
 		c.Request.URL.Path = originalPath
 	}

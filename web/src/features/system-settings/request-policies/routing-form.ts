@@ -3,6 +3,9 @@ import { z } from 'zod'
 
 import { parseHttpStatusCodeRules } from '@/lib/http-status-code-rules'
 
+export const requireAPIKeyContractOption =
+  'customer_contract.require_for_api_keys'
+
 function isChannelID(raw: string) {
   const value = raw.trim()
   return /^[1-9][0-9]*$/.test(value) && Number.isSafeInteger(Number(value))
@@ -10,6 +13,7 @@ function isChannelID(raw: string) {
 
 export function createRoutingPolicySchema(t: TFunction) {
   return z.object({
+    requireAPIKeyContract: z.boolean(),
     RetryTimes: z.number().int().min(0).max(99),
     AutomaticRetryStatusCodes: z
       .string()
@@ -77,6 +81,7 @@ export function routingPolicyFormValues(
   options: Record<string, string>
 ): RoutingPolicyFormValues {
   return {
+    requireAPIKeyContract: options[requireAPIKeyContractOption] !== 'false',
     RetryTimes: Number(options.RetryTimes),
     AutomaticRetryStatusCodes: options.AutomaticRetryStatusCodes,
     channel_affinity_setting: {
@@ -129,6 +134,7 @@ export function routingPolicyOptions(
   values: RoutingPolicyFormValues
 ): Record<string, string> {
   return {
+    [requireAPIKeyContractOption]: String(values.requireAPIKeyContract),
     RetryTimes: String(values.RetryTimes),
     AutomaticRetryStatusCodes: values.AutomaticRetryStatusCodes,
     ...Object.fromEntries(

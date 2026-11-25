@@ -114,7 +114,7 @@ func TestKlingNativeRouteSubmitPollSettleAndQuery(t *testing.T) {
 	sqlDB, err := database.DB()
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
-	require.NoError(t, database.AutoMigrate(&model.User{}, &model.Channel{}, &model.Task{}, &model.TaskBillingDelivery{}, &model.QuotaData{}, &model.Log{}, &model.TaskRequestEvidence{}, &model.TaskRequestEvidenceEvent{}, &model.EvidenceTaskLink{}))
+	require.NoError(t, database.AutoMigrate(&model.User{}, &model.Token{}, &model.Channel{}, &model.Task{}, &model.TaskBillingDelivery{}, &model.QuotaData{}, &model.Log{}, &model.TaskRequestEvidence{}, &model.TaskRequestEvidenceEvent{}, &model.EvidenceTaskLink{}))
 	model.DB = database
 	model.LOG_DB = database
 	common.MemoryCacheEnabled = false
@@ -140,6 +140,9 @@ func TestKlingNativeRouteSubmitPollSettleAndQuery(t *testing.T) {
 		Group:    "default",
 		Quota:    1_000_000,
 	}).Error)
+	const appID = 42
+	token := model.Token{Id: appID, UserId: 7, Key: "kling-native-test", RemainQuota: 1_000_000}
+	require.NoError(t, database.Create(&token).Error)
 
 	var submitCalls atomic.Int32
 	var queryCalls atomic.Int32
@@ -195,6 +198,7 @@ func TestKlingNativeRouteSubmitPollSettleAndQuery(t *testing.T) {
 		Route:      submitBinding.Route,
 	})
 	common.SetContextKey(submitContext, constant.ContextKeyUserId, 7)
+	common.SetContextKey(submitContext, constant.ContextKeyTokenId, appID)
 	common.SetContextKey(submitContext, constant.ContextKeyUserGroup, "default")
 	common.SetContextKey(submitContext, constant.ContextKeyUsingGroup, "default")
 	common.SetContextKey(submitContext, constant.ContextKeyTokenGroup, "default")
@@ -209,6 +213,7 @@ func TestKlingNativeRouteSubmitPollSettleAndQuery(t *testing.T) {
 	billing := &nativeRouteBilling{userID: 7}
 	relayInfo := &relaycommon.RelayInfo{
 		UserId:          7,
+		TokenId:         appID,
 		UserGroup:       "default",
 		UsingGroup:      "default",
 		UserQuota:       1_000_000,
@@ -237,8 +242,12 @@ func TestKlingNativeRouteSubmitPollSettleAndQuery(t *testing.T) {
 	var persisted model.Task
 	require.NoError(t, database.Where("task_id = ?", "task_kling_public").First(&persisted).Error)
 	assert.Equal(t, constant.TaskPlatform("kling"), persisted.Platform)
+	assert.Equal(t, appID, persisted.PrivateData.TokenId)
 	assert.Equal(t, "kling-private-1", persisted.PrivateData.UpstreamTaskID)
 	assert.Equal(t, model.TaskStatus(model.TaskStatusNotStart), persisted.Status)
+	// The fixture billing session reserves only wallet funds. Mirror that
+	// reservation on the Key before exercising the production settlement.
+	require.NoError(t, model.DecreaseTokenQuota(appID, token.Key, persisted.Quota))
 
 	previousAdaptorFactory := service.GetTaskAdaptorFunc
 	service.GetTaskAdaptorFunc = func(platform constant.TaskPlatform) service.TaskPollingAdaptor {
@@ -263,6 +272,9 @@ func TestKlingNativeRouteSubmitPollSettleAndQuery(t *testing.T) {
 	var settledUser model.User
 	require.NoError(t, database.First(&settledUser, 7).Error)
 	assert.Equal(t, 999_999, settledUser.Quota)
+	require.NoError(t, database.First(&token, appID).Error)
+	assert.Equal(t, 999_999, token.RemainQuota)
+	assert.Equal(t, 1, token.UsedQuota)
 
 	queryBinding, found := generation.LookupDeclaredRoute(http.MethodGet, "/kling/v1/videos/text2video/:task_id")
 	require.True(t, found)
@@ -277,6 +289,7 @@ func TestKlingNativeRouteSubmitPollSettleAndQuery(t *testing.T) {
 		Route:      queryBinding.Route,
 	})
 	common.SetContextKey(queryContext, constant.ContextKeyUserId, 7)
+	common.SetContextKey(queryContext, constant.ContextKeyTokenId, appID)
 
 	middleware.PrepareTaskPluginRoute()(queryContext)
 

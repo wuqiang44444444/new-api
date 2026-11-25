@@ -191,7 +191,7 @@ func TestReserveFallsBackToDatabaseWhenRedisIsUnavailable(t *testing.T) {
 	assert.Equal(t, 15, getUserQuotaFromDB(t, user.Id))
 }
 
-func TestSynchronousReserveCompensatesCacheWhenPersistenceFails(t *testing.T) {
+func TestSynchronousReserveInvalidatesCacheWhenAccountDisappears(t *testing.T) {
 	truncateTables(t)
 	resetBatchUpdateTestState(t)
 	useUserCacheMiniRedis(t)
@@ -203,9 +203,8 @@ func TestSynchronousReserveCompensatesCacheWhenPersistenceFails(t *testing.T) {
 	reserved, err := TryReserveUserQuota(user.Id, 6)
 	assert.False(t, reserved)
 	assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
-	cached, cacheErr := cacheGetUserBase(user.Id)
-	require.NoError(t, cacheErr)
-	assert.Equal(t, 10, cached.Quota)
+	_, cacheErr := cacheGetUserBase(user.Id)
+	assert.Error(t, cacheErr)
 
 	token := createReserveTestToken(t, 12)
 	_, err = GetTokenByKey(token.Key, true)
@@ -214,10 +213,32 @@ func TestSynchronousReserveCompensatesCacheWhenPersistenceFails(t *testing.T) {
 	reserved, err = TryReserveTokenQuota(token.Id, token.Key, 7, false)
 	assert.False(t, reserved)
 	assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
-	cachedToken, cacheErr := cacheGetTokenByKey(token.Key)
-	require.NoError(t, cacheErr)
-	assert.Equal(t, 12, cachedToken.RemainQuota)
-	assert.Zero(t, cachedToken.UsedQuota)
+	_, cacheErr = cacheGetTokenByKey(token.Key)
+	assert.Error(t, cacheErr)
+}
+
+func TestCommittedHoldWinsOverStaleRedisQuota(t *testing.T) {
+	truncateTables(t)
+	resetBatchUpdateTestState(t)
+	useUserCacheMiniRedis(t)
+	user := createReserveTestUser(t, 100)
+	token := createReserveTestToken(t, 100)
+	require.NoError(t, populateUserCache(user))
+	_, err := GetTokenByKey(token.Key, true)
+	require.NoError(t, err)
+	// A durable writer commits before invalidating the old Redis values.
+	require.NoError(t, DB.Model(&user).UpdateColumn("quota", 20).Error)
+	require.NoError(t, DB.Model(&token).Updates(map[string]any{"remain_quota": 20, "used_quota": 80}).Error)
+	reserved, err := TryReserveUserQuota(user.Id, 50)
+	require.NoError(t, err)
+	assert.False(t, reserved)
+	reserved, err = TryReserveTokenQuota(token.Id, token.Key, 50, false)
+	require.NoError(t, err)
+	assert.False(t, reserved)
+	assert.Equal(t, 20, getUserQuotaFromDB(t, user.Id))
+	token = getTokenFromDB(t, token.Id)
+	assert.Equal(t, 20, token.RemainQuota)
+	assert.EqualValues(t, 80, token.UsedQuota)
 }
 
 func TestTokenCacheInitPreservesLiveQuotaAndFenceBlocksStaleSnapshot(t *testing.T) {

@@ -187,6 +187,11 @@ func customerContractPricingIndex() map[string]model.Pricing {
 	for _, item := range items {
 		result[item.ModelName] = item
 	}
+	if price, ok := arkCacheContractPriceBasis(ArkCachePilot()); ok {
+		if _, native := result[price.ModelName]; !native {
+			result[price.ModelName] = price
+		}
+	}
 	return result
 }
 

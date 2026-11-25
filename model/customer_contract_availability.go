@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"gorm.io/gorm"
 )
@@ -20,8 +21,10 @@ type contractRouteSource struct {
 // These facts exist only for the current read. Current channel eligibility is
 // never cached with the frozen contract definition or granted by that snapshot.
 type contractRouteFacts struct {
-	channels  map[int]Channel
-	abilities map[contractRouteSource]bool
+	channels   map[int]Channel
+	abilities  map[contractRouteSource]bool
+	arkPilot   *setting.ArkPrefixCachePilot
+	arkChannel *Channel
 }
 
 func loadContractRouteFacts(tx *gorm.DB, rules []ContractEntityRule) (*contractRouteFacts, error) {
@@ -41,6 +44,21 @@ func loadContractRouteFacts(tx *gorm.DB, rules []ContractEntityRule) (*contractR
 	}
 	for _, channel := range channels {
 		facts.channels[channel.Id] = channel
+	}
+	if pilot := setting.ArkCachePilot(); pilot != nil && pilot.Mode == "observe" {
+		for _, rule := range rules {
+			channel, exists := facts.channels[rule.ChannelId]
+			if !exists || channel.Status != common.ChannelStatusEnabled || !ArkCacheContractRouteAllowed(pilot, &channel, rule) {
+				continue
+			}
+			var err error
+			facts.arkPilot = pilot
+			facts.arkChannel, err = FindArkCacheChannel(tx, pilot.ChannelID)
+			if err != nil {
+				return nil, err
+			}
+			break
+		}
 	}
 	query := tx.Session(&gorm.Session{NewDB: true}).Where("1 = 0")
 	sources := make(map[contractRouteSource]bool)
@@ -120,6 +138,9 @@ func (facts *contractRouteFacts) validate(rule ContractEntityRule) error {
 	if channel.Status != common.ChannelStatusEnabled {
 		return fmt.Errorf("%w: channel %d: %w", ErrCustomerContractEntityInvalidChannel, rule.ChannelId, errContractRouteChannelDisabled)
 	}
+	if ArkCacheContractRouteAllowed(facts.arkPilot, facts.arkChannel, rule) {
+		return nil
+	}
 	if channelSkipsGenericAbilities(channel.Type) {
 		if !slices.Contains(channel.GetGroups(), rule.RouteGroup) {
 			return fmt.Errorf("%w: channel %d in group %q: %w", ErrCustomerContractEntityInvalidChannel, rule.ChannelId, rule.RouteGroup, errContractRouteCapabilityMissing)
@@ -155,6 +176,7 @@ func readContractRouteAvailability(tx *gorm.DB, rules []ContractEntityRule) ([]C
 		for i := range batch {
 			validateErr := facts.validate(batch[i])
 			batch[i].Available = validateErr == nil
+			batch[i].ArkCacheOnly = batch[i].Available && ArkCacheContractRouteAllowed(facts.arkPilot, facts.arkChannel, batch[i])
 			batch[i].UnavailableCategory = contractRouteUnavailableCategory(validateErr)
 		}
 	}

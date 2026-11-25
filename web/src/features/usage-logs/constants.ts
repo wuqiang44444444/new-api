@@ -175,12 +175,15 @@ export const MJ_SUBMIT_RESULT_CODES = {
 
 /**
  * Task action types
- * Must match backend constants in constant/task.go
+ * Matches the actions returned by the task API.
  */
 export const TASK_ACTIONS = {
   // Suno (uppercase)
   MUSIC: 'MUSIC', // 生成音乐
   LYRICS: 'LYRICS', // 生成歌词
+
+  IMAGE_GENERATION: 'image_generation',
+  IMAGE_EDIT: 'image_edit',
 
   // Canonical video actions returned by the task API
   GENERATE: 'image_to_video', // 图生视频
@@ -294,6 +297,8 @@ export const MJ_SUBMIT_RESULT_MAPPINGS: Record<string, StatusMapping> = {
 export const TASK_ACTION_MAPPINGS: Record<string, StatusMapping> = {
   [TASK_ACTIONS.MUSIC]: { label: 'Generate Music', variant: 'neutral' },
   [TASK_ACTIONS.LYRICS]: { label: 'Generate Lyrics', variant: 'pink' },
+  [TASK_ACTIONS.IMAGE_GENERATION]: { label: 'Image Generation', variant: 'blue' },
+  [TASK_ACTIONS.IMAGE_EDIT]: { label: 'Image Editing', variant: 'blue' },
   [TASK_ACTIONS.GENERATE]: { label: 'Image to Video', variant: 'blue' },
   [TASK_ACTIONS.TEXT_GENERATE]: { label: 'Text to Video', variant: 'blue' },
   [TASK_ACTIONS.FIRST_TAIL_GENERATE]: {

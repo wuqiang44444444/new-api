@@ -119,7 +119,7 @@ func customerStatementDetailRecord(language string, row model.CustomerExportRow,
 }
 
 var customerStatementExportValues = map[string]map[string][2]string{
-	"billing_mode":               {"token": {"Per token", "按 Token"}, "per_call": {"Per call", "按次"}, model.BillingReconciliationModePerImage: {"Per image", "按张"}, "per_second": {"Per second", "按秒"}, model.BillingReconciliationModeDurationAndCount: {"Duration and quantity", "按时长和数量"}, "unknown": {"Not recorded", "未记录"}},
+	"billing_mode":               {"token": {"Per token", "按 Token"}, "per_call": {"Per call", "按次"}, model.BillingReconciliationModePerImage: {"Per image", "按张"}, "per_second": {"Per second", "按秒"}, model.BillingReconciliationModeDurationAndCount: {"Duration and quantity", "按时长和数量"}, model.ArkCacheBillingMode: {"Cache storage fee", "缓存存储费"}, "unknown": {"Not recorded", "未记录"}},
 	"event_type":                 {"consume": {"Charge", "扣款"}, "refund": {"Refund", "退款"}},
 	"original_source":            {"replayed": {"Verified replay", "核验复算"}, "unique_settlement_replay": {"Unique solution verified against the actual charge", "以实扣核验的唯一解"}},
 	"contract_applicable":        {"yes": {"Applied", "已应用"}, "no": {"No contract discount", "无合同优惠"}, "unrecorded": {"Not recorded", "未记录"}, "unknown": {"Incomplete contract records", "合同记录不完整"}},
@@ -127,7 +127,7 @@ var customerStatementExportValues = map[string]map[string][2]string{
 	"quality_status":             {"exact": {"Complete", "完整"}, "unrecorded": {"Not recorded", "未记录"}, "not_billing_event": {"Not a billing event", "非计费事件"}, "complete": {"Complete", "完整"}, "partial": {"Incomplete records", "记录不完整"}},
 	"input_tokens_quality":       {"known": {"Recorded", "已记录"}, "unknown": {"Not recorded", "未记录"}},
 	"billing_explanation_status": {"available": {"Available", "已记录"}, "unavailable": {"Insufficient historical price records", "历史单价记录不足"}, "not_applicable": {"Not applicable", "不适用"}},
-	"line_label":                 {"Input": {"Input", "输入"}, "Output": {"Output", "输出"}, "Cache read": {"Cache read", "缓存读取"}, "Cache write": {"Cache write", "缓存写入"}},
+	"line_label":                 {"Input": {"Input", "输入"}, "Output": {"Output", "输出"}, "Cache read": {"Cache read", "缓存读取"}, "Cache write": {"Cache write", "缓存写入"}, "Cache storage fee": {"Cache storage fee", "缓存存储费"}},
 }
 
 func customerStatementExportValue(language, column, value string) string {

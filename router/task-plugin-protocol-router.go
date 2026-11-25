@@ -11,10 +11,14 @@ import (
 )
 
 func SetTaskPluginProtocolRouter(router *gin.Engine) {
+	setTaskPluginProtocolRouter(router, middleware.TokenAuth(), nil)
+}
+
+func setTaskPluginProtocolRouter(router *gin.Engine, responsesAuth, responsesPilot gin.HandlerFunc) {
 	for _, protocol := range pluginruntime.HostProtocols() {
 		for _, operation := range protocol.Operations {
 			for _, method := range operation.Methods {
-				handlers, err := taskPluginProtocolHandlers(protocol.Name, operation.Name)
+				handlers, err := taskPluginProtocolHandlers(protocol.Name, operation.Name, responsesAuth, responsesPilot)
 				if err != nil {
 					panic(err)
 				}
@@ -24,19 +28,23 @@ func SetTaskPluginProtocolRouter(router *gin.Engine) {
 	}
 }
 
-func taskPluginProtocolHandlers(protocol, operation string) ([]gin.HandlerFunc, error) {
+func taskPluginProtocolHandlers(protocol, operation string, responsesAuth, responsesPilot gin.HandlerFunc) ([]gin.HandlerFunc, error) {
 	switch protocol + "." + operation {
 	case "openai_responses.create":
-		return []gin.HandlerFunc{
-			middleware.RouteTag("relay"), middleware.SystemPerformanceCheck(), middleware.TokenAuth(),
-			middleware.ModelRequestRateLimit(), middleware.RouteTaskPluginEndpoint(), middleware.PrepareTaskPluginEndpoint(), middleware.Distribute(),
+		handlers := []gin.HandlerFunc{
+			middleware.RouteTag("relay"), middleware.SystemPerformanceCheck(), middleware.ModelTokenAuthWith(responsesAuth), middleware.ModelRequestRateLimit(),
+		}
+		if responsesPilot != nil {
+			handlers = append(handlers, responsesPilot)
+		}
+		return append(handlers, middleware.RouteTaskPluginEndpoint(), middleware.PrepareTaskPluginEndpoint(), middleware.Distribute(),
 			func(c *gin.Context) {
 				controller.RelayTaskPluginEndpoint(c, func(c *gin.Context) { controller.Relay(c, types.RelayFormatOpenAIResponses) })
 			},
-		}, nil
+		), nil
 	case "openai_image.generate", "openai_image.edit":
 		return []gin.HandlerFunc{
-			middleware.RouteTag("relay"), middleware.SystemPerformanceCheck(), middleware.TokenAuth(),
+			middleware.RouteTag("relay"), middleware.SystemPerformanceCheck(), middleware.ModelTokenAuth(),
 			middleware.ModelRequestRateLimit(), middleware.RouteTaskPluginEndpoint(), middleware.PrepareTaskPluginEndpoint(), middleware.Distribute(), middleware.ImageCreateIdempotency(),
 			func(c *gin.Context) {
 				controller.RelayTaskPluginEndpoint(c, func(c *gin.Context) { controller.Relay(c, types.RelayFormatOpenAIImage) })
@@ -44,7 +52,7 @@ func taskPluginProtocolHandlers(protocol, operation string) ([]gin.HandlerFunc, 
 		}, nil
 	case "openai_video.create":
 		return []gin.HandlerFunc{
-			middleware.RouteTag("relay"), middleware.TokenAuth(), middleware.SystemPerformanceCheck(),
+			middleware.RouteTag("relay"), middleware.ModelTokenAuth(), middleware.SystemPerformanceCheck(),
 			middleware.RouteTaskPluginEndpoint(), middleware.TaskPluginEndpointOnly(middleware.ModelRequestRateLimit()), middleware.PrepareTaskPluginEndpoint(), middleware.Distribute(),
 			func(c *gin.Context) { controller.RelayTaskPluginEndpoint(c, controller.RelayTask) },
 		}, nil

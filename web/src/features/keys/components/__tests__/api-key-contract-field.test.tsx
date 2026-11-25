@@ -111,7 +111,7 @@ it('keeps a disabled binding visible without presenting its prices as active', a
   expect(await screen.findByText(/Alpha.*Disabled/)).toBeTruthy()
   expect(
     screen.getByText(
-      'This contract is disabled. Bound keys use their own group routing and pricing.'
+      'This contract is disabled. Bound keys can use their group rules only when the contract requirement is off.'
     )
   ).toBeTruthy()
   expect(screen.queryByText('0.8')).toBeNull()

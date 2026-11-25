@@ -24,7 +24,7 @@ func TestBillingStatementNonMasterWriterInvalidatesDraft(t *testing.T) {
 	t.Cleanup(func() { _ = masterSQL.Close() })
 	DB, LOG_DB = master, master
 	require.NoError(t, migrateBillingStatementVersionDB())
-	require.NoError(t, master.AutoMigrate(&Log{}))
+	require.NoError(t, master.AutoMigrate(&Log{}, &ArkPrefixCache{}, &ArkPrefixCacheHour{}))
 	require.NoError(t, InitBillingStatementSourceTracking())
 	ctx := context.Background()
 	month := int64(1756656000)

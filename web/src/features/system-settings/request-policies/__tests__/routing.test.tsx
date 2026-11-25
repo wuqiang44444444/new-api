@@ -118,6 +118,38 @@ function show() {
     </QueryClientProvider>
   )
 }
+
+it('defaults API key contract access to required and saves an explicit opt-out', async () => {
+  show()
+  const access = await screen.findByRole('switch', {
+    name: 'Require an active contract for API keys',
+  })
+  expect(access).toBeChecked()
+  await userEvent.click(access)
+  await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+  await waitFor(() =>
+    expect(api.patch).toHaveBeenCalledWith('/api/option/request_policy', {
+      options: { 'customer_contract.require_for_api_keys': 'false' },
+    })
+  )
+  expect(access).not.toBeChecked()
+})
+
+it('restores the saved API key contract requirement when a write fails', async () => {
+  vi.mocked(api.patch).mockResolvedValueOnce({
+    data: { success: false, message: 'Write failed' },
+  })
+  show()
+  const access = await screen.findByRole('switch', {
+    name: 'Require an active contract for API keys',
+  })
+  await userEvent.click(access)
+  await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+  await waitFor(() => expect(access).toBeChecked())
+  expect(await screen.findByRole('alert')).toHaveTextContent('Write failed')
+})
 it('opens global affinity settings and the complete rules table without switching views', async () => {
   show()
   expect(await screen.findByRole('table')).toBeVisible()

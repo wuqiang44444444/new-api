@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 
-import { formatLogQuota } from '@/lib/format'
+import { formatDateTimeStr, formatLogQuota } from '@/lib/format'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 
 import { usageLogSchema } from '../../data/schema'
@@ -88,6 +88,35 @@ it('shows per-image pricing on published bill items without the source expressio
   expect(
     screen.getByText('Image Generation').nextElementSibling
   ).toHaveTextContent(/1 image × .*\/image = /)
+})
+
+it('shows the billing period and token-hour price for a storage charge', () => {
+  show({
+    billing_event: 'cache_storage',
+    hour_start: 3600,
+    hour_end: 7200,
+    billing_explanation: {
+      lines: [
+        {
+          label: 'Cache storage fee',
+          quantity: 256,
+          unit: 'token-hour',
+          unit_price_usd: 0.05,
+          subtotal_usd: 0.0000128,
+        },
+      ],
+    },
+  })
+  expect(screen.getByText('Billing Mode').nextElementSibling).toHaveTextContent(
+    'Cache storage fee'
+  )
+  expect(
+    screen.getByText('Billing Period').nextElementSibling
+  ).toHaveTextContent(
+    `${formatDateTimeStr(new Date(3600000))} – ${formatDateTimeStr(new Date(7200000))}`
+  )
+  expect(screen.getByText(/256 token-hour/)).toBeInTheDocument()
+  expect(screen.getByText(/\/M token-hour/)).toBeInTheDocument()
 })
 
 it('shows text and image component amounts without adding informational image tokens again', () => {

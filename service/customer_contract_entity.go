@@ -44,6 +44,9 @@ func LoadContractEntityForRequest(userId int, authVersion int64, contractId int)
 	if snapshot.UserId != userId {
 		return nil, fmt.Errorf("%w: contract owner mismatch", ErrCustomerContractUnavailable)
 	}
+	if snapshot.Version <= 0 {
+		return nil, fmt.Errorf("%w: invalid contract version", ErrCustomerContractUnavailable)
+	}
 	stored := cloneContractEntitySnapshot(snapshot)
 	customerContractEntityCache.Store(contractId, cachedContractEntity{authVersion: authVersion, snapshot: stored})
 	return cloneContractEntitySnapshot(stored), nil

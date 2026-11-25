@@ -176,19 +176,25 @@ func RecordTaskCreateUpstreamSuccess(id int64, task *Task) error {
 
 // RecoverTaskCreateIdempotency completes local persistence from a previously
 // journaled provider success. It never calls the provider.
-func RecoverTaskCreateIdempotency(id int64) (*Task, error) {
+func RecoverTaskCreateIdempotency(id int64, userID, appID int) (*Task, error) {
+	if userID <= 0 || appID <= 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
 	var recovered *Task
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var claim TaskCreateIdempotency
-		if err := lockForUpdate(tx).Where("id = ?", id).First(&claim).Error; err != nil {
+		if err := lockForUpdate(tx).Where("id = ? AND user_id = ?", id, userID).First(&claim).Error; err != nil {
 			return err
 		}
 		if claim.Status == TaskCreateIdempotencyComplete && claim.TaskID != "" {
-			var existing Task
-			if err := tx.Where("user_id = ? AND task_id = ? AND client_protocol = ?", claim.UserID, claim.TaskID, claim.Protocol).First(&existing).Error; err != nil {
+			existing, found, err := getTaskForApp(tx, userID, appID, claim.TaskID, claim.Protocol, true)
+			if err != nil {
 				return err
 			}
-			recovered = &existing
+			if !found {
+				return gorm.ErrRecordNotFound
+			}
+			recovered = existing
 			return nil
 		}
 		if claim.Status != TaskCreateIdempotencyUpstreamSucceeded || len(claim.RecoverySnapshot) == 0 {
@@ -201,6 +207,9 @@ func RecoverTaskCreateIdempotency(id int64) (*Task, error) {
 		task := snapshot.Task
 		task.ID = 0
 		task.PrivateData = snapshot.PrivateData
+		if task.applicationID() != appID {
+			return gorm.ErrRecordNotFound
+		}
 		task.BillingState = deriveBillingState(task.PrivateData)
 		if task.UserId != claim.UserID || task.TaskID != claim.TaskID || task.ClientProtocol != claim.Protocol ||
 			task.PrivateData.UpstreamTaskID != claim.UpstreamTaskID || task.ChannelId != claim.ChannelID {

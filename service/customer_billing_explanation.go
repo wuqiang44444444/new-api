@@ -55,17 +55,27 @@ func customerBillingNumber(other map[string]any, key string) (float64, bool) {
 }
 
 func customerBillingLines(log *model.Log, other map[string]any, row model.CustomerExportRow, quotaPerUnit float64) []customerBillingLine {
-	lines := make([]customerBillingLine, 0)
-	// Refunds and adjustments are ledger deltas, not new metered requests.
-	if row.RequestCount == 0 {
-		return lines
-	}
-	// Published statement rows carry the verified components in their frozen
-	// customer projection. The source expression is absent on that read path.
-	if row.BillingMode == model.BillingReconciliationModePerImage && row.ExplanationStatus == "available" {
+	// A published statement carries the frozen components without the source log.
+	if (row.BillingMode == model.BillingReconciliationModePerImage || row.BillingMode == model.ArkCacheBillingMode) && row.ExplanationStatus == "available" {
+		var lines []customerBillingLine
 		if err := common.UnmarshalJsonStr(row.BillingLineItems, &lines); err != nil {
 			return nil
 		}
+		return lines
+	}
+	if row.BillingMode == model.ArkCacheBillingMode {
+		tokens, known := customerBillingNumber(other, "storage_tokens")
+		price, _ := other["price_per_million_token_hour"].(string)
+		unitPrice, err := decimal.NewFromString(price)
+		if known && err == nil && unitPrice.IsPositive() {
+			return []customerBillingLine{{Label: "Cache storage fee", Quantity: tokens, Unit: "token-hour",
+				UnitPrice: unitPrice.InexactFloat64(), Subtotal: unitPrice.Mul(decimal.NewFromFloat(tokens)).Shift(-6).InexactFloat64()}}
+		}
+		return nil
+	}
+	lines := make([]customerBillingLine, 0)
+	// Refunds and adjustments are ledger deltas, not new metered requests.
+	if row.RequestCount == 0 {
 		return lines
 	}
 	if encoded, ok := other["expr_b64"].(string); ok && encoded != "" {

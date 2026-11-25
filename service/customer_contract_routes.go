@@ -34,9 +34,6 @@ func CustomerContractForRequest(c *gin.Context, userID int, authVersion int64, c
 			return nil, err
 		}
 		if snapshot.Enabled {
-			if snapshot.Version <= 0 {
-				return nil, ErrCustomerContractUnavailable
-			}
 			if _, err := ContractDiscountsFromSnapshot(snapshot); err != nil {
 				return nil, err
 			}
@@ -73,7 +70,7 @@ func EffectiveContractRules(snapshot *model.ContractEntitySnapshot) ([]model.Con
 	}
 	rules := make([]model.ContractEntityRule, 0, len(availability))
 	for _, rule := range availability {
-		if rule.Available {
+		if rule.Available && !rule.ArkCacheOnly {
 			rules = append(rules, rule)
 		}
 	}
@@ -137,7 +134,7 @@ func customerContractRoutes(c *gin.Context, publicModel string) (map[int]string,
 	routes := make(map[int]string)
 	firstGroup := c.GetString(contractFirstGroupKey)
 	for _, rule := range rules {
-		if !rule.Available || rule.PublicModel != publicModel || !ContractTokenModelAllowed(c, publicModel) {
+		if !rule.Available || rule.ArkCacheOnly || rule.PublicModel != publicModel || !ContractTokenModelAllowed(c, publicModel) {
 			continue
 		}
 		if firstGroup != "" && !common.GetContextKeyBool(c, constant.ContextKeyTokenCrossGroupRetry) && rule.RouteGroup != firstGroup {

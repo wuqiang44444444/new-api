@@ -30,7 +30,7 @@ func AllOption() ([]*Option, error) {
 	return options, err
 }
 
-func InitOptionMap() {
+func InitOptionMap() error {
 	common.OptionMapRWMutex.Lock()
 	common.OptionMap = make(map[string]string)
 
@@ -190,9 +190,7 @@ func InitOptionMap() {
 	maps.Copy(common.OptionMap, modelConfigs)
 
 	common.OptionMapRWMutex.Unlock()
-	if err := LoadOptionsFromDatabase(); err != nil {
-		common.SysError(common.LogText("failed to load options from database: %s", err.Error()))
-	}
+	return LoadOptionsFromDatabase()
 }
 
 // LoadOptionsFromDatabase applies every stored option. A failed read keeps
@@ -208,14 +206,12 @@ func LoadOptionsFromDatabase() error {
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if err := refreshRequestPolicySnapshot(); err != nil {
-			common.SysError(common.LogText("invalid request policy: %s", err.Error()))
-		}
-	}()
 	passkeyOptions := make(map[string]string)
 	retentionLoaded := false
 	for _, option := range options {
+		if IsRequestPolicyOption(option.Key) {
+			continue
+		}
 		if IsPasskeyDomainOption(option.Key) {
 			passkeyOptions[option.Key] = option.Value
 			continue
@@ -233,7 +229,7 @@ func LoadOptionsFromDatabase() error {
 		common.OptionMapRWMutex.Unlock()
 	}
 	applyPasskeyDomainOptions(passkeyOptions)
-	return nil
+	return applyPersistedRequestPolicy(options)
 }
 
 func SyncOptions(frequency int) {

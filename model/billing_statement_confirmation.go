@@ -36,6 +36,9 @@ func verifyBillingStatementRetentionTx(ctx context.Context, tx *gorm.DB, userId 
 }
 
 func verifyBillingStatementConfirmationTx(ctx context.Context, tx *gorm.DB, v *BillingStatementVersion, acknowledged string) error {
+	if err := verifyArkCacheStatementSource(tx.WithContext(ctx), v.UserId, v.PeriodStart, v.PeriodEndExclusive); err != nil {
+		return err
+	}
 	if err := verifyBillingStatementRetentionTx(ctx, tx, v.UserId, v.PeriodStart); err != nil {
 		return err
 	}

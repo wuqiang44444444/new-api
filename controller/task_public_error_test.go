@@ -77,6 +77,7 @@ func TestLegacySuccessfulVideoDoesNotExposeAFailure(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Set("id", task.UserId)
+	c.Set("token_id", task.AppID)
 	c.Params = gin.Params{{Key: "task_id", Value: task.TaskID}}
 	KlingVideoGet(c)
 	assert.NotContains(t, recorder.Body.String(), "generation failed")
@@ -96,6 +97,7 @@ func TestVideoFailureQueriesAndListKeepReadableHistoricalReason(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Set("id", task.UserId)
+	c.Set("token_id", task.AppID)
 	c.Params = gin.Params{{Key: "key", Value: task.TaskID}}
 	c.Request = httptest.NewRequest(http.MethodGet, "/v1/tasks/"+task.TaskID, nil)
 	GetTask(c)
@@ -140,6 +142,7 @@ func TestVideoFailureQueriesAndListKeepReadableHistoricalReason(t *testing.T) {
 	recorder = httptest.NewRecorder()
 	c, _ = gin.CreateTestContext(recorder)
 	c.Set("id", task.UserId)
+	c.Set("token_id", task.AppID)
 	c.Params = gin.Params{{Key: "task_id", Value: task.TaskID}}
 	KlingVideoGet(c)
 	assert.Contains(t, recorder.Body.String(), task.PublicFailReason())

@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/QuantumNous/new-api/setting"
 	"gorm.io/gorm"
 )
 
@@ -125,6 +126,20 @@ func readCustomerContractCatalog(tx *gorm.DB) (*CustomerContractCatalog, error) 
 		}
 	}
 	facts := &contractRouteFacts{channels: channelById, abilities: abilityFacts}
+	if pilot := setting.ArkCachePilot(); pilot != nil && pilot.Mode == "observe" {
+		if _, exists := channelById[pilot.ChannelID]; exists {
+			facts.arkPilot = pilot
+			facts.arkChannel, err = FindArkCacheChannel(tx, pilot.ChannelID)
+			if err != nil {
+				return nil, err
+			}
+			if facts.arkChannel != nil {
+				for _, group := range catalogGroups(facts.arkChannel.GetGroups()) {
+					addCombo(combos, pilot.Model, group, pilot.ChannelID).fromChannel = true
+				}
+			}
+		}
+	}
 
 	sources := make([]CustomerContractCatalogSource, 0, len(combos))
 	for key, combo := range combos {
@@ -140,7 +155,7 @@ func readCustomerContractCatalog(tx *gorm.DB) (*CustomerContractCatalog, error) 
 			FromAbility:       combo.seenAbility,
 		}
 		// Dedicated routes intentionally have no generic Ability projection.
-		if !channelSkipsGenericAbilities(channelById[channelId].Type) {
+		if !channelSkipsGenericAbilities(channelById[channelId].Type) && !ArkCacheContractRouteAllowed(facts.arkPilot, facts.arkChannel, rule) {
 			switch {
 			case combo.fromChannel && !combo.activeAbility:
 				source.ConfigDiff = ContractCatalogDiffConfigOnly

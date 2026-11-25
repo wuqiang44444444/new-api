@@ -381,6 +381,7 @@ func migrateDB() error {
 
 		&Task{},
 		&TaskBillingDelivery{}, &TaskPlugin{}, &TaskCreateIdempotency{}, &TaskCreateAttempt{}, &ProviderCostExposure{}, &Model{}, &ImageTaskSlot{},
+		&ArkPrefixCache{}, &ArkPrefixCacheHour{},
 		&TaskVideoResultObject{}, &VideoDeliveryError{},
 		&TaskRequestEvidence{}, &TaskRequestEvidenceEvent{}, &TaskRequestEvidenceAccessLog{}, &EvidenceTaskLink{},
 		&Vendor{},

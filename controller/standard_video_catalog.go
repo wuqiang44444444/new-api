@@ -52,6 +52,9 @@ func standardVideoPublicCatalog() ([]model.SeedancePublicModel, error) {
 // typed video channels with the same filtering and public contract as the
 // Seedance-only listing it extends.
 func ListStandardVideoModels(c *gin.Context) {
+	if respondRestrictedModelList(c, constant.ChannelTypeOpenAI) {
+		return
+	}
 	groups, err := getModelListGroups(c)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "get user group failed"})

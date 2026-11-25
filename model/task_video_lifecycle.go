@@ -2,7 +2,6 @@ package model
 
 import (
 	"errors"
-	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
@@ -73,25 +72,7 @@ func IsLinkVideoTaskClientProtocol(protocol string) bool {
 }
 
 func GetVideoTaskForProtocol(userID, appID int, taskID, protocol string, includeDeleted bool) (*Task, bool, error) {
-	if userID <= 0 || appID <= 0 || strings.TrimSpace(taskID) == "" {
-		return nil, false, nil
-	}
-	query := DB.Where("user_id = ? AND app_id = ? AND task_id = ?", userID, appID, strings.TrimSpace(taskID))
-	if protocol != "" {
-		query = query.Where("client_protocol = ?", protocol)
-	}
-	if !includeDeleted {
-		query = query.Where("client_deleted_at = ?", 0)
-	}
-	var task Task
-	err := query.First(&task).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, false, nil
-	}
-	if err != nil {
-		return nil, false, err
-	}
-	return &task, true, nil
+	return getTaskForApp(DB, userID, appID, taskID, protocol, includeDeleted)
 }
 
 func MarkVideoTaskClientDeleted(userID, appID int, taskID, protocol string) (bool, error) {

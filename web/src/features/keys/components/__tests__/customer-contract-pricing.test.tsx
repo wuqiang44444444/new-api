@@ -129,7 +129,7 @@ describe('customer contract pricing on the API key page', () => {
     expect(screen.getByText('Old contract')).toBeTruthy()
     expect(
       screen.getByText(
-        'This contract is disabled. Bound keys use their own group routing and pricing.'
+        'This contract is disabled. Bound keys can use their group rules only when the contract requirement is off.'
       )
     ).toBeTruthy()
   })

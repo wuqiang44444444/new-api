@@ -9,7 +9,7 @@ import (
 // Each ledger event stays one CSV row even when it has several price components.
 func attachCustomerExportBillingExplanation(log *model.Log, row *model.CustomerExportRow, quotaPerUnit float64) {
 	row.ExplanationStatus = "not_applicable"
-	if log.Type != model.LogTypeConsume || row.RequestCount == 0 {
+	if log.Type != model.LogTypeConsume || (row.RequestCount == 0 && row.BillingMode != model.ArkCacheBillingMode) {
 		return
 	}
 	row.ExplanationStatus = "unavailable"
@@ -29,7 +29,7 @@ func attachCustomerExportBillingExplanation(log *model.Log, row *model.CustomerE
 	safeLines := make([]exportLine, len(lines))
 	for i, line := range lines {
 		basis := 1
-		if line.Unit == "token" {
+		if line.Unit == "token" || line.Unit == "token-hour" {
 			basis = 1000000
 		}
 		safeLines[i] = exportLine{line, basis}

@@ -33,6 +33,13 @@ type RequestPolicySnapshot struct {
 var requestPolicySnapshot atomic.Pointer[RequestPolicySnapshot]
 var requestPolicyOptionMutex sync.Mutex
 var requestPolicyDefaults = requestPolicyDefaultOptions()
+var defaultRequestPolicySnapshot = sync.OnceValue(func() *RequestPolicySnapshot {
+	snapshot, err := BuildRequestPolicy(nil)
+	if err != nil {
+		panic(err)
+	}
+	return snapshot
+})
 
 func requestPolicyDefaultOptions() map[string]string {
 	defaults := make(map[string]string)
@@ -55,6 +62,7 @@ func requestPolicyDefaultOptions() map[string]string {
 	defaults["AutomaticDisableChannelEnabled"] = strconv.FormatBool(common.AutomaticDisableChannelEnabled)
 	defaults["AutomaticEnableChannelEnabled"] = strconv.FormatBool(common.AutomaticEnableChannelEnabled)
 	defaults["ChannelDisableThreshold"] = strconv.FormatFloat(common.ChannelDisableThreshold, 'f', -1, 64)
+	defaults[RequireAPIKeyContractOption] = "true"
 	return defaults
 }
 
@@ -63,7 +71,7 @@ func IsRequestPolicyOption(key string) bool {
 		return true
 	}
 	switch key {
-	case "AutomaticEnableChannelEnabled", "ChannelDisableThreshold", "monitor_setting.auto_test_channel_enabled", "monitor_setting.auto_test_channel_minutes", "monitor_setting.channel_test_concurrency", "monitor_setting.channel_test_mode", "RetryTimes", "AutomaticRetryStatusCodes", "AutomaticDisableChannelEnabled", "AutomaticDisableStatusCodes", "AutomaticDisableKeywords":
+	case RequireAPIKeyContractOption, "AutomaticEnableChannelEnabled", "ChannelDisableThreshold", "monitor_setting.auto_test_channel_enabled", "monitor_setting.auto_test_channel_minutes", "monitor_setting.channel_test_concurrency", "monitor_setting.channel_test_mode", "RetryTimes", "AutomaticRetryStatusCodes", "AutomaticDisableChannelEnabled", "AutomaticDisableStatusCodes", "AutomaticDisableKeywords":
 		return true
 	}
 	return false
@@ -73,12 +81,7 @@ func CurrentRequestPolicy() *RequestPolicySnapshot {
 	if snapshot := requestPolicySnapshot.Load(); snapshot != nil {
 		return snapshot
 	}
-	// Startup and test fixtures may not have loaded options yet.
-	snapshot, err := BuildRequestPolicy(nil)
-	if err != nil {
-		return &RequestPolicySnapshot{Options: map[string]string{}}
-	}
-	return snapshot
+	return defaultRequestPolicySnapshot()
 }
 
 func BuildRequestPolicy(options map[string]string) (*RequestPolicySnapshot, error) {
@@ -91,6 +94,9 @@ func BuildRequestPolicy(options map[string]string) (*RequestPolicySnapshot, erro
 		}
 	}
 	maps.Copy(raw, options)
+	if value := raw[RequireAPIKeyContractOption]; value != "true" && value != "false" {
+		return nil, fmt.Errorf("invalid boolean: %s", RequireAPIKeyContractOption)
+	}
 	snapshot := &RequestPolicySnapshot{Options: raw}
 	affinityFields := map[string]string{}
 	for key, value := range raw {
@@ -193,20 +199,24 @@ func BuildRequestPolicy(options map[string]string) (*RequestPolicySnapshot, erro
 	return snapshot, nil
 }
 
-func refreshRequestPolicySnapshot() error {
-	common.OptionMapRWMutex.RLock()
+func applyPersistedRequestPolicy(rows []*Option) error {
 	options := make(map[string]string)
-	for key, value := range common.OptionMap {
-		if IsRequestPolicyOption(key) {
-			options[key] = value
+	for _, row := range rows {
+		if IsRequestPolicyOption(row.Key) {
+			options[row.Key] = row.Value
 		}
 	}
-	common.OptionMapRWMutex.RUnlock()
 	snapshot, err := BuildRequestPolicy(options)
-	if err == nil {
-		requestPolicySnapshot.Store(snapshot)
+	if err != nil {
+		return fmt.Errorf("invalid persisted request policy: %w", err)
 	}
-	return err
+	for key, value := range snapshot.Options {
+		if err := updateOptionMap(key, value); err != nil {
+			return err
+		}
+	}
+	requestPolicySnapshot.Store(snapshot)
+	return nil
 }
 
 // UpdateRequestPolicyOptions validates the entire resulting policy before any

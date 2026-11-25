@@ -1393,7 +1393,7 @@ export const native = {
   error: function (ctx, error) {
     if (error.httpStatus === 404 && ctx.params && ctx.params.task_id)
       return { __status: 200, __body: { request_id: error.requestId || "", output: { task_id: ctx.params.task_id, task_status: "UNKNOWN" } } };
-    const code = ERROR_CODES[error.httpStatus] || "InternalError";
+    const code = error.code === "contract_required" ? error.code : ERROR_CODES[error.httpStatus] || "InternalError";
     return { code: code, message: error.message, request_id: error.requestId || "" };
   },
 };

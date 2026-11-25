@@ -283,6 +283,9 @@ export interface LogOtherData {
     image_output?: number
   }
   billing_tokens?: Record<string, number>
+  billing_event?: 'cache_storage'
+  hour_start?: number
+  hour_end?: number
   cache_write_unavailable?: boolean
   cache_creation_tokens?: number
   cache_creation_tokens_5m?: number

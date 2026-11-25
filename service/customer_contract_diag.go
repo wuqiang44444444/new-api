@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/clienterrlog"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 )
@@ -26,6 +27,16 @@ const (
 	contractReasonChannelNotInScope     = "contract_channel_not_in_scope"
 	contractReasonChannelMismatch       = "contract_channel_mismatch"
 )
+
+// RecordAPIKeyContractRequired classifies a rejected model call in the
+// authenticated API error log using the same reason across wire protocols.
+func RecordAPIKeyContractRequired(c *gin.Context, publicCode string) {
+	clienterrlog.Attach(c.Request.Context(), clienterrlog.Report{
+		Stage:      contractStageScope,
+		Reason:     constant.ErrorCodeContractRequired,
+		PublicCode: publicCode,
+	})
+}
 
 // attachContractRejection records one contract rejection observation into the
 // request-scoped event carrier; missing fields are filled by later merge

@@ -94,14 +94,14 @@ func replayTaskCreateIdempotency(c *gin.Context, claim *model.TaskCreateIdempote
 		return
 	}
 	if claim != nil && claim.Status == model.TaskCreateIdempotencyUpstreamSucceeded {
-		task, err := model.RecoverTaskCreateIdempotency(claim.ID)
+		task, err := model.RecoverTaskCreateIdempotency(claim.ID, c.GetInt("id"), c.GetInt("token_id"))
 		if err == nil && task != nil {
 			replayTaskCreateResponse(c, claim.Protocol, task)
 			return
 		}
 	}
 	if claim != nil && claim.Status == model.TaskCreateIdempotencyComplete && claim.TaskID != "" {
-		task, exists, err := model.GetTaskForProtocol(c.GetInt("id"), claim.TaskID, claim.Protocol, true)
+		task, exists, err := model.GetVideoTaskForProtocol(c.GetInt("id"), c.GetInt("token_id"), claim.TaskID, claim.Protocol, true)
 		if err == nil && exists {
 			replayTaskCreateResponse(c, claim.Protocol, task)
 			return

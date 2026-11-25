@@ -149,7 +149,7 @@ func productionPluginRouteHandlers(generation *jsplugin.RoutingGeneration, group
 	return []gin.HandlerFunc{
 		pinRoute,
 		middleware.NativeRouteCredential(keys...),
-		middleware.TokenAuth(),
+		middleware.PluginModelTokenAuth(),
 		middleware.SystemPerformanceCheck(),
 		middleware.ModelRequestRateLimit(),
 		middleware.PrepareTaskPluginRoute(),
@@ -483,7 +483,7 @@ func (d *pluginRouteDispatcher) handOffNativeTaskQuery(c *gin.Context) {
 	if generation == nil || generation.RuntimeHandler() == nil {
 		return
 	}
-	task, exists, err := model.GetByTaskId(c.GetInt("id"), c.Param("task_id"))
+	task, exists, err := model.GetByTaskIDForApp(c.GetInt("id"), c.GetInt("token_id"), c.Param("task_id"))
 	if err != nil || !exists || task.PrivateData.Execution == nil || task.PrivateData.Execution.TaskPlugin == nil {
 		return
 	}

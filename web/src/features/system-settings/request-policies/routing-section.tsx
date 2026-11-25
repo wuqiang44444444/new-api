@@ -38,6 +38,7 @@ import { policyLabel } from './policy-label'
 import { RetrySection } from './retry-section'
 import {
   createRoutingPolicySchema,
+  requireAPIKeyContractOption,
   routingPolicyFormValues,
   routingPolicyOptions,
   type RoutingPolicyFormValues,
@@ -114,6 +115,11 @@ function RoutingPolicyEditor(props: { config: PolicyConfig }) {
       const data = await mutation.mutateAsync(delta)
       form.reset(routingPolicyFormValues(data.options))
     } catch (error) {
+      if (requireAPIKeyContractOption in delta) {
+        form.resetField('requireAPIKeyContract', {
+          defaultValue: defaults.requireAPIKeyContract,
+        })
+      }
       handleServerError(error)
     }
   }
@@ -129,6 +135,24 @@ function RoutingPolicyEditor(props: { config: PolicyConfig }) {
           isSaving={mutation.isPending}
         />
         <div className='min-w-0 space-y-4'>
+          <SettingsCard title={t('API key access')} className='shadow-none'>
+            <FormField
+              control={form.control}
+              name='requireAPIKeyContract'
+              render={({ field }) => (
+                <SettingsSwitchField
+                  controlId={requireAPIKeyContractOption}
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                  disabled={mutation.isPending}
+                  label={t('Require an active contract for API keys')}
+                  description={t(
+                    'When enabled, all API keys need an active contract to view and call models. When disabled, keys without an active contract use their existing group rules.'
+                  )}
+                />
+              )}
+            />
+          </SettingsCard>
           <AffinitySettings />
           <FailoverRoutingFields />
           <FormField

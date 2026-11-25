@@ -29,7 +29,7 @@ import { getUserAvatarFallback, getUserAvatarStyle } from '@/lib/avatar'
 import { formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
-import { TASK_STATUS } from '../../constants'
+import { TASK_ACTIONS, TASK_STATUS } from '../../constants'
 import { taskActionMapper, taskStatusMapper } from '../../lib/mappers'
 import type { TaskLog } from '../../types'
 import { TaskDetailsDialog } from '../dialogs/task-details-dialog'
@@ -215,6 +215,9 @@ export function useTaskLogsColumns(
           if (!taskId) {
             return <span className='text-muted-foreground/60 text-xs'>-</span>
           }
+          const isImageAction =
+            log.action === TASK_ACTIONS.IMAGE_GENERATION ||
+            log.action === TASK_ACTIONS.IMAGE_EDIT
           return (
             <div className='flex max-w-[170px] flex-col gap-0.5'>
               <StatusBadge
@@ -225,7 +228,8 @@ export function useTaskLogsColumns(
                 className='border-border/60 bg-muted/30 !text-foreground max-w-full truncate rounded-md border px-1.5 py-0.5 font-mono'
               />
               <span className='text-muted-foreground/60 truncate text-[11px]'>
-                {t(log.platform)} · {t(taskActionMapper.getLabel(log.action))}
+                {!isImageAction && `${t(log.platform)} · `}
+                {t(taskActionMapper.getLabel(log.action))}
               </span>
             </div>
           )

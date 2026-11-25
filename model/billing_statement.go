@@ -1,6 +1,9 @@
 package model
 
-import "sort"
+import (
+	"sort"
+	"strings"
+)
 
 type BillingStatementDataQuality struct {
 	Saturated bool `json:"saturated,omitempty"`
@@ -64,26 +67,31 @@ func GetUserBillingStatement(
 	// and quota without counting as additional model calls.
 	const taskIDPattern = `%"task!_id"%`
 	const taskCreatePattern = `%"task!_billing!_event":"create"%`
+	// Storage events add a charge without an inference request.
+	storageEventPattern := `%"billing!_event":"` + strings.ReplaceAll(ArkCacheBillingMode, "_", "!_") + `"%`
 	query := LOG_DB.Model(&Log{}).
 		Scopes(customerSettlementLogs).
 		Select(`
 			token_id,
 			token_name,
 			model_name,
-			COALESCE(SUM(CASE WHEN type = ? AND (COALESCE(other, '') NOT LIKE ? ESCAPE '!' OR REPLACE(COALESCE(other, ''), ' ', '') LIKE ? ESCAPE '!') THEN 1 ELSE 0 END), 0) AS requests,
+			COALESCE(SUM(CASE WHEN type = ? AND (COALESCE(other, '') NOT LIKE ? ESCAPE '!' OR REPLACE(COALESCE(other, ''), ' ', '') LIKE ? ESCAPE '!')
+				AND REPLACE(COALESCE(other, ''), ' ', '') NOT LIKE ? ESCAPE '!' THEN 1 ELSE 0 END), 0) AS requests,
 			COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
 			COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
 			COALESCE(SUM(CASE WHEN type = ? THEN quota ELSE 0 END), 0) AS gross_quota,
 			COALESCE(SUM(CASE WHEN type = ? THEN quota ELSE 0 END), 0) AS refund_quota,
-			COALESCE(AVG(CASE WHEN type = ? AND (COALESCE(other, '') NOT LIKE ? ESCAPE '!' OR REPLACE(COALESCE(other, ''), ' ', '') LIKE ? ESCAPE '!') THEN use_time ELSE NULL END), 0) AS average_use_time_seconds,
-			COALESCE(SUM(CASE WHEN type = ? AND (COALESCE(other, '') NOT LIKE ? ESCAPE '!' OR REPLACE(COALESCE(other, ''), ' ', '') LIKE ? ESCAPE '!') AND is_stream THEN 1 ELSE 0 END), 0) AS stream_requests,
+			COALESCE(AVG(CASE WHEN type = ? AND (COALESCE(other, '') NOT LIKE ? ESCAPE '!' OR REPLACE(COALESCE(other, ''), ' ', '') LIKE ? ESCAPE '!')
+				AND REPLACE(COALESCE(other, ''), ' ', '') NOT LIKE ? ESCAPE '!' THEN use_time ELSE NULL END), 0) AS average_use_time_seconds,
+			COALESCE(SUM(CASE WHEN type = ? AND (COALESCE(other, '') NOT LIKE ? ESCAPE '!' OR REPLACE(COALESCE(other, ''), ' ', '') LIKE ? ESCAPE '!')
+				AND REPLACE(COALESCE(other, ''), ' ', '') NOT LIKE ? ESCAPE '!' AND is_stream THEN 1 ELSE 0 END), 0) AS stream_requests,
 			MAX(created_at) AS latest_request_timestamp
 		`,
-			LogTypeConsume, taskIDPattern, taskCreatePattern,
+			LogTypeConsume, taskIDPattern, taskCreatePattern, storageEventPattern,
 			LogTypeConsume,
 			LogTypeRefund,
-			LogTypeConsume, taskIDPattern, taskCreatePattern,
-			LogTypeConsume, taskIDPattern, taskCreatePattern,
+			LogTypeConsume, taskIDPattern, taskCreatePattern, storageEventPattern,
+			LogTypeConsume, taskIDPattern, taskCreatePattern, storageEventPattern,
 		).
 		Where("user_id = ? AND type IN ? AND created_at >= ? AND created_at <= ?",
 			userId, []int{LogTypeConsume, LogTypeRefund}, startTimestamp, endTimestamp)

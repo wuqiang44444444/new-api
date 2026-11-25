@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -81,20 +80,12 @@ func ModelArkVideoCreateConvert() gin.HandlerFunc {
 			abortModelArkVideo(c, http.StatusInternalServerError, "internal_error", "failed to prepare request")
 			return
 		}
-		oldStorage, _ := common.GetBodyStorage(c)
-		newStorage, err := common.CreateBodyStorage(internalBody)
-		if err != nil {
+		if err := replaceVideoContractBody(c, internalBody); err != nil {
 			abortModelArkVideo(c, http.StatusInternalServerError, "internal_error", "failed to prepare request")
 			return
 		}
-		if oldStorage != nil {
-			_ = oldStorage.Close()
-		}
-		c.Set(common.KeyBodyStorage, newStorage)
 		common.SetContextKey(c, constant.ContextKeyTaskPromptValidated, true)
 		common.SetContextKey(c, constant.ContextKeyTaskDurationValidated, true)
-		c.Request.Body = io.NopCloser(readerOnlyOf(newStorage))
-		c.Request.ContentLength = int64(len(internalBody))
 		c.Request.Header.Set("Content-Type", "application/json")
 		originalPath := c.Request.URL.Path
 		c.Request.URL.Path = "/v1/video/generations"

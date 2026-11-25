@@ -2,13 +2,15 @@ package middleware
 
 import (
 	"errors"
-	"github.com/QuantumNous/new-api/model"
 	"net/http"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/i18n"
+	"github.com/QuantumNous/new-api/model"
 	relaykittypes "github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	hosttypes "github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 )
@@ -41,13 +43,39 @@ func applyCustomerContractDistributeGate(c *gin.Context, publicModel string, sho
 // True means the request does not use the saved Key's native routing scope.
 // Historical resources use their own ownership checks, not current routing grants.
 func customerContractAuthGate(c *gin.Context, token *model.Token) (bool, error) {
-	if c.Request != nil && contractHistoricalOperation(c) {
+	operation, _ := c.Get(contractModelOperationKey)
+	if operation == contractPluginRoutePending || c.Request != nil && operation == nil && contractHistoricalOperation(c) {
 		return true, nil
 	}
 	version, _ := common.GetContextKeyType[int64](c, constant.ContextKeyAuthVersion)
 	snapshot, err := service.CustomerContractForRequest(c, token.UserId, version, token.ContractId)
 	if err != nil {
 		abortWithOpenAiMessage(c, http.StatusServiceUnavailable, "合同授权暂不可用 / Contract authorization is unavailable")
+		return false, err
 	}
-	return snapshot != nil, err
+	if snapshot == nil && operation != nil && model.APIKeyContractRequired() {
+		c.Set(contractModelRestrictedKey, true)
+		return true, nil
+	}
+	return snapshot != nil, nil
+}
+
+func applyTokenRoutingScope(c *gin.Context, token *model.Token, userGroup string) bool {
+	skipNativeGroup, err := customerContractAuthGate(c, token)
+	if err != nil {
+		return false
+	}
+	if token.Group != "" && !skipNativeGroup {
+		if _, ok := service.GetUserUsableGroups(userGroup)[token.Group]; !ok {
+			abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgAuthTokenGroupForbidden, map[string]any{"Group": token.Group}))
+			return false
+		}
+		if token.Group != "auto" && !ratio_setting.ContainsGroupRatio(token.Group) {
+			abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgAuthTokenGroupDeprecated, map[string]any{"Group": token.Group}))
+			return false
+		}
+		userGroup = token.Group
+	}
+	common.SetContextKey(c, constant.ContextKeyUsingGroup, userGroup)
+	return true
 }

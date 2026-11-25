@@ -20,7 +20,7 @@ func SetRelayRouter(router *gin.Engine) {
 	// https://platform.openai.com/docs/api-reference/introduction
 	modelsRouter := router.Group("/v1/models")
 	modelsRouter.Use(middleware.RouteTag("relay"))
-	modelsRouter.Use(middleware.TokenAuth())
+	modelsRouter.Use(middleware.ModelDiscoveryTokenAuth())
 	{
 		modelsRouter.GET("", func(c *gin.Context) {
 			switch {
@@ -45,7 +45,7 @@ func SetRelayRouter(router *gin.Engine) {
 
 	geminiRouter := router.Group("/v1beta/models")
 	geminiRouter.Use(middleware.RouteTag("relay"))
-	geminiRouter.Use(middleware.TokenAuth())
+	geminiRouter.Use(middleware.ModelDiscoveryTokenAuth())
 	{
 		geminiRouter.GET("", func(c *gin.Context) {
 			controller.ListModels(c, constant.ChannelTypeGemini)
@@ -54,7 +54,7 @@ func SetRelayRouter(router *gin.Engine) {
 
 	geminiCompatibleRouter := router.Group("/v1beta/openai/models")
 	geminiCompatibleRouter.Use(middleware.RouteTag("relay"))
-	geminiCompatibleRouter.Use(middleware.TokenAuth())
+	geminiCompatibleRouter.Use(middleware.ModelDiscoveryTokenAuth())
 	{
 		geminiCompatibleRouter.GET("", func(c *gin.Context) {
 			controller.ListModels(c, constant.ChannelTypeOpenAI)
@@ -72,17 +72,16 @@ func SetRelayRouter(router *gin.Engine) {
 	relayV1Router.Use(middleware.RouteTag("relay"))
 	relayV1Router.Use(middleware.ImageErrorEvidence())
 	relayV1Router.Use(middleware.SystemPerformanceCheck())
-	relayV1Router.Use(middleware.TokenAuth())
+	relayV1Router.Use(middleware.RelayV1TokenAuth())
 	{
 		// Responses WebSocket route. Channel selection happens after the first
 		// response.create event; each event runs the ordinary request limiter.
 		relayV1Router.GET("/responses", controller.ResponsesWebSocket)
 	}
-	relayV1Router.Use(middleware.ModelRequestRateLimit())
 	{
 		// WebSocket 路由（统一到 Relay）
 		wsRouter := relayV1Router.Group("")
-		wsRouter.Use(middleware.Distribute())
+		wsRouter.Use(middleware.ModelRequestRateLimit(), middleware.Distribute())
 		wsRouter.GET("/realtime", func(c *gin.Context) {
 			controller.Relay(c, types.RelayFormatOpenAIRealtime)
 		})
@@ -90,7 +89,7 @@ func SetRelayRouter(router *gin.Engine) {
 	{
 		//http router
 		httpRouter := relayV1Router.Group("")
-		httpRouter.Use(middleware.Distribute())
+		httpRouter.Use(middleware.ModelRequestRateLimit(), middleware.Distribute())
 
 		// claude related routes
 		// TODO: /messages/count_tokens is disabled. The current controller.CountClaudeTokens
@@ -166,7 +165,10 @@ func SetRelayRouter(router *gin.Engine) {
 			controller.Relay(c, types.RelayFormatOpenAI)
 		})
 
+	}
+	{
 		// not implemented
+		httpRouter := relayV1Router.Group("", middleware.ModelRequestRateLimit(), middleware.Distribute())
 		httpRouter.POST("/images/variations", controller.RelayNotImplemented)
 		httpRouter.DELETE("/files/:id", controller.RelayNotImplemented)
 		httpRouter.POST("/fine-tunes", controller.RelayNotImplemented)
@@ -210,7 +212,7 @@ func SetRelayRouter(router *gin.Engine) {
 	})
 	relayGeminiRouter.Use(middleware.RouteTag("relay"))
 	relayGeminiRouter.Use(middleware.SystemPerformanceCheck())
-	relayGeminiRouter.Use(middleware.TokenAuth())
+	relayGeminiRouter.Use(middleware.ModelTokenAuth())
 	relayGeminiRouter.Use(middleware.ModelRequestRateLimit())
 	relayGeminiRouter.Use(middleware.Distribute())
 	{
@@ -223,7 +225,11 @@ func SetRelayRouter(router *gin.Engine) {
 
 func registerMjRouterGroup(relayMjRouter *gin.RouterGroup) {
 	relayMjRouter.GET("/image/:id", relay.RelayMidjourneyImage)
-	relayMjRouter.Use(middleware.TokenAuth(), middleware.Distribute())
+	reads := relayMjRouter.Group("/task", middleware.TokenAuth(), middleware.Distribute())
+	reads.GET("/:id/fetch", controller.RelayMidjourney)
+	reads.GET("/:id/image-seed", controller.RelayMidjourney)
+	reads.POST("/list-by-condition", controller.RelayMidjourney)
+	relayMjRouter.Use(middleware.ModelTokenAuth(), middleware.Distribute())
 	{
 		relayMjRouter.POST("/submit/action", controller.RelayMidjourney)
 		relayMjRouter.POST("/submit/shorten", controller.RelayMidjourney)
@@ -236,9 +242,6 @@ func registerMjRouterGroup(relayMjRouter *gin.RouterGroup) {
 		relayMjRouter.POST("/submit/edits", controller.RelayMidjourney)
 		relayMjRouter.POST("/submit/video", controller.RelayMidjourney)
 		//relayMjRouter.POST("/notify", controller.RelayMidjourney)
-		relayMjRouter.GET("/task/:id/fetch", controller.RelayMidjourney)
-		relayMjRouter.GET("/task/:id/image-seed", controller.RelayMidjourney)
-		relayMjRouter.POST("/task/list-by-condition", controller.RelayMidjourney)
 		relayMjRouter.POST("/insight-face/swap", controller.RelayMidjourney)
 		relayMjRouter.POST("/submit/upload-discord-images", controller.RelayMidjourney)
 	}

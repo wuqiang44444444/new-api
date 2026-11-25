@@ -406,7 +406,11 @@ func (agg *usageAggregation) consumeLogRow(ctx context.Context, row usageLogRow,
 	switch row.fact.Type {
 	case LogTypeConsume:
 		isTest := isNativeChannelTestLog(row.fact.Type, row.fact.TokenId, row.fact.TokenName, row.fact.Content)
-		agg.applyStandalone(row, bundle, max(row.parsed.requestCount, 1), usageConsumeResult(row), isTest)
+		calls := max(row.parsed.requestCount, 1)
+		if row.parsed.billingMode == ArkCacheBillingMode {
+			calls = 0
+		}
+		agg.applyStandalone(row, bundle, calls, usageConsumeResult(row), isTest)
 	case LogTypeError:
 		agg.errorRows = append(agg.errorRows, row)
 	case LogTypeRefund:
@@ -590,7 +594,7 @@ func (agg *usageAggregation) applyStandalone(row usageLogRow, bundle *usageDisco
 		return
 	}
 	mode, imageCount, imageKnown := customerUsageLogMeter(row)
-	if agg.opts.WantUpstream && row.fact.Type == LogTypeConsume {
+	if agg.opts.WantUpstream && row.fact.Type == LogTypeConsume && mode != ArkCacheBillingMode {
 		acc := agg.buildUpstreamStandalone(row, bundle, calls, result, isTest, mode, imageCount, imageKnown)
 		if acc != nil {
 			model := strings.TrimSpace(row.parsed.providerModel)

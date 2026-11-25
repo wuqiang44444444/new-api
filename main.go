@@ -5,6 +5,7 @@ import (
 	"context"
 	"embed"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -382,7 +383,9 @@ func InitResources() error {
 			common.SysError(common.LogText("failed to migrate sensitive words: %s", err.Error()))
 		}
 	}
-	model.InitOptionMap()
+	if err := model.InitOptionMap(); err != nil {
+		return fmt.Errorf("initialize options: %w", err)
+	}
 	if err = model.ImportLegacyEvidenceRetention(); err != nil {
 		return err
 	}

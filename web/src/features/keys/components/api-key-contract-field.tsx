@@ -133,7 +133,7 @@ export function ApiKeyContractField(props: {
     preview = (
       <p className='text-muted-foreground text-sm'>
         {t(
-          'This contract is disabled. Bound keys use their own group routing and pricing.'
+          'This contract is disabled. Bound keys can use their group rules only when the contract requirement is off.'
         )}
       </p>
     )
@@ -221,7 +221,7 @@ export function ApiKeyContractField(props: {
           </FormControl>
           <FormDescription>
             {t(
-              'An active contract defines model and channel scope and discounts. Disabling or unbinding it restores the key group routing and pricing.'
+              'An active contract defines model and channel access and discounts. Without an active contract, model access follows the system contract requirement.'
             )}
           </FormDescription>
           {preview}

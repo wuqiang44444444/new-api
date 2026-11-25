@@ -1283,7 +1283,7 @@ export function buildQueryRequest() { return {url: "https://example.com"}; }
 export function parseTaskResult() { return {status: "SUCCESS"}; }
 `)
 	insertTaskPluginRouteTask(t, &model.Task{
-		TaskID: "task-a", UserId: 7, Platform: constant.TaskPlatform("route-query-test"),
+		TaskID: "task-a", UserId: 7, AppID: 11, Platform: constant.TaskPlatform("route-query-test"),
 		Status: model.TaskStatusSuccess, Progress: "100%", CreatedAt: 10,
 	})
 	taskData, err := common.Marshal(map[string]any{
@@ -1292,7 +1292,7 @@ export function parseTaskResult() { return {status: "SUCCESS"}; }
 	})
 	require.NoError(t, err)
 	insertTaskPluginRouteTask(t, &model.Task{
-		TaskID: "task-b", UserId: 7, Platform: constant.TaskPlatform("route-query-test"),
+		TaskID: "task-b", UserId: 7, AppID: 11, Platform: constant.TaskPlatform("route-query-test"),
 		Status: model.TaskStatusInProgress, Progress: "50%", CreatedAt: 20, Data: taskData,
 		ChannelId: 999, Quota: 12345, PrivateData: model.TaskPrivateData{UpstreamTaskID: "private-upstream-id", Key: "secret"},
 	})
@@ -1303,6 +1303,7 @@ export function parseTaskResult() { return {status: "SUCCESS"}; }
 		pinTaskPluginRoute(plugin, 0),
 		func(c *gin.Context) {
 			c.Set("id", 7)
+			c.Set("token_id", 11)
 			c.Next()
 		},
 		PrepareTaskPluginRoute(),
@@ -1392,21 +1393,27 @@ export const native = {status: function(ctx, task) { return {id: task.task_id}; 
 }};
 `)
 	insertTaskPluginRouteTask(t, &model.Task{
-		TaskID: "foreign-task", UserId: 8, Platform: constant.TaskPlatform("route-static-query-test"),
+		TaskID: "foreign-task", UserId: 8, AppID: 11, Platform: constant.TaskPlatform("route-static-query-test"),
 	})
 	insertTaskPluginRouteTask(t, &model.Task{
-		TaskID: "wrong-platform", UserId: 7, Platform: constant.TaskPlatform("another-plugin"),
+		TaskID: "foreign-app-task", UserId: 7, AppID: 12, Platform: constant.TaskPlatform("route-static-query-test"),
 	})
 	insertTaskPluginRouteTask(t, &model.Task{
-		TaskID: "wrong-legacy-platform", UserId: 7, Platform: constant.TaskPlatform("652"),
+		TaskID: "wrong-platform", UserId: 7, AppID: 11, Platform: constant.TaskPlatform("another-plugin"),
 	})
 	insertTaskPluginRouteTask(t, &model.Task{
-		TaskID: "legacy-task", UserId: 7, Platform: constant.TaskPlatform("651"),
+		TaskID: "wrong-legacy-platform", UserId: 7, AppID: 11, Platform: constant.TaskPlatform("652"),
+	})
+	require.NoError(t, model.DB.Session(&gorm.Session{SkipHooks: true}).Create(&model.Task{
+		TaskID: "legacy-task", UserId: 7, Platform: constant.TaskPlatform("651"), PrivateData: model.TaskPrivateData{TokenId: 11},
+	}).Error)
+	insertTaskPluginRouteTask(t, &model.Task{
+		TaskID: "legacy-unscoped", UserId: 7, Platform: constant.TaskPlatform("651"),
 	})
 	// Submitted through a route with retainResult: false; owned by the caller
 	// but not retrievable, so it must be indistinguishable from a missing task.
 	insertTaskPluginRouteTask(t, &model.Task{
-		TaskID: "discarded-task", UserId: 7, Platform: constant.TaskPlatform("route-static-query-test"),
+		TaskID: "discarded-task", UserId: 7, AppID: 11, Platform: constant.TaskPlatform("route-static-query-test"),
 		Status: model.TaskStatusSuccess, PrivateData: model.TaskPrivateData{ResultDiscarded: true},
 	})
 
@@ -1415,6 +1422,7 @@ export const native = {status: function(ctx, task) { return {id: task.task_id}; 
 		pinTaskPluginRoute(plugin, 0),
 		func(c *gin.Context) {
 			c.Set("id", 7)
+			c.Set("token_id", 11)
 			c.Next()
 		},
 		PrepareTaskPluginRoute(),
@@ -1426,7 +1434,7 @@ export const native = {status: function(ctx, task) { return {id: task.task_id}; 
 	assert.JSONEq(t, `{"id":"legacy-task"}`, legacyRecorder.Body.String())
 
 	var firstBody string
-	for _, taskID := range []string{"missing-task", "foreign-task", "wrong-platform", "wrong-legacy-platform", "discarded-task"} {
+	for _, taskID := range []string{"missing-task", "foreign-task", "foreign-app-task", "wrong-platform", "wrong-legacy-platform", "legacy-unscoped", "discarded-task"} {
 		recorder := httptest.NewRecorder()
 		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/vendor/jobs/"+taskID, nil))
 		assert.Equal(t, http.StatusNotFound, recorder.Code)
@@ -2402,6 +2410,7 @@ func sharedTaskPluginRouteRouter(t *testing.T, plugins ...*jsplugin.LoadedPlugin
 		router.Handle(group.Method, group.GinPath, func(c *gin.Context) {
 			c.Set(jsplugin.ContextKeyPinnedRoute, jsplugin.PinnedRoute{Generation: generation, Plugin: group.Bindings[0].Plugin, Route: group.Bindings[0].Route, Candidates: group.Bindings})
 			c.Set("id", 7)
+			c.Set("token_id", 11)
 			c.Next()
 		}, PrepareTaskPluginRoute(), func(c *gin.Context) {
 			pinned := c.MustGet(jsplugin.ContextKeyPinnedRoute).(jsplugin.PinnedRoute)
@@ -2532,9 +2541,9 @@ func TestPrepareTaskPluginRouteAnswersSharedQueriesByTaskOwner(t *testing.T) {
 		{method: "GET", path: "/probe/v1/jobs/:job_id", type: "query", taskIdParam: "job_id", render: "jobStatus"},
 		{method: "POST", path: "/probe/v1/fetch", type: "dynamic", decode: "fetchJobs", render: "jobStatus"}
 	]`, ""))
-	insertTaskPluginRouteTask(t, &model.Task{TaskID: "task_alpha", UserId: 7, Platform: constant.TaskPlatform("share-alpha"), Status: model.TaskStatusInProgress})
-	insertTaskPluginRouteTask(t, &model.Task{TaskID: "task_beta", UserId: 7, Platform: constant.TaskPlatform("share-beta"), Status: model.TaskStatusInProgress})
-	insertTaskPluginRouteTask(t, &model.Task{TaskID: "task_foreign", UserId: 8, Platform: constant.TaskPlatform("share-beta"), Status: model.TaskStatusInProgress})
+	insertTaskPluginRouteTask(t, &model.Task{TaskID: "task_alpha", UserId: 7, AppID: 11, Platform: constant.TaskPlatform("share-alpha"), Status: model.TaskStatusInProgress})
+	insertTaskPluginRouteTask(t, &model.Task{TaskID: "task_beta", UserId: 7, AppID: 11, Platform: constant.TaskPlatform("share-beta"), Status: model.TaskStatusInProgress})
+	insertTaskPluginRouteTask(t, &model.Task{TaskID: "task_foreign", UserId: 8, AppID: 11, Platform: constant.TaskPlatform("share-beta"), Status: model.TaskStatusInProgress})
 	router := sharedTaskPluginRouteRouter(t, alpha, beta)
 
 	for _, testCase := range []struct{ method, path, body, want string }{
@@ -2567,7 +2576,7 @@ func TestPrepareTaskPluginRouteReadsQueryStringTaskID(t *testing.T) {
 	setupTaskPluginRouteDB(t)
 	plugin := compileTaskRoutePlugin(t, sharedRouteTestPluginSource("query-string-probe", `["probe-model"]`,
 		`[{method: "GET", path: "/probe/v1/query/job", type: "query", taskIdParam: "task_id", render: "jobStatus"}]`, ""))
-	insertTaskPluginRouteTask(t, &model.Task{TaskID: "task_qs", UserId: 7, Platform: constant.TaskPlatform("query-string-probe"), Status: model.TaskStatusInProgress})
+	insertTaskPluginRouteTask(t, &model.Task{TaskID: "task_qs", UserId: 7, AppID: 11, Platform: constant.TaskPlatform("query-string-probe"), Status: model.TaskStatusInProgress})
 	router := sharedTaskPluginRouteRouter(t, plugin)
 
 	for _, path := range []string{"/probe/v1/query/job?task_id=task_qs", "/query-string-probe/probe/v1/query/job?task_id=task_qs"} {
@@ -2603,7 +2612,7 @@ export function buildContentRequest() { return {url: "https://example.com/video.
 		if taskID == "task_running" {
 			status = model.TaskStatusInProgress
 		}
-		insertTaskPluginRouteTask(t, &model.Task{TaskID: taskID, UserId: 7, Platform: constant.TaskPlatform(platform), Status: status})
+		insertTaskPluginRouteTask(t, &model.Task{TaskID: taskID, UserId: 7, AppID: 11, Platform: constant.TaskPlatform(platform), Status: status})
 	}
 	router := sharedTaskPluginRouteRouter(t, listing, silent)
 
@@ -2640,7 +2649,7 @@ func TestNativePresentersChooseTheVendorsStatus(t *testing.T) {
 	moved(ctx, task) { return {__status: 302, __headers: {Location: "https://cdn.example/v.mp4"}}; },
 	broken(ctx, task) { return {__status: 202, __headers: {"Set-Cookie": "a=b"}}; },
 	error(ctx, error) { return error.httpStatus === 404 ? {__status: 200, __body: {status: "not_found"}} : {message: error.message}; },`))
-	insertTaskPluginRouteTask(t, &model.Task{TaskID: "task_job", UserId: 7, Platform: "reply-probe", Status: model.TaskStatusInProgress})
+	insertTaskPluginRouteTask(t, &model.Task{TaskID: "task_job", UserId: 7, AppID: 11, Platform: "reply-probe", Status: model.TaskStatusInProgress})
 	router := sharedTaskPluginRouteRouter(t, plugin)
 
 	pending := performSharedRouteRequest(router, http.MethodGet, "/probe/v1/jobs/task_job", "")

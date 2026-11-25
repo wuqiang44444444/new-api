@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -89,6 +90,22 @@ func setupResponsesWSRequestTest(t *testing.T) (*model.User, *model.Token) {
 		require.NoError(t, sqlDB.Close())
 	})
 	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Token{}))
+	// These billing and limiter fixtures start with an unbound key.
+	common.OptionMapRWMutex.Lock()
+	if common.OptionMap == nil {
+		common.OptionMap = make(map[string]string)
+		t.Cleanup(func() {
+			common.OptionMapRWMutex.Lock()
+			common.OptionMap = nil
+			common.OptionMapRWMutex.Unlock()
+		})
+	}
+	common.OptionMapRWMutex.Unlock()
+	previousContractPolicy := strconv.FormatBool(model.APIKeyContractRequired())
+	require.NoError(t, model.UpdateRequestPolicyOptions(map[string]string{model.RequireAPIKeyContractOption: "false"}))
+	t.Cleanup(func() {
+		require.NoError(t, model.UpdateRequestPolicyOptions(map[string]string{model.RequireAPIKeyContractOption: previousContractPolicy}))
+	})
 	// The shared in-memory limiter outlives each database fixture. Give every
 	// user a separate quota bucket, including when the tests run with -count.
 	user := &model.User{Id: 5062000 + int(responsesWSTestUserSequence.Add(1)), Username: "responses-ws-user", Status: common.UserStatusEnabled, Group: "default", Quota: 1000, AuthVersion: 1}

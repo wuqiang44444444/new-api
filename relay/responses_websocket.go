@@ -297,7 +297,7 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 			return apiErr
 		}
 	}
-	if apiErr = checkResponsesWSModelAccess(c, modelName); apiErr != nil {
+	if apiErr = s.authorizeContractModel(c, modelName, create.Request.Model); apiErr != nil {
 		return apiErr
 	}
 	service.GetChannelConstraints(c).AddFilter(appdto.ChannelFilter{Kind: appdto.FilterRequestPath, RequestPath: c.Request.URL.Path})
@@ -703,7 +703,7 @@ func (s *responsesWSSession) restoreConnectionContext(c *gin.Context, model stri
 		if pin.ChannelId != s.lockedChannelID {
 			return types.NewErrorWithStatusCode(errors.New("channel pin changed; reconnect required"), types.ErrorCodeAccessDenied, http.StatusForbidden, types.ErrOptionWithSkipRetry())
 		}
-	} else {
+	} else if service.ActiveCustomerContract(c) == nil {
 		group := common.GetContextKeyString(c, appconstant.ContextKeyUsingGroup)
 		if group == "auto" {
 			if !slices.Contains(service.GetRequestAutoGroups(c, common.GetContextKeyString(c, appconstant.ContextKeyUserGroup)), s.lockedGroup) {

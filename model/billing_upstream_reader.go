@@ -163,6 +163,9 @@ func scanUpstreamBillingFacts(ctx context.Context, filter UpstreamBillingDetailF
 // Customer settlement refunds reduce the local original-price base, without
 // asserting anything about whether the provider refunded its usage or money.
 func upstreamOriginalQuota(log billingReconciliationLog, parsed parsedBillingReconciliationLog) (decimal.Decimal, []string) {
+	if parsed.billingMode == ArkCacheBillingMode {
+		return decimal.Zero, []string{billingOriginalQuotaNotRecorded}
+	}
 	if original, ok := customerStatementOriginalQuota(log, parsed); ok {
 		return original, nil
 	}

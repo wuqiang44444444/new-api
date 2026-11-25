@@ -804,7 +804,8 @@ export const native = {
     return task.data && typeof task.data === "object" && !Array.isArray(task.data) ? task.data : {};
   },
   error: function (ctx, error) {
-    return { error: { code: ERROR_CODES[error.httpStatus] || "InternalServiceError", message: error.message } };
+    const code = error.code === "contract_required" ? error.code : ERROR_CODES[error.httpStatus] || "InternalServiceError";
+    return { error: { code: code, message: error.message } };
   },
 };
 

@@ -83,6 +83,7 @@ func TestGetOpenAIVideoRouteRendersJimengTask(t *testing.T) {
 		Status:    model.TaskStatusSuccess,
 		Progress:  "100%",
 		PrivateData: model.TaskPrivateData{
+			TokenId:   1,
 			ResultURL: "data:video/mp4;base64,ZGF0YQ==",
 		},
 	}
@@ -158,7 +159,8 @@ func TestGetOpenAIVideoRouteHandsNativeXAITaskToPluginQuery(t *testing.T) {
 	setupRelayRouterTestDB(t)
 	require.NoError(t, model.DB.AutoMigrate(&model.Channel{}, &model.Task{}))
 	require.NoError(t, model.DB.Create(&model.User{Id: 92, Username: "xai-fetch-user", Status: common.UserStatusEnabled, Group: "default", Quota: 100}).Error)
-	require.NoError(t, model.DB.Create(&model.Token{UserId: 92, Key: "xaifetch", Status: common.TokenStatusEnabled, ExpiredTime: -1, UnlimitedQuota: true}).Error)
+	token := model.Token{UserId: 92, Key: "xaifetch", Status: common.TokenStatusEnabled, ExpiredTime: -1, UnlimitedQuota: true}
+	require.NoError(t, model.DB.Create(&token).Error)
 	for taskID, requestPath := range map[string]string{"task_xai_native": "/v1/videos/generations", "task_xai_pinned": "/xai/v1/videos/generations", "task_xai_openai": "/v1/videos"} {
 		task := &model.Task{
 			CreatedAt:  1710000000,
@@ -166,6 +168,7 @@ func TestGetOpenAIVideoRouteHandsNativeXAITaskToPluginQuery(t *testing.T) {
 			TaskID:     taskID,
 			Platform:   constant.TaskPlatform("xai"),
 			UserId:     92,
+			AppID:      token.Id,
 			Group:      "default",
 			Status:     model.TaskStatusSuccess,
 			Progress:   "100%",

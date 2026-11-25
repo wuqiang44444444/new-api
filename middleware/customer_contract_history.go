@@ -7,12 +7,22 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func jimengHistoricalOperation(c *gin.Context) bool {
+	return c.Request.Method == http.MethodPost && c.FullPath() == "/jimeng/" && c.Query("Action") == "CVSync2AsyncGetResult"
+}
+
 // Existing task reads/cancellation use their frozen authorization and billing
 // facts. Asset proxy operations are model-keyed new calls, not durable task reads.
 func contractHistoricalOperation(c *gin.Context) bool {
 	path := c.Request.URL.Path
+	if jimengHistoricalOperation(c) {
+		return true
+	}
 	if c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead || c.Request.Method == http.MethodDelete {
-		for _, resource := range []string{"/v1/batches", "/v1/files", "/v1/videos", "/v1/video/generations", "/v1/tasks", "/v1/responses", "/api/v3/contents/generations/tasks", "/kling/v1/videos"} {
+		if strings.HasPrefix(path, "/v1/responses/") {
+			return true
+		}
+		for _, resource := range []string{"/v1/batches", "/v1/files", "/v1/videos", "/v1/video/generations", "/v1/tasks", "/api/v3/contents/generations/tasks", "/kling/v1/videos"} {
 			if path == resource || strings.HasPrefix(path, resource+"/") {
 				return true
 			}

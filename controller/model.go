@@ -221,6 +221,9 @@ func getModelListGroups(c *gin.Context) (modelListGroups, error) {
 }
 
 func ListModels(c *gin.Context, modelType int) {
+	if respondRestrictedModelList(c, modelType) {
+		return
+	}
 	acceptUnsetRatioModel := operation_setting.SelfUseModeEnabled
 	if !acceptUnsetRatioModel {
 		userId := c.GetInt("id")
@@ -390,6 +393,9 @@ func EnabledListModels(c *gin.Context) {
 }
 
 func RetrieveModel(c *gin.Context, modelType int) {
+	if respondRestrictedModelDetail(c) {
+		return
+	}
 	modelId := c.Param("model")
 	if !customerContractModelVisible(c, modelId) {
 		return

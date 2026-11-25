@@ -40,7 +40,7 @@ type pluginProtocolBridgeDeps struct {
 	tickJitter         time.Duration
 	heartbeatInterval  time.Duration
 	admissionTimeout   time.Duration
-	getByTaskId        func(int, string) (*model.Task, bool, error)
+	getTaskForApp      func(int, int, string) (*model.Task, bool, error)
 	resolvePlugin      func(constant.TaskPlatform) (*pluginruntime.LoadedPlugin, *pluginruntime.RoutingGeneration, bool)
 	// imagePollInterval, pollTask and downloadImage serve the synchronous
 	// OpenAI Images protocol: an asynchronous upstream image task is polled
@@ -87,7 +87,7 @@ func defaultPluginProtocolBridgeDeps() pluginProtocolBridgeDeps {
 		tickJitter:         jitter,
 		heartbeatInterval:  heartbeat,
 		admissionTimeout:   pluginruntime.DefaultCallTimeout,
-		getByTaskId:        model.GetByTaskId,
+		getTaskForApp:      model.GetByTaskIDForApp,
 		resolvePlugin:      resolveTaskPluginForProtocolRetrieve,
 		imagePollInterval:  taskPluginImagePollInterval,
 		pollTask:           pollTaskPluginImageTask,
@@ -136,8 +136,8 @@ func (d pluginProtocolBridgeDeps) withDefaults() pluginProtocolBridgeDeps {
 	if d.admissionTimeout <= 0 {
 		d.admissionTimeout = defaults.admissionTimeout
 	}
-	if d.getByTaskId == nil {
-		d.getByTaskId = defaults.getByTaskId
+	if d.getTaskForApp == nil {
+		d.getTaskForApp = defaults.getTaskForApp
 	}
 	if d.resolvePlugin == nil {
 		d.resolvePlugin = defaults.resolvePlugin
@@ -960,7 +960,7 @@ func retrieveTaskPluginResponse(c *gin.Context, deps pluginProtocolBridgeDeps) {
 	userID := common.GetContextKeyInt(c, constant.ContextKeyUserId)
 	logger.LogDebug(c, "task_plugin subsystem=protocol event=retrieve_start response_id=%q public_task_id=%q", responseID, taskID)
 
-	task, exists, err := deps.getByTaskId(userID, taskID)
+	task, exists, err := deps.getTaskForApp(userID, c.GetInt("token_id"), taskID)
 	if err != nil {
 		logger.LogError(c, common.LogText("task protocol retrieve lookup failed"))
 		logger.LogDebug(c, "task_plugin subsystem=protocol event=retrieve_failed reason=lookup_error public_task_id=%q", taskID)

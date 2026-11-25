@@ -37,7 +37,7 @@ var (
 )
 
 func GetTask(c *gin.Context) {
-	task, exists, err := model.GetByTaskId(c.GetInt("id"), c.Param("key"))
+	task, exists, err := model.GetByTaskIDForApp(c.GetInt("id"), c.GetInt("token_id"), c.Param("key"))
 	if err != nil {
 		videoProxyError(c, http.StatusInternalServerError, "server_error", "Failed to query task")
 		return
@@ -72,7 +72,7 @@ func GetTask(c *gin.Context) {
 }
 
 func GetTaskArtifacts(c *gin.Context) {
-	task, exists, err := model.GetByTaskId(c.GetInt("id"), c.Param("key"))
+	task, exists, err := model.GetByTaskIDForApp(c.GetInt("id"), c.GetInt("token_id"), c.Param("key"))
 	if err != nil {
 		writeTaskArtifactError(c, http.StatusInternalServerError, "artifact_internal_error", "Failed to query task")
 		return
@@ -306,7 +306,10 @@ func getTaskForArtifactRequest(c *gin.Context, taskID string) (*model.Task, bool
 		}
 		return task, true, nil
 	}
-	if c.GetInt("token_id") == 0 && c.GetInt("role") >= common.RoleAdminUser {
+	if appID := c.GetInt("token_id"); appID > 0 {
+		return model.GetByTaskIDForApp(c.GetInt("id"), appID, taskID)
+	}
+	if c.GetInt("role") >= common.RoleAdminUser {
 		return model.GetByOnlyTaskId(taskID)
 	}
 	return model.GetByTaskId(c.GetInt("id"), taskID)

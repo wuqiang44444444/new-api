@@ -59,7 +59,7 @@ ModelArk V3 创建不提供客户幂等键。`create_outcome_unknown` 或创建�
 
 ## 权限与交付
 
-图片与 ModelArk 任务按用户和创建时的应用（API Key）隔离。同账号其他 Key 也不能直接查询原任务。
+图片、ModelArk、Kling、即梦和平台的任务查询接口按用户和创建时的应用（API Key）隔离。同账号的其他 Key 查询会返回 `404`。Responses 异步结果查询也须使用创建时的 Key。
 `404` 时应同时核对 ID、接口族和创建时的 Key。
 
 托管视频就绪后使用任务返回的签名地址下载。鉴权、续签和错误处理见[视频下载](api-reference/videos/modelark#下载视频或末帧)。

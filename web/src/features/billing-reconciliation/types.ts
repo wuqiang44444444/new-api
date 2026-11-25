@@ -25,6 +25,7 @@ export const BILLING_MODES = [
   'per_call',
   'per_image',
   'per_second',
+  'cache_storage',
   'duration_and_count',
   'unknown',
 ] as const

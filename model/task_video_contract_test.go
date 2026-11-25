@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func TestModelArkListEnforcesProtocolSevenDayWindowAndOfficialFilters(t *testing.T) {
@@ -136,6 +137,7 @@ func TestModelArkProviderContractFailureProjectsAsFailed(t *testing.T) {
 func TestTaskCreateIdempotencyReplayConflictExpiryAndAtomicCompletion(t *testing.T) {
 	truncateTables(t)
 	const userID = 982
+	const appID = 29
 	now := int64(1_800_000_000)
 
 	claim, created, err := ClaimTaskCreateIdempotency(userID, TaskClientProtocolModelArkV3, "key", "request-a", now+3600)
@@ -153,12 +155,14 @@ func TestTaskCreateIdempotencyReplayConflictExpiryAndAtomicCompletion(t *testing
 	task := &Task{
 		TaskID: "task-idempotent", UserId: userID, ClientProtocol: TaskClientProtocolModelArkV3,
 		Status: TaskStatusQueued, ChannelId: 12,
-		PrivateData: TaskPrivateData{UpstreamTaskID: "upstream-idempotent"},
+		PrivateData: TaskPrivateData{UpstreamTaskID: "upstream-idempotent", TokenId: appID},
 	}
 	require.NoError(t, RecordTaskCreateUpstreamSuccess(claim.ID, task))
 	require.NoError(t, DB.First(claim, "id = ?", claim.ID).Error)
 	assert.Equal(t, TaskCreateIdempotencyUpstreamSucceeded, claim.Status)
-	recovered, err := RecoverTaskCreateIdempotency(claim.ID)
+	_, err = RecoverTaskCreateIdempotency(claim.ID, userID, appID+1)
+	require.ErrorIs(t, err, gorm.ErrRecordNotFound)
+	recovered, err := RecoverTaskCreateIdempotency(claim.ID, userID, appID)
 	require.NoError(t, err)
 	require.NotNil(t, recovered)
 	assert.Equal(t, task.TaskID, recovered.TaskID)
@@ -167,6 +171,8 @@ func TestTaskCreateIdempotencyReplayConflictExpiryAndAtomicCompletion(t *testing
 	assert.Equal(t, TaskCreateIdempotencyComplete, claim.Status)
 	assert.Equal(t, task.TaskID, claim.TaskID)
 	assert.Empty(t, claim.RecoverySnapshot)
+	_, err = RecoverTaskCreateIdempotency(claim.ID, userID, appID+1)
+	require.ErrorIs(t, err, gorm.ErrRecordNotFound)
 
 	expired := &TaskCreateIdempotency{
 		UserID: userID, Protocol: TaskClientProtocolModelArkV3, KeyHash: "expired-key",

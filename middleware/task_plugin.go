@@ -193,6 +193,9 @@ func PrepareTaskPluginRoute() gin.HandlerFunc {
 			renderTaskPluginRouteQuery(c, pinned, requestContext, eligible)
 			return
 		}
+		if rejectRestrictedPluginModelCall(c) {
+			return
+		}
 
 		// Every candidate decodes the request; the first that accepts it in
 		// key order names the model, and the candidates that accept the same
@@ -325,6 +328,9 @@ func PrepareTaskPluginRoute() gin.HandlerFunc {
 			resolvedContext.RequestBody = resolved["requestBody"]
 		}
 		c.Set(pluginruntime.ContextKeyRouteRequest, resolvedContext)
+		if !authorizeResolvedPluginModelCall(c) {
+			return
+		}
 		c.Set("task_request", resolvedContext.RequestBody)
 		if resolvedBodyText != nil {
 			c.Set(pluginruntime.ContextKeyRequestBodyText, resolvedBodyText)
@@ -456,7 +462,7 @@ func renderTaskPluginRouteQuery(c *gin.Context, pinned pluginruntime.PinnedRoute
 				platforms = append(platforms, taskPluginLegacyPlatforms(candidate.Plugin.Meta)...)
 			}
 		}
-		tasks, err := model.GetByTaskIdsForPlatforms(common.GetContextKeyInt(c, constant.ContextKeyUserId), platforms, slices.Compact(slices.Sorted(slices.Values(taskIDs))))
+		tasks, err := model.GetAppTasksByIDsForPlatforms(c.GetInt("id"), c.GetInt("token_id"), platforms, slices.Compact(slices.Sorted(slices.Values(taskIDs))))
 		if err != nil {
 			abortTaskPluginRouteError(c, http.StatusInternalServerError)
 			return
@@ -500,9 +506,9 @@ func renderTaskPluginRouteQuery(c *gin.Context, pinned pluginruntime.PinnedRoute
 }
 
 // taskPluginOwnsTasks reports whether every task id names a retrievable task
-// of the caller on one of the plugin's platforms.
+// of the caller's application on one of the plugin's platforms.
 func taskPluginOwnsTasks(c *gin.Context, meta pluginruntime.Meta, taskIDs []string) (bool, error) {
-	tasks, err := model.GetByTaskIdsForPlatforms(common.GetContextKeyInt(c, constant.ContextKeyUserId), taskPluginLegacyPlatforms(meta), taskIDs)
+	tasks, err := model.GetAppTasksByIDsForPlatforms(c.GetInt("id"), c.GetInt("token_id"), taskPluginLegacyPlatforms(meta), taskIDs)
 	if err != nil {
 		return false, err
 	}
@@ -1452,9 +1458,8 @@ func renderTaskPluginQuery(
 		len(taskIDs),
 		multiple,
 	)
-	userID := common.GetContextKeyInt(c, constant.ContextKeyUserId)
 	platforms := taskPluginLegacyPlatforms(pinned.Plugin.Meta)
-	tasks, err := model.GetByTaskIdsForPlatforms(userID, platforms, taskIDs)
+	tasks, err := model.GetAppTasksByIDsForPlatforms(c.GetInt("id"), c.GetInt("token_id"), platforms, taskIDs)
 	if err != nil {
 		logger.LogDebug(
 			c,
@@ -1642,7 +1647,8 @@ func RespondTaskPluginError(c *gin.Context, taskErr *dto.TaskError) bool {
 		return false
 	}
 	sanitized := sanitizedTaskPluginError(taskErr.StatusCode, taskErr.Message)
-	if requestplugin.Stopped(taskErr) {
+	contractRequired := taskErr.Code == constant.ErrorCodeContractRequired && APIKeyModelAccessRestricted(c)
+	if requestplugin.Stopped(taskErr) || contractRequired {
 		// A request plugin's stop keeps its code and message, as on chat
 		// routes.
 		sanitized.Code, sanitized.Message, sanitized.Retryable = taskErr.Code, taskErr.Message, false
@@ -1660,6 +1666,11 @@ func RespondTaskPluginError(c *gin.Context, taskErr *dto.TaskError) bool {
 			"requestId":  requestID,
 		})
 		if callErr == nil {
+			if wrapper, ok := body.(map[string]any); ok && contractRequired {
+				if _, hasStatus := wrapper["__status"]; hasStatus {
+					wrapper["__status"] = sanitized.HTTPStatus
+				}
+			}
 			callErr = WriteNativeReply(c, sanitized.HTTPStatus, body)
 		}
 		if callErr == nil {

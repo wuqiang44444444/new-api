@@ -56,7 +56,12 @@ import {
   getCurrencyDisplay,
   formatBillingCurrencyFromUSD,
 } from '@/lib/currency'
-import { formatLogQuota, formatTokens, formatUseTime } from '@/lib/format'
+import {
+  formatDateTimeStr,
+  formatLogQuota,
+  formatTokens,
+  formatUseTime,
+} from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import { getUsageLogDetail } from '../../api'
@@ -191,18 +196,31 @@ function BillingBreakdown(props: {
       ? (other.model_ratio * 1000000) / getCurrencyDisplay().config.quotaPerUnit
       : 0
   const explanation = other.billing_explanation
-  if (explanation?.lines.length) {
+  const storage =
+    other.billing_event === 'cache_storage' ||
+    other.billing_facts?.billing_mode === 'cache_storage'
+  if (explanation?.lines.length || storage) {
     let billingMode = isPerCall ? 'Per-call' : 'Per-token'
     if (isTieredExpr) {
       billingMode = 'Dynamic Pricing'
     } else if (other.billing_facts?.billing_mode === 'per_image') {
       billingMode = 'Per image'
+    } else if (storage) {
+      billingMode = 'Cache storage fee'
     }
     rows.push({
       label: t('Billing Mode'),
       value: t(billingMode),
     })
-    for (const line of explanation.lines) {
+    if (storage) {
+      const start = other.hour_start ?? log.created_at
+      const end = other.hour_end ?? start + 3600
+      rows.push({
+        label: t('Billing Period'),
+        value: `${formatDateTimeStr(new Date(start * 1000))} – ${formatDateTimeStr(new Date(end * 1000))}`,
+      })
+    }
+    for (const line of explanation?.lines ?? []) {
       if (line.label === 'Text Input' && line.unit === 'token') {
         rows.push({
           label: t('Text input price'),
@@ -210,18 +228,19 @@ function BillingBreakdown(props: {
         })
       }
       const unit = line.unit === 'token' ? 'M token' : t(line.unit)
+      const priceUnit = line.unit === 'token-hour' ? `M ${unit}` : unit
       rows.push({
         label: t(line.label),
         value: (
           <BillingEquation
             quantity={`${line.quantity.toLocaleString()} ${t(line.unit)}`}
-            price={`${fmtPrice(line.unit_price_usd)}/${unit}`}
+            price={`${fmtPrice(line.unit_price_usd)}/${priceUnit}`}
             subtotal={fmtPrice(line.subtotal_usd)}
           />
         ),
       })
     }
-    if (explanation.current_quota_conversion) {
+    if (explanation?.current_quota_conversion) {
       rows.push({
         label: t('Amount'),
         value: t('Amounts use the current quota conversion rate.'),
