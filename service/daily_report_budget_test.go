@@ -47,6 +47,7 @@ func TestReportForegroundLogTailSurfacesPressureWithStableRequestCount(t *testin
 	require.Equal(t, 4*time.Millisecond, window.tail95[common.ReportForegroundLog])
 	logs.Completed, logs.Milliseconds, logs.Latency[2], logs.Latency[5] = 200, 950, 194, 6
 	require.Equal(t, reportPause, window.observe(now.Add(2*time.Second), snapshot, false))
+	assert.Contains(t, window.pressure.reasons, "trigger=foreground_p95 operation=log_write sample=32ms baseline=4ms threshold=16ms completed=100")
 	require.Equal(t, 4*time.Millisecond, window.tail95[common.ReportForegroundLog], "the background slowdown cannot raise the reference")
 }
 
@@ -125,17 +126,19 @@ func TestSharedAdmissionStopsAtWALPressure(t *testing.T) {
 	db := setupVersionServiceTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.SystemInstance{}))
 	now := time.Now()
-	sharedReportAdmission.Lock()
+	require.NoError(t, sharedReportAdmission.lock.Acquire(t.Context(), 1))
 	sharedReportAdmission.db = model.DB
 	sharedReportAdmission.decision = reportAdmissionDecision{at: now.Add(-reportObservationInterval)}
 	sharedReportAdmission.lastQuiet = now
 	sharedReportAdmission.quietAt = now.Add(-time.Minute)
 	sharedReportAdmission.last = []model.DailyReportDatabaseLoad{{WALBytes: 1}}
-	sharedReportAdmission.Unlock()
+	sharedReportAdmission.lock.Release(1)
 	decision := checkReportAdmission(t.Context(), func(context.Context) ([]model.DailyReportDatabaseLoad, error) {
 		return []model.DailyReportDatabaseLoad{{WALBytes: 1 + 32<<20}}, nil
 	})
 	assert.Equal(t, reportPause, decision.pressure)
+	require.Len(t, decision.reasons, 1)
+	assert.Regexp(t, `^source=main_db trigger=db_wal_rate sample=[0-9.]+B/s threshold=25165824B/s$`, decision.reasons[0])
 }
 
 func TestSharedAdmissionStopsForAnotherNodesLogFailure(t *testing.T) {
@@ -147,7 +150,7 @@ func TestSharedAdmissionStopsForAnotherNodesLogFailure(t *testing.T) {
 	after.Operations[common.ReportForegroundLog] = common.ReportForegroundCounters{Completed: 100, Failed: 1}
 	require.NoError(t, model.UpsertSystemInstance(node, map[string]any{"report_foreground": after},
 		now.Add(-time.Minute).Unix(), now.Unix()))
-	sharedReportAdmission.Lock()
+	require.NoError(t, sharedReportAdmission.lock.Acquire(t.Context(), 1))
 	sharedReportAdmission.db = model.DB
 	sharedReportAdmission.lastQuiet = now
 	sharedReportAdmission.quietAt = now.Add(-time.Minute)
@@ -157,11 +160,12 @@ func TestSharedAdmissionStopsForAnotherNodesLogFailure(t *testing.T) {
 	}
 	sharedReportAdmission.decision = reportAdmissionDecision{at: now.Add(-2 * reportObservationInterval)}
 	sharedReportAdmission.last = []model.DailyReportDatabaseLoad{{}}
-	sharedReportAdmission.Unlock()
+	sharedReportAdmission.lock.Release(1)
 	decision := checkReportAdmission(t.Context(), func(context.Context) ([]model.DailyReportDatabaseLoad, error) {
 		return []model.DailyReportDatabaseLoad{{}}, nil
 	})
 	assert.Equal(t, reportPause, decision.pressure)
+	assert.Contains(t, decision.reasons, "source=peer_foreground trigger=foreground_failure operation=log_write sample=1 threshold=1 completed=100")
 }
 
 func TestReportAdmissionKeepsCalibrationSeparateFromForegroundPressure(t *testing.T) {
@@ -170,7 +174,7 @@ func TestReportAdmissionKeepsCalibrationSeparateFromForegroundPressure(t *testin
 	for _, calibrating := range []bool{true, false} {
 		now := time.Now()
 		prior := now.Add(-reportObservationInterval)
-		sharedReportAdmission.Lock()
+		require.NoError(t, sharedReportAdmission.lock.Acquire(t.Context(), 1))
 		sharedReportAdmission.db = model.DB
 		sharedReportAdmission.decision = reportAdmissionDecision{pressure: reportPause, at: prior, calibrating: calibrating}
 		sharedReportAdmission.lastQuiet = now
@@ -178,8 +182,8 @@ func TestReportAdmissionKeepsCalibrationSeparateFromForegroundPressure(t *testin
 		sharedReportAdmission.last = []model.DailyReportDatabaseLoad{{}}
 		sharedReportAdmission.local = reportForegroundWindow{at: prior, snapshot: common.CurrentReportForeground()}
 		sharedReportAdmission.healthy = 0
-		sharedReportAdmission.peerPressure = reportHealthy
-		sharedReportAdmission.Unlock()
+		sharedReportAdmission.peerPressure = reportPressureObservation{}
+		sharedReportAdmission.lock.Release(1)
 		decision := checkReportAdmission(t.Context(), func(context.Context) ([]model.DailyReportDatabaseLoad, error) {
 			return []model.DailyReportDatabaseLoad{{}}, nil
 		})
@@ -193,18 +197,20 @@ func TestReportAdmissionRecoveryNeedsConsecutiveHealthySamples(t *testing.T) {
 	require.NoError(t, db.AutoMigrate(&model.SystemInstance{}))
 	now := time.Now()
 	prior := now.Add(-reportObservationInterval)
-	sharedReportAdmission.Lock()
+	require.NoError(t, sharedReportAdmission.lock.Acquire(t.Context(), 1))
 	sharedReportAdmission.db = model.DB
 	sharedReportAdmission.decision = reportAdmissionDecision{pressure: reportPause, at: prior}
 	sharedReportAdmission.local = reportForegroundWindow{at: prior, snapshot: common.CurrentReportForeground()}
 	sharedReportAdmission.last = []model.DailyReportDatabaseLoad{{}}
 	sharedReportAdmission.lastQuiet, sharedReportAdmission.quietAt = now, time.Time{}
-	sharedReportAdmission.peerAt, sharedReportAdmission.peerPressure = now, reportHealthy
+	sharedReportAdmission.peerAt, sharedReportAdmission.peerPressure = now, reportPressureObservation{}
 	sharedReportAdmission.healthy = 2
-	sharedReportAdmission.Unlock()
+	sharedReportAdmission.lock.Release(1)
 
 	decision := checkReportAdmission(t.Context(), func(context.Context) ([]model.DailyReportDatabaseLoad, error) {
-		return []model.DailyReportDatabaseLoad{{Probe: 40 * time.Millisecond}}, nil
+		return []model.DailyReportDatabaseLoad{{Probe: 55 * time.Millisecond}}, nil
 	})
 	assert.Equal(t, reportPause, decision.pressure)
+	assert.Contains(t, decision.reasons, "source=admission trigger=recovery_healthy_samples sample=0 threshold=3")
+	assert.Contains(t, decision.reasons, "source=main_db trigger=db_probe_latency sample=55ms threshold=55ms")
 }

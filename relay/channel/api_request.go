@@ -399,7 +399,7 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 	if err = signUpstreamRequest(a, c, info, req.Method, req.URL, req.Header); err != nil {
 		return nil, err
 	}
-	resp, err := doRequest(c, req, info)
+	resp, err := doNativeAPIRequest(c, req, info)
 	if err != nil {
 		return nil, fmt.Errorf("do request failed: %w", err)
 	}
@@ -539,6 +539,10 @@ func keepUpstreamRedirectResponse(_ *http.Request, _ []*http.Request) error {
 }
 
 func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http.Response, error) {
+	return doRequestWithSender(c, req, info, (*http.Client).Do)
+}
+
+func doRequestWithSender(c *gin.Context, req *http.Request, info *common.RelayInfo, send func(*http.Client, *http.Request) (*http.Response, error)) (*http.Response, error) {
 	client, err := service.GetHttpClientWithProxySettings(info.ChannelSetting.Proxy, info.ChannelSetting)
 	if err != nil {
 		return nil, fmt.Errorf("new proxy http client failed: %w", err)
@@ -578,7 +582,7 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	service.MarkTaskCreateAttemptUpstreamStarted(c)
 	clienterrlog.WrapUpstreamRequest(c.Request.Context(), req)
 	req = service.AttachTaskCreateTransportProbe(c, req, &relayClient)
-	resp, err := relayClient.Do(req)
+	resp, err := send(&relayClient, req)
 	service.RecordChannelAlertRelayHTTP(c, info, resp, err)
 	service.ObserveImageHTTPExchange(c.Request.Context(), req, resp, err, "generation")
 	if err != nil {

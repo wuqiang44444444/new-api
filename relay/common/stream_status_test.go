@@ -1,6 +1,7 @@
 package common
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -179,4 +180,24 @@ func TestStreamStatus_Summary_NilSafe(t *testing.T) {
 	t.Parallel()
 	var s *StreamStatus
 	assert.Equal(t, "StreamStatus<nil>", s.Summary())
+}
+
+func TestStreamStatusReadsWhileScannerEnds(t *testing.T) {
+	status := NewStreamStatus()
+	endErr := errors.New("upstream read failed")
+	start := make(chan struct{})
+	ended := make(chan struct{})
+	go func() {
+		defer close(ended)
+		<-start
+		status.SetEndReason(StreamEndReasonScannerErr, endErr)
+	}()
+
+	close(start)
+	assert.False(t, status.IsNormalEnd())
+	_ = status.Summary()
+	<-ended
+	outcome := status.OutcomeSnapshot()
+	assert.Equal(t, StreamEndReasonScannerErr, outcome.EndReason)
+	assert.ErrorIs(t, outcome.EndError, endErr)
 }

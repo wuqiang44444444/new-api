@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -15,15 +16,19 @@ type dailyReportCleanupWorkKey struct{}
 const (
 	reportInitialWriteRate = 25
 	reportMaxWriteRate     = 800
+	reportRecoveryWait     = 10 * time.Second
 )
 
 type dailyReportBudget struct {
-	admission   func(context.Context) reportAdmissionDecision
-	speed       adaptiveReportRate
-	nextWriteAt time.Time
-	nextBatchAt time.Time
-	pressure    bool
-	calibrating bool
+	admission        func(context.Context) reportAdmissionDecision
+	speed            adaptiveReportRate
+	nextWriteAt      time.Time
+	nextBatchAt      time.Time
+	pressure         bool
+	calibrating      bool
+	recovering       bool
+	recoveryWaitUsed bool
+	pauseReasons     []string
 }
 
 func newDailyReportBudget(ctx context.Context) (*dailyReportBudget, error) {
@@ -43,13 +48,41 @@ func (b *dailyReportBudget) gate(ctx context.Context) error {
 	resumable, _ := ctx.Value(dailyReportResumableWorkKey{}).(bool)
 	for {
 		err := b.validationGate(ctx)
-		if (!resumable && !b.calibrating) || !errors.Is(err, model.ErrDailyReportResourcePressure) || ctx.Err() != nil {
+		if !errors.Is(err, model.ErrDailyReportResourcePressure) || ctx.Err() != nil {
 			return err
 		}
-		if err := waitDailyReportBudget(ctx, time.Second); err != nil {
+		if !resumable && !b.calibrating {
+			if !b.recovering || b.recoveryWaitUsed {
+				return err
+			}
+			b.recoveryWaitUsed = true
+			return b.waitForRecovery(ctx)
+		}
+		if err := waitDailyReportBudget(ctx, reportObservationInterval); err != nil {
 			return b.pressureContextError(err)
 		}
 	}
+}
+
+func (b *dailyReportBudget) waitForRecovery(ctx context.Context) error {
+	deadline := time.Now().Add(reportRecoveryWait)
+	recoveryCtx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
+	// Once recovery starts, both sampling and calibration share this deadline.
+	for waitDailyReportBudget(recoveryCtx, reportObservationInterval) == nil && time.Now().Before(deadline) {
+		err := b.validationGate(recoveryCtx)
+		if recoveryCtx.Err() != nil || !time.Now().Before(deadline) {
+			break
+		}
+		if !errors.Is(err, model.ErrDailyReportResourcePressure) || (!b.recovering && !b.calibrating) {
+			return err
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return b.pressureContextError(err)
+	}
+	logDailyReportPressure("daily report recovery wait expired", b.pauseReasons)
+	return model.ErrDailyReportResourcePressure
 }
 
 func (b *dailyReportBudget) validationGate(ctx context.Context) error {
@@ -57,7 +90,10 @@ func (b *dailyReportBudget) validationGate(ctx context.Context) error {
 		return b.pressureContextError(err)
 	}
 	decision := b.admission(ctx)
+	wasRecovering := b.recovering
 	b.calibrating = decision.calibrating
+	b.recovering = decision.recovering
+	b.pauseReasons = decision.reasons
 	if err := ctx.Err(); err != nil {
 		return b.pressureContextError(err)
 	}
@@ -67,18 +103,23 @@ func (b *dailyReportBudget) validationGate(ctx context.Context) error {
 	}
 	b.speed.advance(decision, reportInitialWriteRate, reportMaxWriteRate)
 	paused := decision.pressure == reportPause
-	if paused != b.pressure {
-		if paused {
-			common.SysLog("daily report yielded to resource pressure")
-		} else {
-			common.SysLog("daily report resumed after resource pressure")
-		}
+	if paused && (!b.pressure || wasRecovering && !decision.recovering) {
+		logDailyReportPressure("daily report yielded to resource pressure", decision.reasons)
+	} else if !paused && b.pressure {
+		common.SysLog("daily report resumed after resource pressure")
 	}
 	b.pressure = paused
 	if paused {
 		return model.ErrDailyReportResourcePressure
 	}
 	return nil
+}
+
+func logDailyReportPressure(message string, reasons []string) {
+	if len(reasons) > 0 {
+		message += " | " + strings.Join(reasons, " | ")
+	}
+	common.SysLog(message)
 }
 
 func (b *dailyReportBudget) pressureContextError(err error) error {
@@ -89,6 +130,11 @@ func (b *dailyReportBudget) pressureContextError(err error) error {
 }
 
 func (b *dailyReportBudget) pace(ctx context.Context, rows int) error {
+	if cleanup, _ := ctx.Value(dailyReportCleanupWorkKey{}).(bool); cleanup && time.Now().Before(b.nextWriteAt) {
+		if err := b.validationGate(ctx); err != nil {
+			return err
+		}
+	}
 	if err := waitDailyReportBudget(ctx, time.Until(b.nextWriteAt)); err != nil {
 		return b.pressureContextError(err)
 	}

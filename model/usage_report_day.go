@@ -545,6 +545,9 @@ func PruneUsageReportRows(ctx context.Context, now int64) (bool, error) {
 		return false, err
 	}
 	if len(marker.Payload) > 0 && marker.UnavailableAt == 0 {
+		if err := beforeDailyReportWrite(ctx, 1); err != nil {
+			return false, err
+		}
 		return false, db.Transaction(func(tx *gorm.DB) error {
 			if err := lockForUpdate(tx).Where("generation = ? AND user_id = -1", marker.Generation).Take(&marker).Error; err != nil {
 				return err
@@ -555,6 +558,9 @@ func PruneUsageReportRows(ctx context.Context, now int64) (bool, error) {
 			}
 			if active > 0 {
 				return nil
+			}
+			if err := beforeDailyReportCleanupWrite(ctx, tx); err != nil {
+				return err
 			}
 			return tx.Model(&marker).Update("unavailable_at", now).Error
 		})
@@ -580,6 +586,9 @@ func PruneUsageReportRows(ctx context.Context, now int64) (bool, error) {
 		}
 		if pruned, err := pruneDailyReportPayload(ctx, db, marker.Generation); err != nil || pruned {
 			return pruned, err
+		}
+		if err := beforeDailyReportWrite(ctx, 2); err != nil {
+			return false, err
 		}
 		return true, db.Transaction(func(tx *gorm.DB) error {
 			if err := tx.Where("generation = ?", marker.Generation).Delete(&dailyReportExportReference{}).Error; err != nil {

@@ -215,7 +215,7 @@ func RecordDefaultChannelAffinitySuccess(c *gin.Context, channelID int, info *re
 	}
 	stream := info.StreamStatus
 	if info.IsStream || stream != nil {
-		if stream == nil || !stream.IsNormalEnd() || stream.HasErrors() || stream.ResponseOutcome() != string(relaycommon.ResponseOutcomeCompleted) {
+		if !relayStreamSucceeded(info, true) {
 			return
 		}
 		count := affinity.chatChoiceCount(c, info)

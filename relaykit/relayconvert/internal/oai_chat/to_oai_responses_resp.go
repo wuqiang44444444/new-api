@@ -197,6 +197,14 @@ func UsageFromChatUsage(src *dto.Usage) *dto.Usage {
 		src.CompletionTokenDetails.ImageTokens != 0 {
 		usage.CompletionTokenDetails = src.CompletionTokenDetails
 	}
+	switch {
+	case src.OutputTokensDetails != nil:
+		details := *src.OutputTokensDetails
+		usage.OutputTokensDetails = &details
+	case src.ReasoningTokensReported:
+		details := src.CompletionTokenDetails
+		usage.OutputTokensDetails = &details
+	}
 	usage.ClaudeCacheCreation5mTokens = src.ClaudeCacheCreation5mTokens
 	usage.ClaudeCacheCreation1hTokens = src.ClaudeCacheCreation1hTokens
 	return usage

@@ -164,7 +164,7 @@ func WithAPIRequestEvidenceTransport(transport http.RoundTripper) http.RoundTrip
 func (t *apiEvidenceTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	capture := apiEvidenceFrom(req.Context())
 	if capture == nil || evidenceInfrastructureRequest(req) || evidenceDiskPressure.Load() {
-		return t.RoundTripper.RoundTrip(req)
+		return roundTripWithTextResponseAcceptance(t.RoundTripper, req)
 	}
 	record := capture.requestRecord(req, model.TaskRequestEvidenceStageSouthboundSend)
 	if req.Body != nil {
@@ -172,7 +172,7 @@ func (t *apiEvidenceTransport) RoundTrip(req *http.Request) (*http.Response, err
 	} else {
 		record.close()
 	}
-	resp, err := t.RoundTripper.RoundTrip(req)
+	resp, err := roundTripWithTextResponseAcceptance(t.RoundTripper, req)
 	capture.observeResponse(req, resp, err, model.TaskRequestEvidenceStageUpstreamResponse)
 	return resp, err
 }

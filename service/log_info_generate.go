@@ -103,7 +103,7 @@ func AppendRelayLogAdminInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo,
 func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, modelRatio, groupRatio, completionRatio float64,
 	cacheTokens int, cacheRatio float64, modelPrice float64, userGroupRatio float64) *model.LogOther {
 	ObserveNativeAffinityLogOutcome(ctx, relayInfo)
-	MarkRequestPolicySuccess(ctx, relayInfo.StreamStatus)
+	MarkRequestPolicySuccess(ctx, relayInfo)
 	other := model.NewLogOther()
 	other.SetPublic("model_ratio", modelRatio)
 	other.SetPublic("group_ratio", groupRatio)
@@ -176,19 +176,20 @@ func appendStreamStatus(relayInfo *relaycommon.RelayInfo, other *model.LogOther)
 		return
 	}
 	ss := relayInfo.StreamStatus
+	outcome := ss.OutcomeSnapshot()
 	status := "ok"
-	if !ss.IsNormalEnd() || ss.HasErrors() || ss.ResponseFailed() {
+	if !outcome.IsNormalEnd() || outcome.HasErrors || outcome.Response == relaycommon.ResponseOutcomeFailed {
 		status = "error"
 	}
 	streamInfo := map[string]any{
 		"status":     status,
-		"end_reason": string(ss.EndReason),
+		"end_reason": string(outcome.EndReason),
 	}
-	if outcome := ss.ResponseOutcome(); outcome != "" {
-		streamInfo["response_status"] = outcome
+	if outcome.Response != "" {
+		streamInfo["response_status"] = string(outcome.Response)
 	}
-	if ss.EndError != nil {
-		streamInfo["end_error"] = ss.EndError.Error()
+	if outcome.EndError != nil {
+		streamInfo["end_error"] = outcome.EndError.Error()
 	}
 	if ss.ErrorCount > 0 {
 		streamInfo["error_count"] = ss.ErrorCount

@@ -226,8 +226,7 @@ func ObserveChannelRelayResult(c *gin.Context, info *relaycommon.RelayInfo, apiE
 	if !channelAlerts.enabled.Load() {
 		return
 	}
-	stream := info.StreamStatus
-	success := apiErr == nil && !info.PerformanceBusinessRejection && (stream == nil || stream.IsNormalEnd() && !stream.HasErrors() && (stream.ResponseOutcome() == "" || stream.ResponseOutcome() == "completed"))
+	success := apiErr == nil && !info.PerformanceBusinessRejection && relayStreamSucceeded(info, false)
 	recordChannelAlertAttempt(c, info, channelAlertOperation(info.RelayMode), c.GetString(common.RequestIdKey), success, apiErr.GetErrorCode(), apiErr.Error())
 }
 

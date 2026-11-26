@@ -41,6 +41,7 @@ type StreamErrorEntry struct {
 }
 
 type StreamStatus struct {
+	// Use OutcomeSnapshot to read the end state while a stream is active.
 	EndReason StreamEndReason
 	EndError  error
 	endOnce   sync.Once
@@ -57,10 +58,11 @@ type StreamStatus struct {
 	expectsTerminal  bool
 }
 
-// StreamOutcome holds classification facts only; upstream messages never
-// enter it because they may contain credentials or request content.
+// StreamOutcome holds classification facts. EndError is internal and must not
+// be serialized because upstream errors may include private request data.
 type StreamOutcome struct {
 	EndReason        StreamEndReason
+	EndError         error `json:"-"`
 	HasErrors        bool
 	ExpectsTerminal  bool
 	Response         ResponseOutcome
@@ -79,6 +81,8 @@ func (s *StreamStatus) SetEndReason(reason StreamEndReason, err error) {
 		return
 	}
 	s.endOnce.Do(func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
 		s.EndReason = reason
 		s.EndError = err
 	})
@@ -178,6 +182,7 @@ func (s *StreamStatus) OutcomeSnapshot() StreamOutcome {
 	defer s.mu.Unlock()
 	return StreamOutcome{
 		EndReason:        s.EndReason,
+		EndError:         s.EndError,
 		HasErrors:        s.ErrorCount > 0,
 		ExpectsTerminal:  s.expectsTerminal,
 		Response:         s.response,
@@ -210,24 +215,23 @@ func (s *StreamStatus) IsNormalEnd() bool {
 	if s == nil {
 		return true
 	}
-	return s.EndReason == StreamEndReasonDone ||
-		s.EndReason == StreamEndReasonEOF ||
-		s.EndReason == StreamEndReasonHandlerStop
+	return s.OutcomeSnapshot().IsNormalEnd()
 }
 
 func (s *StreamStatus) Summary() string {
 	if s == nil {
 		return "StreamStatus<nil>"
 	}
-	b := &strings.Builder{}
-	fmt.Fprintf(b, "reason=%s", s.EndReason)
-	if s.EndError != nil {
-		fmt.Fprintf(b, " end_error=%q", s.EndError.Error())
-	}
 	s.mu.Lock()
-	if s.ErrorCount > 0 {
-		fmt.Fprintf(b, " soft_errors=%d", s.ErrorCount)
-	}
+	reason, endErr, errorCount := s.EndReason, s.EndError, s.ErrorCount
 	s.mu.Unlock()
+	b := &strings.Builder{}
+	fmt.Fprintf(b, "reason=%s", reason)
+	if endErr != nil {
+		fmt.Fprintf(b, " end_error=%q", endErr.Error())
+	}
+	if errorCount > 0 {
+		fmt.Fprintf(b, " soft_errors=%d", errorCount)
+	}
 	return b.String()
 }

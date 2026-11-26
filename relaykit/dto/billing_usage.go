@@ -407,6 +407,8 @@ func cloneClaudeUsage(usage *ClaudeUsage) *ClaudeUsage {
 	}
 	clone := *usage
 	clone.BillingUsage = nil
+	// Claude reports thinking as a breakdown of the already billable output.
+	clone.OutputTokensDetails = nil
 	if usage.CacheCreation != nil {
 		cacheCreation := *usage.CacheCreation
 		clone.CacheCreation = &cacheCreation

@@ -66,6 +66,9 @@ func PruneBillingReportGenerations(ctx context.Context, now int64) (bool, error)
 	// Retire the reference before dropping any of its data, so a stale pinned
 	// request fails closed instead of reading a partially cleaned generation.
 	if row.Published {
+		if err := beforeDailyReportWrite(ctx, 1); err != nil {
+			return false, err
+		}
 		return false, db.Transaction(func(tx *gorm.DB) error {
 			// Rollback can reactivate this generation after the initial scan.
 			var retired billingReportGeneration
@@ -80,6 +83,9 @@ func PruneBillingReportGenerations(ctx context.Context, now int64) (bool, error)
 			}
 			if active > 0 {
 				return nil
+			}
+			if err := beforeDailyReportCleanupWrite(ctx, tx); err != nil {
+				return err
 			}
 			return tx.Model(&retired).Where("published = ? AND retired_at = ?", true, retired.RetiredAt).
 				Updates(map[string]any{"published": false, "retired_at": now}).Error
@@ -114,6 +120,9 @@ func PruneBillingReportGenerations(ctx context.Context, now int64) (bool, error)
 	}
 	if pruned, err := pruneDailyReportPayload(ctx, db, row.ID); err != nil || pruned {
 		return pruned, err
+	}
+	if err := beforeDailyReportWrite(ctx, 2); err != nil {
+		return false, err
 	}
 	return true, db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("generation = ?", row.ID).Delete(&dailyReportExportReference{}).Error; err != nil {

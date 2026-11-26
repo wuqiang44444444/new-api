@@ -151,6 +151,15 @@ func ObserveResponsesOutcome(info *relaycommon.RelayInfo, event *dto.ResponsesSt
 	}
 }
 
+// ObserveConvertedResponsesOutcome also projects an explicit failure into the
+// controlled stream diagnostics consumed by error logs and usage reports.
+func ObserveConvertedResponsesOutcome(info *relaycommon.RelayInfo, event *dto.ResponsesStreamResponse) {
+	ObserveResponsesOutcome(info, event)
+	if event.Type == "response.failed" {
+		info.StreamStatus.RecordError(streamTokenResponseFailed)
+	}
+}
+
 func ApplyResponsesUsage(dst *dto.Usage, src *dto.Usage) {
 	if dst == nil || src == nil {
 		return

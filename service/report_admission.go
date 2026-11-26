@@ -2,11 +2,13 @@ package service
 
 import (
 	"context"
-	"sync"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"golang.org/x/sync/semaphore"
 	"gorm.io/gorm"
 )
 
@@ -15,6 +17,7 @@ const (
 	reportBaselineInterval    = time.Minute
 	reportBaselineQuietWindow = 6 * time.Second
 	reportBaselineDrainTime   = 2 * time.Second
+	reportRecoverySamples     = 3
 )
 
 type reportPressure uint8
@@ -27,133 +30,52 @@ const (
 
 type reportAdmissionDecision struct {
 	calibrating bool
+	recovering  bool
 	pressure    reportPressure
 	at          time.Time
+	reasons     []string
 }
 
-type reportForegroundWindow struct {
-	snapshot    common.ReportForegroundSnapshot
-	average     [3]float64
-	tail95      [3]time.Duration
-	tail99      [3]time.Duration
-	requestRate float64
-	pressure    reportPressure
-	at          time.Time
+// Keep the triggers at the highest observed pressure. A recovery hold also
+// records the reduction signals that prevent a healthy sample.
+type reportPressureObservation struct {
+	level   reportPressure
+	reasons []string
 }
 
-func (w *reportForegroundWindow) observe(at time.Time, next common.ReportForegroundSnapshot, learn bool) reportPressure {
-	if !at.After(w.at) {
-		return w.pressure
+func (p *reportPressureObservation) record(level reportPressure, format string, args ...any) {
+	if level < p.level {
+		return
 	}
-	level := reportHealthy
-	if w.at.IsZero() || at.Sub(w.at) > time.Minute {
-		w.average = [3]float64{}
-		w.tail95 = [3]time.Duration{}
-		w.tail99 = [3]time.Duration{}
-		level = reportReduce
-	} else {
-		if next.Active >= 24 && next.Active >= 2*max(1, w.snapshot.Active) {
-			level = reportReduce
-		}
-		for i, counters := range next.Operations {
-			operation := common.ReportForegroundOperation(i)
-			old := w.snapshot.Operations[i]
-			count, failures := counters.Completed-old.Completed, counters.Failed-old.Failed
-			slow := counters.Slow - old.Slow
-			if i == int(common.ReportForegroundRequest) && count >= 10 && w.requestRate > 0 &&
-				float64(count)/at.Sub(w.at).Seconds() > max(w.requestRate*1.5, w.requestRate+25) {
-				level = max(level, reportReduce)
-			}
-			switch {
-			case i != int(common.ReportForegroundRequest) && failures > 0:
-				level = reportPause
-			case count >= 10 && failures >= 3 && failures*100 >= count*5:
-				level = reportPause
-			case count >= 10 && failures > 0 && failures*100 >= count:
-				level = max(level, reportReduce)
-			}
-			if i != int(common.ReportForegroundRequest) && slow >= 3 && slow*5 >= count {
-				level = max(level, reportReduce)
-				if slow >= 6 && slow*2 >= count {
-					level = reportPause
-				}
-			}
-			minSamples := int64(20)
-			if operation == common.ReportForegroundLog {
-				minSamples = 50
-			}
-			if count >= minSamples {
-				var measured, above32 int64
-				var tail, p99 time.Duration
-				for bucket, total := range counters.Latency {
-					n := max(0, total-old.Latency[bucket])
-					measured += n
-					upper := common.ReportForegroundLatencyBucket(operation, bucket)
-					if upper > 32*time.Millisecond {
-						above32 += n
-					}
-					if tail == 0 && measured*20 >= count*19 {
-						tail = upper
-					}
-					if count >= 200 && p99 == 0 && measured*100 >= count*99 {
-						p99 = upper
-					}
-				}
-				delta := 4 * time.Millisecond
-				if operation == common.ReportForegroundRequest {
-					delta = 8 * time.Millisecond
-				}
-				base := w.tail95[i]
-				switch {
-				case operation == common.ReportForegroundLog && above32*20 >= count,
-					base > 0 && tail >= 4*base && tail-base >= 2*delta:
-					level = reportPause
-				case base > 0 && tail >= 2*base && tail-base >= delta:
-					level = max(level, reportReduce)
-				}
-				if base := w.tail99[i]; base > 0 && p99 >= 2*base && p99-base >= 2*delta {
-					level = max(level, reportReduce)
-				}
-				if learn && level == reportHealthy && tail > 0 {
-					w.tail95[i] = tail
-					if p99 > 0 {
-						w.tail99[i] = p99
-					}
-				}
-			}
-			if count >= 10 {
-				average := float64(max(0, counters.Milliseconds-old.Milliseconds)) / float64(count)
-				if floor := max(1, w.average[i]); w.average[i] > 0 {
-					if average >= 2*floor && average-floor >= 20 {
-						level = reportPause
-					} else if average >= 1.35*floor && average-floor >= 10 {
-						level = max(level, reportReduce)
-					}
-				}
-				if learn && level == reportHealthy {
-					if w.average[i] == 0 {
-						w.average[i] = average
-					} else {
-						w.average[i] = 0.9*w.average[i] + 0.1*average
-					}
-				}
-			}
-		}
+	if level > p.level {
+		p.level, p.reasons = level, nil
 	}
-	if !w.at.IsZero() && at.Sub(w.at) <= time.Minute {
-		count := next.Operations[common.ReportForegroundRequest].Completed - w.snapshot.Operations[common.ReportForegroundRequest].Completed
-		w.requestRate = float64(max(0, count)) / at.Sub(w.at).Seconds()
-	} else {
-		w.requestRate = 0
+	p.reasons = append(p.reasons, fmt.Sprintf(format, args...))
+}
+
+func (p *reportPressureObservation) merge(prefix string, other reportPressureObservation) {
+	if other.level < p.level {
+		return
 	}
-	w.snapshot, w.at, w.pressure = next, at, level
-	return level
+	if other.level > p.level {
+		p.level, p.reasons = other.level, nil
+	}
+	for _, reason := range other.reasons {
+		p.reasons = append(p.reasons, prefix+reason)
+	}
+}
+
+func reportSampleErrorStatus(err error) string {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
+	return "error"
 }
 
 // One admission state observes the load of both report producers in this
 // process. Cross-node foreground snapshots use the existing instance heartbeat.
 var sharedReportAdmission = struct {
-	sync.Mutex
+	lock         *semaphore.Weighted
 	db           *gorm.DB
 	decision     reportAdmissionDecision
 	healthy      int
@@ -163,18 +85,28 @@ var sharedReportAdmission = struct {
 	quietAt      time.Time
 	lastQuiet    time.Time
 	peerAt       time.Time
-	peerPressure reportPressure
-}{}
+	peerPressure reportPressureObservation
+}{lock: semaphore.NewWeighted(1)}
 
 func checkReportAdmission(ctx context.Context, sample func(context.Context) ([]model.DailyReportDatabaseLoad, error)) reportAdmissionDecision {
 	state := &sharedReportAdmission
-	state.Lock()
-	defer state.Unlock()
+	if err := state.lock.Acquire(ctx, 1); err != nil {
+		return reportAdmissionDecision{pressure: reportPause, at: time.Now()}
+	}
+	var probeFailure string
+	defer func() {
+		state.lock.Release(1)
+		// A probe failure is logged once even when its caller is already paused or canceled.
+		if probeFailure != "" {
+			common.SysLog("report database probe failed | " + probeFailure)
+		}
+	}()
 	if state.db != model.DB {
 		state.db = model.DB
 		state.decision = reportAdmissionDecision{}
 		state.healthy, state.last, state.local, state.peers = 0, nil, reportForegroundWindow{}, nil
-		state.quietAt, state.lastQuiet, state.peerAt, state.peerPressure = time.Time{}, time.Time{}, time.Time{}, reportHealthy
+		state.quietAt, state.lastQuiet, state.peerAt = time.Time{}, time.Time{}, time.Time{}
+		state.peerPressure = reportPressureObservation{}
 	}
 
 	now := time.Now()
@@ -186,80 +118,56 @@ func checkReportAdmission(ctx context.Context, sample func(context.Context) ([]m
 	if elapsed < reportObservationInterval {
 		return previous
 	}
-	if state.lastQuiet.IsZero() || (elapsed <= 4*reportObservationInterval && now.Sub(state.lastQuiet) >= reportBaselineInterval) {
-		state.quietAt, state.lastQuiet = now, now
+	quietAt := state.quietAt
+	startQuiet := state.lastQuiet.IsZero() || (elapsed <= 4*reportObservationInterval && now.Sub(state.lastQuiet) >= reportBaselineInterval)
+	if startQuiet {
+		quietAt = now
 	}
-	quiet := now.Sub(state.quietAt) < reportBaselineQuietWindow
-	learning := (quiet && now.Sub(state.quietAt) >= reportBaselineDrainTime) || elapsed > 4*reportObservationInterval && reportArtifactUploads.Load() == 0
+	quiet := now.Sub(quietAt) < reportBaselineQuietWindow
+	learning := (quiet && now.Sub(quietAt) >= reportBaselineDrainTime) || (elapsed > 4*reportObservationInterval && reportArtifactUploads.Load() == 0)
 	priorForeground := state.local
 	currentForeground := common.CurrentReportForeground()
-	level := state.local.observe(now, currentForeground, false)
+	state.local.observe(now, currentForeground, false)
+	var pressure reportPressureObservation
+	pressure.merge("source=local_foreground ", state.local.pressure)
 	samples, err := sample(ctx)
-	if err != nil || len(samples) == 0 {
-		level = reportPause
+	const minDatabaseSamples = 1
+	switch {
+	case err != nil:
+		var probeErr *model.DailyReportProbeError
+		if errors.As(err, &probeErr) {
+			probeFailure = fmt.Sprintf("source=%s trigger=db_sample_error sample=%s elapsed=%s timeout=%s threshold=successful_sample",
+				probeErr.Source, reportSampleErrorStatus(err), probeErr.Elapsed, probeErr.Timeout)
+			pressure.record(reportPause, "%s", probeFailure)
+		} else {
+			pressure.record(reportPause, "source=database trigger=db_sample_error sample=%s threshold=successful_sample", reportSampleErrorStatus(err))
+		}
+	case len(samples) < minDatabaseSamples:
+		pressure.record(reportPause, "source=database trigger=db_sample_empty sample=%d threshold=%d", len(samples), minDatabaseSamples)
 	}
-	for i, current := range samples {
-		if current.Probe >= 75*time.Millisecond {
-			level = reportPause
-		} else if current.Probe >= 35*time.Millisecond {
-			level = max(level, reportReduce)
-		}
-		if i >= len(state.last) || elapsed > 4*reportObservationInterval {
-			level = max(level, reportReduce)
-			continue
-		}
-		old := state.last[i]
-		waits := current.Pool.WaitCount - old.Pool.WaitCount
-		wait := current.Pool.WaitDuration - old.Pool.WaitDuration
-		wal := float64(current.WALBytes-old.WALBytes) / elapsed.Seconds()
-		switch {
-		case waits > 0 && current.Pool.MaxOpenConnections > 0 && current.Pool.InUse >= current.Pool.MaxOpenConnections,
-			wait >= 10*time.Millisecond*time.Duration(max(1, waits)), old.WALBytes > 0 && wal >= 24<<20:
-			level = reportPause
-		case wait >= 3*time.Millisecond*time.Duration(max(1, waits)), old.WALBytes > 0 && wal >= 12<<20:
-			level = max(level, reportReduce)
-		}
+	if ctx.Err() != nil {
+		state.local = priorForeground
+		return reportAdmissionDecision{pressure: reportPause, at: now, reasons: pressure.reasons}
 	}
-	state.last = samples
-
+	observeReportDatabasePressure(&pressure, samples, state.last, elapsed)
 	if now.Sub(state.peerAt) >= 5*time.Second {
-		state.peerAt, state.peerPressure = now, reportHealthy
-		peerCtx, cancel := context.WithTimeout(ctx, 150*time.Millisecond)
+		const peerTimeout = 150 * time.Millisecond
+		peerCtx, cancel := context.WithTimeout(ctx, peerTimeout)
 		instances, err := model.ReportForegroundInstances(peerCtx, now.Unix())
 		cancel()
-		if err != nil {
-			state.peerPressure = reportPause
+		if ctx.Err() != nil {
+			state.local = priorForeground
+			return reportAdmissionDecision{pressure: reportPause, at: now, reasons: pressure.reasons}
 		}
-		peers := make(map[string]reportForegroundWindow, len(instances))
-		for _, instance := range instances {
-			if instance.NodeName == common.GetNodeIdentity().Name {
-				continue
-			}
-			var info struct {
-				ReportForeground *common.ReportForegroundSnapshot `json:"report_foreground"`
-			}
-			if now.Unix()-instance.LastSeenAt > int64(2*systemInstanceReportInterval/time.Second) ||
-				common.UnmarshalJsonStr(instance.Info, &info) != nil || info.ReportForeground == nil {
-				state.peerPressure = reportPause
-				continue
-			}
-			peer := state.peers[instance.NodeName]
-			if peer.at.Unix() < instance.StartedAt {
-				peer = reportForegroundWindow{}
-			}
-			state.peerPressure = max(state.peerPressure,
-				peer.observe(time.Unix(instance.LastSeenAt, 0), *info.ReportForeground, learning))
-			peers[instance.NodeName] = peer
-		}
-		for node, peer := range state.peers {
-			if _, seen := peers[node]; !seen && now.Sub(peer.at) <= 2*time.Duration(model.SystemInstanceStaleAfterSeconds)*time.Second {
-				state.peerPressure = max(state.peerPressure, reportReduce)
-				peers[node] = peer
-			}
-		}
-		state.peers = peers
+		state.peerAt = now
+		state.peers, state.peerPressure = observeReportPeerPressure(now, instances, err, peerTimeout, state.peers, learning)
 	}
-	level = max(level, state.peerPressure)
+	state.last = samples
+	if startQuiet {
+		state.quietAt, state.lastQuiet = quietAt, quietAt
+	}
+	pressure.merge("", state.peerPressure)
+	level := pressure.level
 	if learning && level == reportHealthy && reportArtifactUploads.Load() == 0 {
 		priorForeground.observe(now, currentForeground, true)
 		state.local = priorForeground
@@ -274,11 +182,14 @@ func checkReportAdmission(ctx context.Context, sample func(context.Context) ([]m
 	} else {
 		state.healthy = 0
 	}
-	if level < reportPause && previous.pressure == reportPause && state.healthy < 3 {
+	recovering := level < reportPause && previous.pressure == reportPause && state.healthy < reportRecoverySamples
+	if recovering {
 		calibrating = previous.calibrating && level == reportHealthy
 		level = reportPause
+		recovery := fmt.Sprintf("source=admission trigger=recovery_healthy_samples sample=%d threshold=%d", state.healthy, reportRecoverySamples)
+		pressure.reasons = append([]string{recovery}, pressure.reasons...)
 	}
-	state.decision = reportAdmissionDecision{pressure: level, at: now, calibrating: calibrating}
+	state.decision = reportAdmissionDecision{pressure: level, at: now, calibrating: calibrating, recovering: recovering, reasons: pressure.reasons}
 	return state.decision
 }
 

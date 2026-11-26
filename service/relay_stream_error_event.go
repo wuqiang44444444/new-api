@@ -40,7 +40,7 @@ func ObserveRelayStreamError(c *gin.Context, relayInfo *relaycommon.RelayInfo) {
 	})
 	clienterrlog.AttachStreamError(c.Request.Context(), clienterrlog.StreamErrorReport{
 		Reason:     reason,
-		EndReason:  string(streamStatus.EndReason),
+		EndReason:  string(streamStatus.OutcomeSnapshot().EndReason),
 		Severity:   severity,
 		ErrorCount: streamStatus.TotalErrorCount(),
 	})
@@ -49,7 +49,8 @@ func ObserveRelayStreamError(c *gin.Context, relayInfo *relaycommon.RelayInfo) {
 // classifyRelayStreamStatus 区分致命失败、可恢复软错误与客户端断开；
 // 返回空表示无需记录。带错误的 handler_stop 不被当成最终生成失败。
 func classifyRelayStreamStatus(streamStatus *relaycommon.StreamStatus) (string, string) {
-	switch streamStatus.EndReason {
+	outcome := streamStatus.OutcomeSnapshot()
+	switch outcome.EndReason {
 	case relaycommon.StreamEndReasonTimeout:
 		return "stream_timeout", "fatal"
 	case relaycommon.StreamEndReasonScannerErr:
@@ -67,10 +68,10 @@ func classifyRelayStreamStatus(streamStatus *relaycommon.StreamStatus) (string, 
 		}
 		return token, "fatal"
 	}
-	if streamStatus.EndError != nil {
+	if outcome.EndError != nil {
 		return "stream_stopped_with_error", "soft"
 	}
-	if streamStatus.HasErrors() {
+	if outcome.HasErrors {
 		return "stream_soft_errors", "soft"
 	}
 	return "", ""

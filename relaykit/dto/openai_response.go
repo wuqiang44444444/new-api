@@ -226,6 +226,8 @@ type CompletionsStreamResponse struct {
 }
 
 type Usage struct {
+	// ReasoningTokensReported carries an explicit breakdown, including zero, through conversion.
+	ReasoningTokensReported bool `json:"-"`
 	// CacheReadTokensReported preserves image meter presence across durable task
 	// storage. Nil denotes legacy/uninstrumented usage; it never affects pricing.
 	CacheReadTokensReported  *bool `json:"cache_read_tokens_reported,omitempty"`

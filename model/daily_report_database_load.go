@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 
 	"gorm.io/gorm"
@@ -15,10 +16,41 @@ type DailyReportDatabaseLoad struct {
 	Probe        time.Duration
 }
 
+const (
+	DailyReportMainDatabaseSource = "main_db"
+	DailyReportLogDatabaseSource  = "log_db"
+)
+
+// Cleanup rechecks after locking a generation. Reuse its transaction for main-
+// database observations because the report worker has a single connection.
+type dailyReportProbeTransactionKey struct{}
+
+func beforeDailyReportCleanupWrite(ctx context.Context, tx *gorm.DB) error {
+	return usageReportBeforeBatch(context.WithValue(ctx, dailyReportProbeTransactionKey{}, tx))
+}
+
+func dailyReportMainProbeDB(ctx context.Context, source *gorm.DB) *gorm.DB {
+	if tx, ok := ctx.Value(dailyReportProbeTransactionKey{}).(*gorm.DB); ok {
+		return tx
+	}
+	return source
+}
+
+type DailyReportProbeError struct {
+	Source  string
+	Elapsed time.Duration
+	Timeout time.Duration
+	Cause   error
+}
+
+func (e *DailyReportProbeError) Error() string { return "daily report database probe failed" }
+func (e *DailyReportProbeError) Unwrap() error { return e.Cause }
+
 // DailyReportDatabaseSampler reads foreground pool counters without taking a
 // foreground connection. The cheap probes use the worker's own connections.
 func DailyReportDatabaseSampler(ctx context.Context) (func(context.Context) ([]DailyReportDatabaseLoad, error), error) {
 	type source struct {
+		name     string
 		read     *gorm.DB
 		online   *sql.DB
 		probeSQL string
@@ -27,32 +59,41 @@ func DailyReportDatabaseSampler(ctx context.Context) (func(context.Context) ([]D
 	if err != nil {
 		return nil, err
 	}
-	sources := []source{{read: usageReportMainDB(ctx), online: main}}
+	sources := []source{{name: DailyReportMainDatabaseSource, read: usageReportMainDB(ctx), online: main}}
 	if LOG_DB != DB {
 		logs, err := LOG_DB.DB()
 		if err != nil {
 			return nil, err
 		}
-		sources = append(sources, source{read: usageReportLogDB(ctx), online: logs})
+		sources = append(sources, source{name: DailyReportLogDatabaseSource, read: usageReportLogDB(ctx), online: logs})
 	}
 	return func(ctx context.Context) ([]DailyReportDatabaseLoad, error) {
 		samples := make([]DailyReportDatabaseLoad, len(sources))
 		for i := range sources {
 			src := &sources[i]
+			read := src.read
+			if i == 0 {
+				read = dailyReportMainProbeDB(ctx, read)
+			}
 			samples[i].Pool = src.online.Stats()
 			start := time.Now()
-			probeCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+			const probeTimeout = 200 * time.Millisecond
+			probeCtx, cancel := context.WithTimeout(ctx, probeTimeout)
 			var err error
 			if src.probeSQL == "" {
-				src.probeSQL, err = dailyReportLoadProbeSQL(src.read.WithContext(probeCtx))
+				src.probeSQL, err = dailyReportLoadProbeSQL(read.WithContext(probeCtx))
 			}
 			if err == nil {
-				err = src.read.WithContext(probeCtx).Raw(src.probeSQL).Row().Scan(&samples[i].WALBytes, &samples[i].Transactions)
+				err = read.WithContext(probeCtx).Raw(src.probeSQL).Row().Scan(&samples[i].WALBytes, &samples[i].Transactions)
+			}
+			// A database driver may return its own error without wrapping the deadline.
+			if err != nil && probeCtx.Err() == context.DeadlineExceeded {
+				err = errors.Join(err, context.DeadlineExceeded)
 			}
 			cancel()
 			samples[i].Probe = time.Since(start)
 			if err != nil {
-				return nil, err
+				return nil, &DailyReportProbeError{Source: src.name, Elapsed: samples[i].Probe, Timeout: probeTimeout, Cause: err}
 			}
 		}
 		return samples, nil

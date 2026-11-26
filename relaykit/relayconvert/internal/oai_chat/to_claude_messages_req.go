@@ -205,11 +205,16 @@ func OpenAIChatRequestToClaudeMessages(c context.Context, info convmeta.Meta, te
 					})
 				}
 			} else {
-				for _, ctx := range message.ParseContent() {
+				parts, err := claudeMessageContent(&message)
+				if err != nil {
+					return nil, err
+				}
+				for _, ctx := range parts {
 					if ctx.Type == "text" && ctx.Text != "" {
 						systemMessages = append(systemMessages, dto.ClaudeMediaMessage{
-							Type: "text",
-							Text: kitutil.GetPointer[string](ctx.Text),
+							Type:         "text",
+							Text:         kitutil.GetPointer[string](ctx.Text),
+							CacheControl: ctx.CacheControl,
 						})
 					}
 				}
@@ -267,13 +272,18 @@ func OpenAIChatRequestToClaudeMessages(c context.Context, info convmeta.Meta, te
 			claudeMessage.Content = text
 		} else {
 			claudeMediaMessages := make([]dto.ClaudeMediaMessage, 0)
-			for _, mediaMessage := range message.ParseContent() {
+			parts, err := claudeMessageContent(&message)
+			if err != nil {
+				return nil, err
+			}
+			for _, mediaMessage := range parts {
 				switch mediaMessage.Type {
 				case "text":
 					if mediaMessage.Text != "" {
 						claudeMediaMessages = append(claudeMediaMessages, dto.ClaudeMediaMessage{
-							Type: "text",
-							Text: kitutil.GetPointer[string](mediaMessage.Text),
+							Type:         "text",
+							Text:         kitutil.GetPointer[string](mediaMessage.Text),
+							CacheControl: mediaMessage.CacheControl,
 						})
 					}
 				default:

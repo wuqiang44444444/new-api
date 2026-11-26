@@ -126,13 +126,13 @@ func RecordPolicyFailure(c *gin.Context, channelID int, err *types.NewAPIError, 
 	state.AddEvent(event)
 }
 
-func MarkRequestPolicySuccess(c *gin.Context, stream *relaycommon.StreamStatus) {
+func MarkRequestPolicySuccess(c *gin.Context, info *relaycommon.RelayInfo) {
 	state := RequestPolicy(c)
 	if state.OutcomeRecorded {
 		return
 	}
 	state.OutcomeRecorded = true
-	state.Successful = stream == nil || stream.IsNormalEnd() && !stream.HasErrors() && (stream.ResponseOutcome() == "" || stream.ResponseOutcome() == "completed")
+	state.Successful = relayStreamSucceeded(info, false)
 	decision := PolicyDecision{Action: "success", Reason: "request_completed", Source: "upstream"}
 	if !state.Successful {
 		decision = PolicyDecision{Action: "stop", Reason: "stream_not_successful", Source: "system"}

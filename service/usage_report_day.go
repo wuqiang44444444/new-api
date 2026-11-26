@@ -63,7 +63,7 @@ func (handler usageReportHandler) Run(parent context.Context, task *model.System
 		{"usage", model.PruneUsageReportRows},
 		{"billing", model.PruneBillingReportGenerations},
 	} {
-		if err := gate(sourceCtx); err != nil {
+		if err := gate(cleanupSource); err != nil {
 			break
 		}
 		pruneCtx, stopPrune := context.WithTimeout(cleanupSource, 3*time.Second)
@@ -77,8 +77,8 @@ func (handler usageReportHandler) Run(parent context.Context, task *model.System
 		}
 		break
 	}
-	if err := gate(sourceCtx); err == nil {
-		pruneCtx, cancel := context.WithTimeout(sourceCtx, 3*time.Second)
+	if err := gate(cleanupSource); err == nil {
+		pruneCtx, cancel := context.WithTimeout(cleanupSource, 3*time.Second)
 		if err := model.PruneDailyReportExportReferences(pruneCtx); err != nil {
 			if !errors.Is(err, model.ErrDailyReportResourcePressure) {
 				common.SysError("report export reference cleanup failed: " + err.Error())

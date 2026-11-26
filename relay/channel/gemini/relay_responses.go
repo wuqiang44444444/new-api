@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 
 	"github.com/MoeForge/moego/ojson"
 	"github.com/QuantumNous/new-api/common"
@@ -94,23 +95,17 @@ func GeminiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, r
 	}
 	hostedBridge := relayconvert.NewGeminiHostedStreamBridge()
 	var streamErr *types.NewAPIError
+	var delivery helper.ResponsesDelivery
+	defer func() { delivery.Finish(info.StreamStatus) }()
+	var providerStopped bool
 
 	sendEvent := func(event relayconvert.ChatToResponsesStreamEvent) bool {
-		data, err := common.Marshal(event.Payload)
-		if err != nil {
-			streamErr = types.NewOpenAIError(err, types.ErrorCodeJsonMarshalFailed, http.StatusInternalServerError)
-			return false
-		}
-		if err := helper.ResponseChunkData(c, dto.ResponsesStreamResponse{Type: event.Type}, string(data)); err != nil {
-			if info.StreamStatus != nil {
-				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonClientGone, err)
-			}
-			return false
-		}
-		return true
+		delivered, err := delivery.Send(c, info, event.Type, event.Payload)
+		streamErr = err
+		return delivered
 	}
-	failResponsesStream := func(err error) bool {
-		failureResults, handled := state.FailResponsesStream("server_error", err.Error(), "")
+	failResponsesStream := func(code string, err error) bool {
+		failureResults, handled := state.FailResponsesStream(code, err.Error(), "")
 		if !handled {
 			return false
 		}
@@ -129,7 +124,7 @@ func GeminiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, r
 	sendChunk := func(chunk *dto.GeminiChatResponse) bool {
 		results, err := service.ConvertStreamResponseChunk(c, info, state, chunk)
 		if err != nil {
-			if failResponsesStream(err) {
+			if failResponsesStream("server_error", err) {
 				return false
 			}
 			streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
@@ -149,23 +144,39 @@ func GeminiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, r
 	}
 
 	usage, streamAPIError := geminiStreamHandler(c, info, resp, func(_ string, geminiResponse *dto.GeminiChatResponse) bool {
+		providerStopped = providerStopped || slices.ContainsFunc(geminiResponse.Candidates, geminiCandidateFinished)
 		hostedBridge.Observe(geminiResponse)
 		return sendChunk(geminiResponse)
 	})
+	if delivery.Disconnected(info.StreamStatus) {
+		return usage, nil
+	}
 	if streamAPIError != nil {
-		if failResponsesStream(streamAPIError) && streamErr == nil {
+		if failResponsesStream("server_error", streamAPIError) && streamErr == nil {
 			return usage, nil
 		}
 		return usage, streamAPIError
 	}
 	if info.StreamStatus != nil && !info.StreamStatus.IsNormalEnd() {
-		if info.StreamStatus.EndReason != relaycommon.StreamEndReasonClientGone {
-			failResponsesStream(fmt.Errorf("gemini stream ended unexpectedly: %s", info.StreamStatus.Summary()))
+		if info.StreamStatus.OutcomeSnapshot().EndReason != relaycommon.StreamEndReasonClientGone {
+			failResponsesStream("server_error", fmt.Errorf("gemini stream ended unexpectedly: %s", info.StreamStatus.Summary()))
 		}
 		return usage, nil
 	}
 	if streamErr != nil {
 		return nil, streamErr
+	}
+	if !providerStopped {
+		state.SetUsage(usage)
+		code, message := "server_error", "Gemini stream ended without a finish reason"
+		if info.PerformanceBusinessRejection {
+			code, message = "content_filter", "Gemini blocked the prompt"
+		}
+		err := errors.New(message)
+		if failResponsesStream(code, err) {
+			return usage, streamErr
+		}
+		return usage, types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusBadGateway)
 	}
 	hostedEvents, err := hostedBridge.Finalize(state)
 	if err != nil {
@@ -185,7 +196,7 @@ func GeminiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, r
 	}
 	finalResults, err := service.FinalizeStreamResponse(c, info, state)
 	if err != nil {
-		if failResponsesStream(err) {
+		if failResponsesStream("server_error", err) {
 			return usage, streamErr
 		}
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
@@ -203,4 +214,8 @@ func GeminiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, r
 		}
 	}
 	return usage, nil
+}
+
+func geminiCandidateFinished(candidate dto.GeminiChatCandidate) bool {
+	return candidate.FinishReason != nil && *candidate.FinishReason != "" && *candidate.FinishReason != "FINISH_REASON_UNSPECIFIED"
 }

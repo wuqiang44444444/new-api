@@ -470,7 +470,7 @@ func channelRelayCompleted(c *gin.Context, stream *defaultAffinityRequest, info 
 		return c.Writer.Written()
 	}
 	terminal := info.StreamStatus
-	if terminal == nil || !terminal.IsNormalEnd() || terminal.HasErrors() || terminal.ResponseOutcome() != string(relaycommon.ResponseOutcomeCompleted) {
+	if !relayStreamSucceeded(info, true) {
 		return false
 	}
 	if stream == nil {

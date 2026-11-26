@@ -56,7 +56,7 @@ func (s *shardedRoundTripper) pickShard(origin string) uint32 {
 func (s *shardedRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	origin := originKey(req)
 	idx := s.pickShard(origin)
-	resp, err := s.shards[idx].RoundTrip(req)
+	resp, err := roundTripWithTextResponseAcceptance(s.shards[idx], req)
 	if common.DebugEnabled {
 		proto := ""
 		if resp != nil {

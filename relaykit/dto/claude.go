@@ -688,6 +688,21 @@ type ClaudeUsage struct {
 	ClaudeCacheCreation1hTokens int                  `json:"claude_cache_creation_1_h_tokens"`
 	ServerToolUse               *ClaudeServerToolUse `json:"server_tool_use,omitempty"`
 	BillingUsage                *BillingUsage        `json:"billing_usage,omitempty"`
+
+	OutputTokensDetails *ClaudeOutputTokensDetails `json:"output_tokens_details,omitempty"`
+}
+
+type ClaudeOutputTokensDetails struct {
+	ThinkingTokens *int `json:"thinking_tokens,omitempty"`
+}
+
+// ReportedThinkingTokens distinguishes an explicit zero from an omitted breakdown.
+func (u *ClaudeUsage) ReportedThinkingTokens() (int, bool) {
+	if u == nil || u.OutputTokensDetails == nil || u.OutputTokensDetails.ThinkingTokens == nil {
+		return 0, false
+	}
+	tokens := *u.OutputTokensDetails.ThinkingTokens
+	return tokens, tokens >= 0
 }
 
 type ClaudeCacheCreationUsage struct {

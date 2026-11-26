@@ -134,7 +134,7 @@ func validateResponsesRequestChatUnsupportedFields(req *dto.OpenAIResponsesReque
 		unsupported = append(unsupported, "context_management")
 	}
 	if len(unsupported) > 0 {
-		return fmt.Errorf("responses to chat conversion does not support stateful fields: %s", strings.Join(unsupported, ", "))
+		return reasoning.AsClientError(fmt.Errorf("responses to chat conversion does not support stateful fields: %s", strings.Join(unsupported, ", ")))
 	}
 	return nil
 }

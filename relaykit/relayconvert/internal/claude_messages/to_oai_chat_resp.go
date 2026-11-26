@@ -23,6 +23,9 @@ type ClaudeResponseInfo struct {
 	Usage        *dto.Usage
 	Done         bool
 
+	// A client-visible breakdown, separate from the billing usage snapshot.
+	reasoningTokens *int
+
 	// Only snapshots synthesized from partial display usage may be refreshed by
 	// later display deltas. Serialized BillingUsage always remains authoritative.
 	billingUsageSynthesized bool
@@ -307,7 +310,25 @@ func UsageFromClaudeAPIUsage(usage *dto.ClaudeUsage) *dto.Usage {
 	semanticUsage.PromptTokensDetails.CachedCreationTokens = usage.CacheCreationInputTokens
 	semanticUsage.ClaudeCacheCreation5mTokens = usage.GetCacheCreation5mTokens()
 	semanticUsage.ClaudeCacheCreation1hTokens = usage.GetCacheCreation1hTokens()
-	return UsageFromClaudeUsage(semanticUsage)
+	mapped := UsageFromClaudeUsage(semanticUsage)
+	if tokens, reported := usage.ReportedThinkingTokens(); reported {
+		setReasoningTokens(mapped, tokens)
+	}
+	return mapped
+}
+
+// OpenAIUsage projects the final accumulated Claude stream usage.
+func (info *ClaudeResponseInfo) OpenAIUsage() dto.Usage {
+	usage := buildOpenAIStyleUsageFromClaudeUsage(info.Usage)
+	if info.reasoningTokens != nil {
+		setReasoningTokens(&usage, *info.reasoningTokens)
+	}
+	return usage
+}
+
+func setReasoningTokens(usage *dto.Usage, tokens int) {
+	usage.CompletionTokenDetails.ReasoningTokens = tokens
+	usage.ReasoningTokensReported = true
 }
 
 func UsageFromClaudeUsage(usage *dto.Usage) *dto.Usage {
@@ -500,6 +521,7 @@ func FormatClaudeResponseInfo(claudeResponse *dto.ClaudeResponse, oaiResponse *d
 	if claudeInfo.Usage == nil {
 		claudeInfo.Usage = &dto.Usage{}
 	}
+	var eventUsage *dto.ClaudeUsage
 	if claudeResponse.Type == "message_start" {
 		if claudeResponse.Message != nil {
 			claudeInfo.ResponseId = claudeResponse.Message.Id
@@ -508,6 +530,7 @@ func FormatClaudeResponseInfo(claudeResponse *dto.ClaudeResponse, oaiResponse *d
 
 		if claudeResponse.Message != nil && claudeResponse.Message.Usage != nil {
 			messageUsage := claudeResponse.Message.Usage
+			eventUsage = messageUsage
 			claudeInfo.Usage.PromptTokens = messageUsage.InputTokens
 			claudeInfo.Usage.UsageSemantic = "anthropic"
 			claudeInfo.Usage.PromptTokensDetails.CachedTokens = messageUsage.CacheReadInputTokens
@@ -531,6 +554,7 @@ func FormatClaudeResponseInfo(claudeResponse *dto.ClaudeResponse, oaiResponse *d
 		}
 	} else if claudeResponse.Type == "message_delta" {
 		if claudeResponse.Usage != nil {
+			eventUsage = claudeResponse.Usage
 			claudeInfo.Usage.UsageSemantic = "anthropic"
 			if claudeResponse.Usage.InputTokens > 0 {
 				claudeInfo.Usage.PromptTokens = claudeResponse.Usage.InputTokens
@@ -563,6 +587,9 @@ func FormatClaudeResponseInfo(claudeResponse *dto.ClaudeResponse, oaiResponse *d
 		}
 	} else {
 		return false
+	}
+	if tokens, reported := eventUsage.ReportedThinkingTokens(); reported {
+		claudeInfo.reasoningTokens = &tokens
 	}
 	if oaiResponse != nil {
 		oaiResponse.Id = claudeInfo.ResponseId

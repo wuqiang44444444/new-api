@@ -208,6 +208,10 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	relayInfo.LastError = nil
 
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
+		if err := c.Request.Context().Err(); err != nil && relayInfo.UsesSynchronousTextCancellation() {
+			newAPIError = types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithSkipRetry())
+			break
+		}
 		clienterrlog.BeginNativeRelayAttempt(c)
 		service.BeginChannelAlertAttempt(c)
 		relayInfo.StreamStatus = nil
@@ -257,10 +261,13 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		service.ObserveChannelFailoverResult(c, relayInfo, newAPIError)
 		if newAPIError == nil {
 			service.ObserveNativeStreamOutcome(c, relayInfo)
-			service.MarkRequestPolicySuccess(c, relayInfo.StreamStatus)
+			service.MarkRequestPolicySuccess(c, relayInfo)
 			service.RecordNativeChannelAffinitySuccess(c, channel.Id, relayInfo)
 			relayInfo.LastError = nil
 			return
+		}
+		if relayInfo.UsesSynchronousTextCancellation() && c.Request.Context().Err() != nil {
+			break
 		}
 
 		newAPIError = service.NormalizeViolationFeeError(newAPIError)

@@ -278,6 +278,7 @@ func TestConvertResponseByIDExecutesMultiHopAndChecksSource(t *testing.T) {
 }
 
 func TestConvertResponseProviderToOAIChatUsage(t *testing.T) {
+	thinkingTokens := 2
 	claude := &dto.ClaudeResponse{
 		Id:         "msg_1",
 		Type:       "message",
@@ -292,6 +293,7 @@ func TestConvertResponseProviderToOAIChatUsage(t *testing.T) {
 			CacheReadInputTokens:     3,
 			CacheCreationInputTokens: 4,
 			OutputTokens:             5,
+			OutputTokensDetails:      &dto.ClaudeOutputTokensDetails{ThinkingTokens: &thinkingTokens},
 			CacheCreation: &dto.ClaudeCacheCreationUsage{
 				Ephemeral5mInputTokens: 1,
 				Ephemeral1hInputTokens: 3,
@@ -304,6 +306,7 @@ func TestConvertResponseProviderToOAIChatUsage(t *testing.T) {
 	require.IsType(t, &dto.OpenAITextResponse{}, toChat.Value)
 	assert.Equal(t, 17, toChat.Usage.PromptTokens)
 	assert.Equal(t, 5, toChat.Usage.CompletionTokens)
+	assert.Equal(t, 2, toChat.Usage.CompletionTokenDetails.ReasoningTokens)
 	assert.Equal(t, 22, toChat.Usage.TotalTokens)
 	assert.Equal(t, 3, toChat.Usage.PromptTokensDetails.CachedTokens)
 	assert.Equal(t, 4, toChat.Usage.PromptTokensDetails.CachedCreationTokens)
@@ -316,10 +319,22 @@ func TestConvertResponseProviderToOAIChatUsage(t *testing.T) {
 	assert.Equal(t, 3, toChat.Usage.BillingUsage.ClaudeUsage.CacheReadInputTokens)
 	assert.Equal(t, 4, toChat.Usage.BillingUsage.ClaudeUsage.CacheCreationInputTokens)
 	assert.Equal(t, 5, toChat.Usage.BillingUsage.ClaudeUsage.OutputTokens)
+	assert.Nil(t, toChat.Usage.BillingUsage.ClaudeUsage.OutputTokensDetails)
 	chatValue := toChat.Value.(*dto.OpenAITextResponse)
 	require.Len(t, chatValue.Choices, 1)
 	require.Len(t, chatValue.Choices[0].Message.ParseToolCalls(), 1)
 	assert.JSONEq(t, `{"q":"x"}`, chatValue.Choices[0].Message.ParseToolCalls()[0].Function.Arguments)
+
+	// An explicit zero survives the standalone Claude-to-Responses conversion.
+	thinkingTokens = 0
+	toResponses, err := ConvertResponse(nil, nil, types.RelayFormatOpenAIResponses, claude)
+	require.NoError(t, err)
+	responseValue, ok := toResponses.Value.(*dto.OpenAIResponsesResponse)
+	require.True(t, ok)
+	require.NotNil(t, responseValue.Usage)
+	require.NotNil(t, responseValue.Usage.OutputTokensDetails)
+	assert.Zero(t, responseValue.Usage.OutputTokensDetails.ReasoningTokens)
+	assert.Equal(t, 5, responseValue.Usage.OutputTokens)
 
 	gemini := &dto.GeminiChatResponse{
 		Candidates: []dto.GeminiChatCandidate{
